@@ -1,0 +1,33 @@
+[package]
+name = "ccsm-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "CCSM v2 Tauri desktop composition root"
+default-run = "ccsm-desktop"
+
+[lib]
+name = "ccsm_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ccsm-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.5.5", features = [] }
+
+[dependencies]
+ccsm-core.workspace = true
+ccsm-platform.workspace = true
+serde.workspace = true
+tauri = { version = "2.11.5", features = ["unstable"] }
+ts-rs.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+] }

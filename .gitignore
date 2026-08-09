@@ -1,0 +1,17 @@
+/target/
+**/target/
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.playwright-cli/
+playwright-report/
+test-results/
+tools/zig/
+*.log
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+Thumbs.db
+/*.png

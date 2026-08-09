@@ -1,0 +1,17 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CCSM",
+        "width": 1320,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 560,
+        "resizable": true,
+        "decorations": false,
+        "dataDirectory": "ccsm-main-webview"
+      }
+    ]
+  }
+}
