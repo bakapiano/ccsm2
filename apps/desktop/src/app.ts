@@ -618,6 +618,7 @@ export class CcsmApp {
       });
     }
     this.#dockview.setActivePanel(panel);
+    if (tab.kind === "file-editor") this.#refreshFileEditorTitles();
     requestAnimationFrame(() => this.#terminalProvider.focusTab(tab.id));
     this.#setGlobalStatus("running", "ready");
   }

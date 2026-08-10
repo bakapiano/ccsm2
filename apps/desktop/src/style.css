@@ -1120,7 +1120,7 @@ button.primary:hover {
 
 .file-editor-panel {
   display: grid;
-  grid-template-rows: 36px auto auto minmax(0, 1fr) 24px;
+  grid-template-rows: 36px auto minmax(0, 1fr) 24px;
   color: var(--ink);
   background: var(--bg-elev);
 }
@@ -1142,8 +1142,7 @@ button.primary:hover {
   user-select: none;
 }
 
-.file-editor-toolbar button,
-.file-editor-search button {
+.file-editor-toolbar button {
   height: 25px;
   padding: 1px 8px;
   font-size: 11px;
@@ -1173,29 +1172,6 @@ button.primary:hover {
   color: var(--red);
 }
 
-.file-editor-goto-form {
-  width: 66px;
-  min-width: 0;
-}
-
-.file-editor-goto-input,
-.file-editor-search input {
-  min-width: 0;
-  height: 25px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  padding: 0 7px;
-  outline: none;
-  color: var(--ink);
-  background: var(--bg-elev);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.file-editor-goto-input {
-  width: 100%;
-}
-
 .file-editor-banner {
   grid-row: 2;
   min-height: 30px;
@@ -1212,139 +1188,21 @@ button.primary:hover {
   background: color-mix(in srgb, var(--red) 7%, var(--bg-elev));
 }
 
-.file-editor-search {
-  grid-row: 3;
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(100px, 0.8fr) auto repeat(
-      5,
-      auto
-    );
-  align-items: center;
-  gap: 5px;
-  padding: 5px 7px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
-}
-
-.file-editor-search-result {
-  min-width: 58px;
-  color: var(--ink-muted);
-  font-size: 10px;
-  text-align: right;
-}
-
 .file-editor-body {
-  grid-row: 4;
-  display: grid;
-  grid-template-columns: 50px minmax(0, 1fr);
+  position: relative;
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--bg-elev);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 20px;
 }
 
-.file-editor-line-viewport {
-  min-height: 0;
-  overflow: hidden;
-  border-right: 1px solid var(--border-soft);
-  color: var(--ink-faint);
-  background: var(--bg);
-  text-align: right;
-  user-select: none;
-}
-
-.file-editor-line-numbers,
-.file-editor-highlight {
-  min-height: 100%;
-  margin: 0;
-  font: inherit;
-  line-height: inherit;
-  tab-size: 2;
-}
-
-.file-editor-line-numbers {
-  padding: 8px 9px 20px 4px;
-  transform-origin: top left;
-}
-
-.file-editor-code-layer {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.file-editor-highlight,
-.file-editor-input {
-  position: absolute;
-  inset: 0;
+.file-editor-codemirror {
   width: 100%;
   height: 100%;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  padding: 8px 10px 20px;
-  font: inherit;
-  line-height: inherit;
-  tab-size: 2;
-  white-space: pre;
-}
-
-.file-editor-highlight {
-  right: auto;
-  bottom: auto;
-  width: max-content;
-  min-width: 100%;
-  min-height: 100%;
-  overflow: visible;
-  color: var(--ink);
-  pointer-events: none;
-  transform-origin: top left;
-}
-
-.file-editor-input {
-  z-index: 2;
-  resize: none;
-  outline: none;
-  overflow: auto;
-  color: transparent;
-  background: transparent;
-  caret-color: var(--ink);
-  -webkit-text-fill-color: transparent;
-}
-
-.file-editor-input::selection {
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
-}
-
-.file-editor-panel[data-plain-text="true"] .file-editor-highlight {
-  display: none;
-}
-
-.file-editor-panel[data-plain-text="true"] .file-editor-input {
-  color: var(--ink);
-  -webkit-text-fill-color: currentColor;
-}
-
-.file-editor-panel[data-word-wrap="true"] .file-editor-highlight,
-.file-editor-panel[data-word-wrap="true"] .file-editor-input {
-  width: 100%;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-.file-editor-current-line {
-  position: absolute;
-  z-index: 0;
-  top: 8px;
-  right: 0;
-  left: 0;
-  height: 20px;
-  background: var(--accent-softer);
-  pointer-events: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .file-editor-empty-state {
@@ -1362,7 +1220,7 @@ button.primary:hover {
 }
 
 .file-editor-footer {
-  grid-row: 5;
+  grid-row: 4;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1373,30 +1231,6 @@ button.primary:hover {
   background: var(--bg);
   font-family: var(--mono);
   font-size: 10px;
-}
-
-.syntax-comment {
-  color: var(--green);
-}
-
-.syntax-string {
-  color: var(--orange);
-}
-
-.syntax-number {
-  color: var(--blue);
-}
-
-.syntax-keyword {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.syntax-bracket {
-  border-radius: 2px;
-  color: inherit;
-  background: color-mix(in srgb, var(--yellow) 28%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--yellow) 58%, transparent);
 }
 
 .file-editor-dialog-backdrop {

@@ -86,19 +86,17 @@ filesystem watcher只发送invalidation hint。Clean session重新调用`read_fi
 
 ## 编辑层
 
-V1 renderer使用原生`textarea`承载输入、selection和IME composition。镜像`pre`层渲染escaped syntax tokens与括号匹配；行号和当前行层随textarea scroll同步。
+V1 renderer使用CodeMirror 6。`EditorView`承载输入、selection、IME、绘制与滚动；`EditorState`提供history和语言扩展状态。每个File Editor Tab保留同一个Panel与`EditorView`，Space切换产生的Dockview unmount只解绑session listener，切回时继续使用原state。
 
-Provider实现：
+CodeMirror配置包含：
 
-- 自动缩进与Tab空格插入
-- session undo/redo history
-- 文件内查找、替换与Replace All
-- 跳转行
-- selection行列状态
-- 每Tab word wrap state
-- Ctrl/Cmd快捷键分派
+- `basicSetup`的行号、当前行、history、查找替换、括号匹配、自动缩进和selection绘制。
+- `language-data`按文件名动态加载语言包；超过1 MiB时保持plain text state。
+- `Compartment`动态切换read-only和line wrapping。
+- CCSM theme与highlight style使用应用CSS variables，跟随深浅模式。
+- `Mod-S`保存、`Ctrl-H/Cmd-Option-F`替换、`Mod-G`跳转行和`indentWithTab`。
 
-镜像层永远escape文件内容，不将文件文本解释为HTML。
+磁盘首次加载和clean external reload使用新的`EditorState`，从而重置旧undo history；普通Tab切换与Space切换保留当前state。Provider不维护自制textarea镜像、高亮器、搜索器或undo stack。
 
 ## Close 与退出
 
@@ -110,5 +108,5 @@ Provider实现：
 
 - platform tests覆盖BOM、CRLF、中文、revision冲突、binary和non-UTF-8分类。
 - SQLite contract覆盖同Space path去重与恢复state。
-- TypeScript unit tests覆盖标题消歧、语言识别、watch hint匹配、括号与光标位置。
+- TypeScript unit tests覆盖标题消歧、语言识别、watch hint匹配、CodeMirror依赖边界和Panel布局。
 - Development Testing使用`playwright-cli`连接Windows WebView2，覆盖打开去重、编辑Dirty、保存、关闭Cancel和磁盘结果。

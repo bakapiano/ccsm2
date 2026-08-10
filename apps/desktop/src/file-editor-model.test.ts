@@ -3,9 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   distinctFileEditorTitles,
   fileChangeAffectsPath,
-  findBracketMatch,
   languageForPath,
-  lineAndColumn,
+  normalizeRelativePath,
 } from "./file-editor-model";
 
 describe("file editor model", () => {
@@ -27,17 +26,15 @@ describe("file editor model", () => {
     expect(languageForPath("Dockerfile")).toBe("text");
   });
 
-  test("matches filesystem hints and brackets", () => {
+  test("normalizes paths and matches filesystem hints", () => {
+    expect(normalizeRelativePath("/src\\nested//main.rs/")).toBe(
+      "src/nested/main.rs",
+    );
     expect(
       fileChangeAffectsPath(
         { rootId: "root", relativePaths: ["src\\main.rs"], overflow: false },
         "src/main.rs",
       ),
     ).toBe(true);
-    expect(findBracketMatch("fn main() {}", 8)).toEqual([8, 7]);
-  });
-
-  test("reports one-based cursor coordinates", () => {
-    expect(lineAndColumn("one\n中文", 6)).toEqual({ line: 2, column: 3 });
   });
 });

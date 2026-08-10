@@ -8,12 +8,20 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,css}\" \"*.{json,html,ts}\"",
-    "test": "bun test src/agent-list.test.ts src/background-scan.test.ts src/directory-picker.test.ts src/dock-behavior.test.ts src/dock-new-tab.test.ts src/file-editor-layout.test.ts src/file-editor-model.test.ts src/file-explorer-tree.test.ts src/new-tab-actions.test.ts src/ordered-task-queue.test.ts src/retained-renderer-cache.test.ts src/scan-routing.test.ts src/sidebar-layout.test.ts src/shell-layout.test.ts src/surface-occlusion.test.ts src/tab-chrome.test.ts src/terminal-flow.test.ts src/terminal-status-layout.test.ts src/theme.test.ts src/window-chrome.test.ts vendor/ghostty-web/lib/regressions.test.ts vendor/ghostty-web/lib/box-drawing.test.ts vendor/ghostty-web/lib/ime-composition.test.ts",
+    "test": "bun test src/agent-list.test.ts src/background-scan.test.ts src/directory-picker.test.ts src/dock-behavior.test.ts src/dock-new-tab.test.ts src/file-editor-engine.test.ts src/file-editor-layout.test.ts src/file-editor-model.test.ts src/file-explorer-tree.test.ts src/new-tab-actions.test.ts src/ordered-task-queue.test.ts src/retained-renderer-cache.test.ts src/scan-routing.test.ts src/sidebar-layout.test.ts src/shell-layout.test.ts src/surface-occlusion.test.ts src/tab-chrome.test.ts src/terminal-flow.test.ts src/terminal-status-layout.test.ts src/theme.test.ts src/window-chrome.test.ts vendor/ghostty-web/lib/regressions.test.ts vendor/ghostty-web/lib/box-drawing.test.ts vendor/ghostty-web/lib/ime-composition.test.ts",
     "tauri": "tauri",
     "build:desktop:debug": "tauri build --debug --no-bundle"
   },
   "dependencies": {
+    "@codemirror/commands": "6.10.4",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/language-data": "6.5.2",
+    "@codemirror/search": "6.7.1",
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.8",
+    "@lezer/highlight": "1.2.3",
     "@tauri-apps/api": "2.11.1",
+    "codemirror": "6.0.2",
     "dockview": "7.0.4"
   },
   "devDependencies": {

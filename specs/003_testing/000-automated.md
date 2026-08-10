@@ -50,6 +50,8 @@ Hook integration tests覆盖认证成功、malformed payload、错误token、旧
 
 Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭CLI Tab时验证进程退出、Tab与Session删除且Agent条目消失。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
 
+File Editor tests固定CodeMirror 6依赖边界，并验证Provider不重新引入自制textarea、高亮、搜索或history实现。Desktop scenario覆盖CodeMirror DOM挂载、Unicode编辑、保存、Dirty关闭确认和Space切换后的EditorState保留。
+
 L3 Space切换测试验证相同root复用ActiveRootContext、不同root关闭旧watcher并激活新context，同时确认inactive Space的CLI runtime和Hook继续运行。
 
 L3 process lifecycle测试启动受application Job保护的owner与leaf进程，强杀owner并断言leaf在超时内退出。PTY lifecycle测试验证重复shutdown保持幂等，并在返回前完成process tree终止、线程join和PseudoConsole关闭。shim scavenger测试验证死亡PID目录被清理，活跃PID、符号链接和无关目录得到保留。L4退出场景检查WebView2、OpenConsole、CLI、Hook endpoint和watcher均不再持有进程或handle。

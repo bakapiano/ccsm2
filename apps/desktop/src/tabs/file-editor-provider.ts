@@ -1,3 +1,27 @@
+import { indentWithTab, redo } from "@codemirror/commands";
+import {
+  HighlightStyle,
+  indentUnit,
+  LanguageDescription,
+  syntaxHighlighting,
+  type LanguageSupport,
+} from "@codemirror/language";
+import { languages } from "@codemirror/language-data";
+import { gotoLine, openSearchPanel } from "@codemirror/search";
+import {
+  Compartment,
+  EditorState,
+  Prec,
+  type Extension,
+} from "@codemirror/state";
+import {
+  EditorView,
+  keymap,
+  type KeyBinding,
+  type ViewUpdate,
+} from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { basicSetup } from "codemirror";
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
 import {
@@ -7,10 +31,7 @@ import {
 import {
   fileChangeAffectsPath,
   fileName,
-  findBracketMatch,
-  highlightSource,
   languageForPath,
-  lineAndColumn,
   parseFileEditorState,
   type FileEditorTabState,
 } from "../file-editor-model";
@@ -47,11 +68,13 @@ interface SessionSnapshot {
   utf8Bom: boolean;
   lineEnding: FileLineEnding;
   state: FileEditorTabState;
+  documentGeneration: number;
 }
 
 export class FileEditorTabProvider implements TabProvider {
   readonly kind = "file-editor" as const;
   readonly #sessions = new Map<string, FileEditorSession>();
+  readonly #panels = new Map<string, FileEditorPanel>();
 
   constructor(
     private readonly client: CcsmDesktopClient,
@@ -59,7 +82,12 @@ export class FileEditorTabProvider implements TabProvider {
   ) {}
 
   createRenderer(tab: TabDto): IContentRenderer {
-    return new FileEditorPanel(this.#session(tab));
+    let panel = this.#panels.get(tab.id);
+    if (!panel) {
+      panel = new FileEditorPanel(this.#session(tab));
+      this.#panels.set(tab.id, panel);
+    }
+    return panel;
   }
 
   isDirty(tabId: string): boolean {
@@ -91,53 +119,26 @@ export class FileEditorTabProvider implements TabProvider {
       .filter((session): session is FileEditorSession =>
         Boolean(session?.isDirty()),
       );
-    if (sessions.length === 0) return true;
-    const choice = await this.#prompt({
-      title: "Save changes before closing?",
-      message: `${sessions.length} files have unsaved changes.`,
-      files: sessions.map((session) => session.relativePath),
-      actions: [
-        { id: "save-all", label: "Save All", primary: true },
-        { id: "discard-all", label: "Discard All", danger: true },
-        { id: "cancel", label: "Cancel" },
-      ] as const,
-      cancelAction: "cancel" as const,
-    });
-    if (choice === "cancel") return false;
-    if (choice === "discard-all") return true;
-    for (const session of sessions) await session.save();
-    return sessions.every((session) => !session.isDirty());
+    return this.#requestCloseSessions(sessions);
   }
 
   async requestCloseAll(): Promise<boolean> {
-    const sessions = [...this.#sessions.values()].filter((session) =>
-      session.isDirty(),
+    return this.#requestCloseSessions(
+      [...this.#sessions.values()].filter((session) => session.isDirty()),
     );
-    if (sessions.length === 0) return true;
-    const choice = await this.#prompt({
-      title: "Save changes before closing?",
-      message: `${sessions.length} files have unsaved changes.`,
-      files: sessions.map((session) => session.relativePath),
-      actions: [
-        { id: "save-all", label: "Save All", primary: true },
-        { id: "discard-all", label: "Discard All", danger: true },
-        { id: "cancel", label: "Cancel" },
-      ] as const,
-      cancelAction: "cancel" as const,
-    });
-    if (choice === "cancel") return false;
-    if (choice === "discard-all") return true;
-    for (const session of sessions) await session.save();
-    return sessions.every((session) => !session.isDirty());
   }
 
   releaseTab(tabId: string): void {
+    this.#panels.get(tabId)?.destroy();
+    this.#panels.delete(tabId);
     this.#sessions.get(tabId)?.dispose();
     this.#sessions.delete(tabId);
     this.options.presentationChanged();
   }
 
   destroyAll(): void {
+    for (const panel of this.#panels.values()) panel.destroy();
+    this.#panels.clear();
     for (const session of this.#sessions.values()) session.dispose();
     this.#sessions.clear();
   }
@@ -154,6 +155,27 @@ export class FileEditorTabProvider implements TabProvider {
       this.#sessions.set(tab.id, session);
     }
     return session;
+  }
+
+  async #requestCloseSessions(
+    sessions: readonly FileEditorSession[],
+  ): Promise<boolean> {
+    if (sessions.length === 0) return true;
+    const choice = await this.#prompt({
+      title: "Save changes before closing?",
+      message: `${sessions.length} files have unsaved changes.`,
+      files: sessions.map((session) => session.relativePath),
+      actions: [
+        { id: "save-all", label: "Save All", primary: true },
+        { id: "discard-all", label: "Discard All", danger: true },
+        { id: "cancel", label: "Cancel" },
+      ] as const,
+      cancelAction: "cancel" as const,
+    });
+    if (choice === "cancel") return false;
+    if (choice === "discard-all") return true;
+    for (const session of sessions) await session.save();
+    return sessions.every((session) => !session.isDirty());
   }
 
   async #prompt<T extends string>(
@@ -182,8 +204,7 @@ class FileEditorSession {
   #message: string | null = null;
   #notice: string | null = null;
   #deleted = false;
-  #history = [""];
-  #historyIndex = 0;
+  #documentGeneration = 0;
   #mounted = 0;
   #unlisten: (() => void) | null = null;
   #persistTimer: number | null = null;
@@ -256,6 +277,7 @@ class FileEditorSession {
       utf8Bom: this.#utf8Bom,
       lineEnding: this.#lineEnding,
       state: { ...this.#viewState },
+      documentGeneration: this.#documentGeneration,
     };
   }
 
@@ -263,42 +285,14 @@ class FileEditorSession {
     return this.#content !== this.#diskContent;
   }
 
-  setContent(content: string, recordHistory: boolean): void {
+  setContent(content: string): void {
     if (content === this.#content) return;
     const wasDirty = this.isDirty();
     this.#content = content;
-    if (recordHistory) this.recordHistory();
     if (this.#status !== "conflict" && this.#status !== "read-only") {
       this.#status = this.isDirty() ? "dirty" : "clean";
       this.#message = null;
     }
-    this.#emit(wasDirty);
-  }
-
-  recordHistory(): void {
-    if (this.#history[this.#historyIndex] === this.#content) return;
-    this.#history.splice(this.#historyIndex + 1);
-    this.#history.push(this.#content);
-    this.#historyIndex = this.#history.length - 1;
-  }
-
-  undo(): void {
-    if (this.#historyIndex <= 0) return;
-    const wasDirty = this.isDirty();
-    this.#historyIndex -= 1;
-    this.#content = this.#history[this.#historyIndex] ?? "";
-    if (this.#status !== "conflict" && this.#status !== "read-only")
-      this.#status = this.isDirty() ? "dirty" : "clean";
-    this.#emit(wasDirty);
-  }
-
-  redo(): void {
-    if (this.#historyIndex >= this.#history.length - 1) return;
-    const wasDirty = this.isDirty();
-    this.#historyIndex += 1;
-    this.#content = this.#history[this.#historyIndex] ?? "";
-    if (this.#status !== "conflict" && this.#status !== "read-only")
-      this.#status = this.isDirty() ? "dirty" : "clean";
     this.#emit(wasDirty);
   }
 
@@ -328,8 +322,9 @@ class FileEditorSession {
     if (
       !this.isDirty() ||
       ["loading", "saving", "read-only"].includes(this.#status)
-    )
+    ) {
       return;
+    }
     if (this.#status === "conflict") {
       await this.#resolveConflict();
       return;
@@ -393,14 +388,8 @@ class FileEditorSession {
     const content = document.content ?? "";
     this.#content = content;
     this.#diskContent = content;
-    this.#history = [content];
-    this.#historyIndex = 0;
-    this.#status =
-      document.status === "editable"
-        ? "clean"
-        : document.status === "read-only"
-          ? "read-only"
-          : "read-only";
+    this.#documentGeneration += 1;
+    this.#status = document.status === "editable" ? "clean" : "read-only";
     this.#emit(wasDirty);
     if (notice) this.#clearNoticeLater();
   }
@@ -460,8 +449,7 @@ class FileEditorSession {
       if (this.#deleted) {
         const wasDirty = this.isDirty();
         this.#content = this.#diskContent;
-        this.#history = [this.#content];
-        this.#historyIndex = 0;
+        this.#documentGeneration += 1;
         this.#emit(wasDirty);
       }
       await this.#load(true, true);
@@ -523,107 +511,162 @@ class FileEditorSession {
   }
 }
 
+const codeMirrorTheme = EditorView.theme({
+  "&": {
+    height: "100%",
+    color: "var(--ink)",
+    backgroundColor: "var(--bg-elev)",
+  },
+  "&.cm-focused": { outline: "none" },
+  ".cm-scroller": {
+    fontFamily: "var(--mono)",
+    fontSize: "12px",
+    lineHeight: "20px",
+    overflow: "auto",
+  },
+  ".cm-content": {
+    minHeight: "100%",
+    padding: "8px 0 20px",
+    caretColor: "var(--ink)",
+  },
+  ".cm-line": { padding: "0 10px" },
+  ".cm-gutters": {
+    borderRight: "1px solid var(--border-soft)",
+    color: "var(--ink-faint)",
+    backgroundColor: "var(--bg)",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    minWidth: "42px",
+    padding: "0 9px 0 4px",
+  },
+  ".cm-activeLine, .cm-activeLineGutter": {
+    backgroundColor: "var(--accent-softer)",
+  },
+  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection":
+    {
+      backgroundColor: "color-mix(in srgb, var(--accent) 28%, transparent)",
+    },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ink)" },
+  ".cm-matchingBracket": {
+    borderRadius: "2px",
+    backgroundColor: "color-mix(in srgb, var(--yellow) 28%, transparent)",
+    outline: "1px solid color-mix(in srgb, var(--yellow) 58%, transparent)",
+  },
+  ".cm-panels": {
+    color: "var(--ink)",
+    backgroundColor: "var(--bg-elev)",
+  },
+  ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--border)" },
+  ".cm-search": { padding: "5px 7px" },
+  ".cm-search input, .cm-textfield": {
+    height: "25px",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "4px",
+    padding: "0 7px",
+    color: "var(--ink)",
+    backgroundColor: "var(--bg-elev)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+  },
+  ".cm-search button, .cm-button": {
+    height: "25px",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "4px",
+    padding: "1px 8px",
+    color: "var(--ink-mid)",
+    backgroundImage: "none",
+    backgroundColor: "var(--bg-elev)",
+    fontSize: "11px",
+  },
+  ".cm-search button:hover, .cm-button:hover": {
+    color: "var(--ink)",
+    backgroundColor: "var(--sidebar-hover)",
+  },
+  ".cm-tooltip": {
+    border: "1px solid var(--border-strong)",
+    color: "var(--ink)",
+    backgroundColor: "var(--bg-elev)",
+    boxShadow: "var(--shadow-md)",
+  },
+});
+
+const codeMirrorHighlightStyle = HighlightStyle.define([
+  {
+    tag: [tags.comment, tags.lineComment, tags.blockComment],
+    color: "var(--green)",
+  },
+  { tag: [tags.string, tags.special(tags.string)], color: "var(--orange)" },
+  { tag: [tags.number, tags.bool, tags.null], color: "var(--blue)" },
+  {
+    tag: [tags.keyword, tags.modifier, tags.operatorKeyword],
+    color: "var(--accent)",
+    fontWeight: "600",
+  },
+  {
+    tag: [tags.typeName, tags.className, tags.namespace],
+    color: "var(--yellow)",
+  },
+  {
+    tag: [tags.function(tags.variableName), tags.definition(tags.variableName)],
+    color: "var(--blue)",
+  },
+  { tag: [tags.propertyName, tags.attributeName], color: "var(--ink-mid)" },
+  { tag: tags.invalid, color: "var(--red)" },
+]);
+
 class FileEditorPanel implements IContentRenderer {
   readonly element = document.createElement("section");
-  readonly #textarea: HTMLTextAreaElement;
-  readonly #highlight: HTMLElement;
-  readonly #lineNumbers: HTMLElement;
-  readonly #currentLine: HTMLElement;
+  readonly #host: HTMLElement;
   readonly #banner: HTMLElement;
   readonly #empty: HTMLElement;
   readonly #position: HTMLElement;
   readonly #format: HTMLElement;
   readonly #status: HTMLElement;
-  readonly #searchPanel: HTMLElement;
-  readonly #searchInput: HTMLInputElement;
-  readonly #replaceInput: HTMLInputElement;
-  readonly #searchResult: HTMLElement;
-  readonly #gotoForm: HTMLFormElement;
-  readonly #gotoInput: HTMLInputElement;
+  readonly #languageCompartment = new Compartment();
+  readonly #wrapCompartment = new Compartment();
+  readonly #editableCompartment = new Compartment();
+  #view: EditorView | null = null;
   #unsubscribe: (() => void) | null = null;
-  #composing = false;
-  #lineSource = "";
-  #lineCount = 1;
-  #restoredViewState = false;
+  #attached = false;
+  #destroyed = false;
+  #synchronizing = false;
+  #documentGeneration = -1;
+  #restorePersistedViewState = true;
+  #wordWrap = false;
+  #canEdit = false;
+  #languageKey = "";
+  #languageLabel = "text";
+  #languageSupport: Extension = [];
+  #languageRequest = 0;
 
   constructor(private readonly session: FileEditorSession) {
     this.element.className = "file-editor-panel";
+    this.element.dataset.editorEngine = "codemirror6";
     this.element.innerHTML = `
       <div class="file-editor-toolbar">
         <button type="button" data-editor-action="save">Save</button>
         <span class="file-editor-status"></span>
         <button type="button" data-editor-action="find">Find</button>
         <button type="button" data-editor-action="replace">Replace</button>
-        <form class="file-editor-goto-form" hidden>
-          <input class="file-editor-goto-input" type="number" min="1" aria-label="Line number" placeholder="Line" />
-        </form>
         <button type="button" data-editor-action="goto">Go to Line</button>
         <button type="button" data-editor-action="wrap" aria-pressed="false">Wrap</button>
       </div>
       <div class="file-editor-banner" hidden></div>
-      <div class="file-editor-search" hidden>
-        <input class="file-editor-search-input" type="search" aria-label="Find" placeholder="Find" />
-        <input class="file-editor-replace-input" type="text" aria-label="Replace" placeholder="Replace" />
-        <span class="file-editor-search-result"></span>
-        <button type="button" data-search-action="previous" aria-label="Previous match">↑</button>
-        <button type="button" data-search-action="next" aria-label="Next match">↓</button>
-        <button type="button" data-search-action="replace">Replace</button>
-        <button type="button" data-search-action="replace-all">All</button>
-        <button type="button" data-search-action="close" aria-label="Close find and replace">×</button>
-      </div>
       <div class="file-editor-body">
-        <div class="file-editor-line-viewport" aria-hidden="true"><pre class="file-editor-line-numbers"></pre></div>
-        <div class="file-editor-code-layer">
-          <div class="file-editor-current-line" aria-hidden="true"></div>
-          <pre class="file-editor-highlight" aria-hidden="true"></pre>
-          <textarea class="file-editor-input" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-          <div class="file-editor-empty-state" role="status">Loading…</div>
-        </div>
+        <div class="file-editor-codemirror"></div>
+        <div class="file-editor-empty-state" role="status">Loading…</div>
       </div>
       <footer class="file-editor-footer">
         <span class="file-editor-position">Ln 1, Col 1</span>
         <span class="file-editor-format"></span>
       </footer>
     `;
-    this.#textarea = required(this.element, ".file-editor-input");
-    this.#highlight = required(this.element, ".file-editor-highlight");
-    this.#lineNumbers = required(this.element, ".file-editor-line-numbers");
-    this.#currentLine = required(this.element, ".file-editor-current-line");
+    this.#host = required(this.element, ".file-editor-codemirror");
     this.#banner = required(this.element, ".file-editor-banner");
     this.#empty = required(this.element, ".file-editor-empty-state");
     this.#position = required(this.element, ".file-editor-position");
     this.#format = required(this.element, ".file-editor-format");
     this.#status = required(this.element, ".file-editor-status");
-    this.#searchPanel = required(this.element, ".file-editor-search");
-    this.#searchInput = required(this.element, ".file-editor-search-input");
-    this.#replaceInput = required(this.element, ".file-editor-replace-input");
-    this.#searchResult = required(this.element, ".file-editor-search-result");
-    this.#gotoForm = required(this.element, ".file-editor-goto-form");
-    this.#gotoInput = required(this.element, ".file-editor-goto-input");
-  }
-
-  init(parameters: GroupPanelPartInitParameters): void {
-    this.session.attach();
-    this.#unsubscribe = this.session.subscribe(() => this.#render());
-    this.#textarea.addEventListener("input", () => {
-      this.session.setContent(this.#textarea.value, !this.#composing);
-      this.#renderCode();
-      this.#renderCursor();
-    });
-    this.#textarea.addEventListener("compositionstart", () => {
-      this.#composing = true;
-    });
-    this.#textarea.addEventListener("compositionend", () => {
-      this.#composing = false;
-      this.session.setContent(this.#textarea.value, false);
-      this.session.recordHistory();
-    });
-    this.#textarea.addEventListener("keydown", (event) =>
-      this.#onKeyDown(event),
-    );
-    this.#textarea.addEventListener("scroll", () => this.#syncScroll());
-    for (const event of ["click", "keyup", "select"] as const)
-      this.#textarea.addEventListener(event, () => this.#selectionChanged());
     this.element
       .querySelector(".file-editor-toolbar")
       ?.addEventListener("click", (event) => {
@@ -633,73 +676,212 @@ class FileEditorPanel implements IContentRenderer {
           .editorAction;
         if (action) this.#runToolbarAction(action);
       });
-    this.#searchPanel.addEventListener("click", (event) => {
-      const action = (
-        event.target as Element | null
-      )?.closest<HTMLButtonElement>("button[data-search-action]")?.dataset
-        .searchAction;
-      if (action) this.#runSearchAction(action);
-    });
-    this.#searchInput.addEventListener("input", () =>
-      this.#updateSearchCount(),
-    );
-    this.#searchInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        this.#find(!event.shiftKey);
-      } else if (event.key === "Escape") this.#closeSearch();
-    });
-    this.#gotoForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      this.#goToLine(Number(this.#gotoInput.value));
-    });
+  }
+
+  init(parameters: GroupPanelPartInitParameters): void {
+    if (this.#destroyed || this.#attached) return;
+    this.#attached = true;
+    this.session.attach();
+    if (!this.#view) this.#createView(this.session.snapshot());
+    this.#unsubscribe = this.session.subscribe(() => this.#render());
     requestAnimationFrame(() => {
-      if (parameters.api.group.activePanel?.id === parameters.api.id)
+      if (parameters.api.group.activePanel?.id === parameters.api.id) {
         this.focus();
+      }
     });
   }
 
   layout(): void {
-    this.#syncScroll();
+    this.#view?.requestMeasure();
   }
 
   focus(): void {
-    if (
-      !this.#searchPanel.hidden &&
-      document.activeElement === this.#searchInput
-    )
-      return;
-    this.#textarea.focus();
+    const view = this.#view;
+    if (!view || view.dom.contains(document.activeElement)) return;
+    view.focus();
   }
 
   dispose(): void {
+    if (!this.#attached) return;
+    this.#attached = false;
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     this.session.detach();
   }
 
+  destroy(): void {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
+    this.#languageRequest += 1;
+    this.dispose();
+    this.#view?.destroy();
+    this.#view = null;
+  }
+
+  #createView(snapshot: SessionSnapshot): void {
+    this.#updateLanguage(snapshot);
+    this.#wordWrap = snapshot.state.wordWrap;
+    this.#canEdit = snapshot.canEdit;
+    this.#documentGeneration = snapshot.documentGeneration;
+    this.#view = new EditorView({
+      state: this.#createState(
+        snapshot,
+        snapshot.state.selectionAnchor,
+        snapshot.state.selectionHead,
+      ),
+      parent: this.#host,
+    });
+    this.#view.scrollDOM.addEventListener("scroll", this.#onScroll, {
+      passive: true,
+    });
+    if (snapshot.status !== "loading") this.#restorePersistedViewState = false;
+    requestAnimationFrame(() => {
+      if (!this.#view || this.#destroyed) return;
+      this.#view.scrollDOM.scrollTop = snapshot.state.scrollTop;
+      this.#renderPosition();
+    });
+  }
+
+  #createState(
+    snapshot: SessionSnapshot,
+    selectionAnchor: number,
+    selectionHead: number,
+  ): EditorState {
+    const length = snapshot.content.length;
+    const anchor = Math.max(0, Math.min(selectionAnchor, length));
+    const head = Math.max(0, Math.min(selectionHead, length));
+    return EditorState.create({
+      doc: snapshot.content,
+      selection: { anchor, head },
+      extensions: [
+        basicSetup,
+        indentUnit.of("  "),
+        codeMirrorTheme,
+        syntaxHighlighting(codeMirrorHighlightStyle),
+        this.#languageCompartment.of(this.#languageSupport),
+        this.#wrapCompartment.of(
+          snapshot.state.wordWrap ? EditorView.lineWrapping : [],
+        ),
+        this.#editableCompartment.of(editableExtensions(snapshot.canEdit)),
+        EditorView.contentAttributes.of({
+          "aria-label": `Edit ${snapshot.relativePath}`,
+          autocapitalize: "off",
+          autocomplete: "off",
+          spellcheck: "false",
+        }),
+        EditorView.updateListener.of((update) => this.#onUpdate(update)),
+        Prec.highest(keymap.of(this.#keyBindings())),
+      ],
+    });
+  }
+
+  #keyBindings(): KeyBinding[] {
+    return [
+      {
+        key: "Mod-s",
+        run: () => {
+          void this.session.save();
+          return true;
+        },
+        preventDefault: true,
+      },
+      {
+        key: "Ctrl-h",
+        mac: "Cmd-Alt-f",
+        run: () => this.#openReplace(),
+        preventDefault: true,
+      },
+      { key: "Mod-g", run: gotoLine, preventDefault: true },
+      { key: "Ctrl-Shift-z", run: redo, preventDefault: true },
+      indentWithTab,
+    ];
+  }
+
+  #onUpdate(update: ViewUpdate): void {
+    if (this.#synchronizing) return;
+    if (update.docChanged) {
+      this.session.setContent(update.state.doc.toString());
+    }
+    if (update.docChanged || update.selectionSet) {
+      const selection = update.state.selection.main;
+      this.session.updateViewState({
+        selectionAnchor: selection.anchor,
+        selectionHead: selection.head,
+      });
+    }
+    this.#renderPosition();
+  }
+
+  readonly #onScroll = (): void => {
+    const view = this.#view;
+    if (!view) return;
+    this.session.updateViewState({ scrollTop: view.scrollDOM.scrollTop });
+  };
+
   #render(): void {
     const snapshot = this.session.snapshot();
-    this.element.dataset.state = snapshot.status;
-    if (this.#textarea.value !== snapshot.content) {
-      const anchor = Math.min(
-        this.#textarea.selectionStart,
-        snapshot.content.length,
-      );
-      const head = Math.min(
-        this.#textarea.selectionEnd,
-        snapshot.content.length,
-      );
-      this.#textarea.value = snapshot.content;
-      this.#textarea.setSelectionRange(anchor, head);
+    const view = this.#view;
+    this.#updateLanguage(snapshot);
+    if (view) {
+      const documentChanged =
+        this.#documentGeneration !== snapshot.documentGeneration ||
+        view.state.doc.toString() !== snapshot.content;
+      if (documentChanged) {
+        const current = view.state.selection.main;
+        const restorePersisted =
+          this.#restorePersistedViewState && snapshot.status !== "loading";
+        const anchor = restorePersisted
+          ? snapshot.state.selectionAnchor
+          : current.anchor;
+        const head = restorePersisted
+          ? snapshot.state.selectionHead
+          : current.head;
+        const scrollTop = restorePersisted
+          ? snapshot.state.scrollTop
+          : view.scrollDOM.scrollTop;
+        this.#synchronizing = true;
+        try {
+          view.setState(this.#createState(snapshot, anchor, head));
+        } finally {
+          this.#synchronizing = false;
+        }
+        this.#documentGeneration = snapshot.documentGeneration;
+        if (restorePersisted) this.#restorePersistedViewState = false;
+        this.#wordWrap = snapshot.state.wordWrap;
+        this.#canEdit = snapshot.canEdit;
+        requestAnimationFrame(() => {
+          if (!this.#view || this.#destroyed) return;
+          this.#view.scrollDOM.scrollTop = scrollTop;
+          this.#renderPosition();
+        });
+      } else {
+        const effects = [];
+        if (this.#wordWrap !== snapshot.state.wordWrap) {
+          this.#wordWrap = snapshot.state.wordWrap;
+          effects.push(
+            this.#wrapCompartment.reconfigure(
+              snapshot.state.wordWrap ? EditorView.lineWrapping : [],
+            ),
+          );
+        }
+        if (this.#canEdit !== snapshot.canEdit) {
+          this.#canEdit = snapshot.canEdit;
+          effects.push(
+            this.#editableCompartment.reconfigure(
+              editableExtensions(snapshot.canEdit),
+            ),
+          );
+        }
+        if (effects.length > 0) view.dispatch({ effects });
+      }
     }
-    this.#textarea.readOnly = !snapshot.canEdit;
-    this.#textarea.wrap = snapshot.state.wordWrap ? "soft" : "off";
-    this.#textarea.setAttribute("aria-label", `Edit ${snapshot.relativePath}`);
+    this.#renderChrome(snapshot);
+    this.#renderPosition();
+  }
+
+  #renderChrome(snapshot: SessionSnapshot): void {
+    this.element.dataset.state = snapshot.status;
     this.element.dataset.wordWrap = String(snapshot.state.wordWrap);
-    this.element.dataset.plainText = String(
-      !snapshot.syntaxHighlighting && snapshot.content.length > 0,
-    );
     const save = this.element.querySelector<HTMLButtonElement>(
       "[data-editor-action='save']",
     );
@@ -709,7 +891,7 @@ class FileEditorPanel implements IContentRenderer {
     );
     wrap?.setAttribute("aria-pressed", String(snapshot.state.wordWrap));
     this.#status.textContent = snapshot.notice ?? statusLabel(snapshot.status);
-    this.#format.textContent = `${languageForPath(snapshot.relativePath)} · ${
+    this.#format.textContent = `${this.#languageLabel} · ${
       snapshot.utf8Bom ? "UTF-8 BOM" : "UTF-8"
     } · ${snapshot.lineEnding === "crlf" ? "CRLF" : "LF"}`;
     this.#banner.hidden = !snapshot.message;
@@ -722,283 +904,79 @@ class FileEditorPanel implements IContentRenderer {
       snapshot.status === "loading"
         ? "Loading…"
         : (snapshot.message ?? "This file cannot be edited.");
-    this.#renderCursor();
-    if (!this.#restoredViewState && snapshot.status !== "loading") {
-      const anchor = Math.min(
-        snapshot.state.selectionAnchor,
-        snapshot.content.length,
-      );
-      const head = Math.min(
-        snapshot.state.selectionHead,
-        snapshot.content.length,
-      );
-      this.#textarea.setSelectionRange(anchor, head);
-      this.#textarea.scrollTop = snapshot.state.scrollTop;
-      this.#syncScroll();
-      this.#restoredViewState = true;
-    }
   }
 
-  #renderCode(): void {
-    const snapshot = this.session.snapshot();
-    if (snapshot.content !== this.#lineSource) {
-      this.#lineSource = snapshot.content;
-      this.#lineCount = countLines(snapshot.content);
-    }
-    if (snapshot.syntaxHighlighting) {
-      const brackets = findBracketMatch(
-        snapshot.content,
-        this.#textarea.selectionStart,
-      );
-      this.#highlight.innerHTML = highlightSource(
-        snapshot.content,
-        languageForPath(snapshot.relativePath),
-        brackets,
-      );
-    } else {
-      this.#highlight.replaceChildren();
-    }
-    this.#renderLineNumbers(snapshot.syntaxHighlighting);
-    this.#syncScroll();
-  }
-
-  #renderLineNumbers(full: boolean): void {
-    if (full) {
-      this.#lineNumbers.textContent = Array.from(
-        { length: this.#lineCount },
-        (_, index) => index + 1,
-      ).join("\n");
-      this.#lineNumbers.dataset.virtualStart = "0";
-      return;
-    }
-    const start = Math.max(0, Math.floor(this.#textarea.scrollTop / 20) - 1);
-    const visible = Math.ceil(this.#textarea.clientHeight / 20) + 3;
-    const end = Math.min(this.#lineCount, start + visible);
-    this.#lineNumbers.textContent = Array.from(
-      { length: end - start },
-      (_, index) => start + index + 1,
-    ).join("\n");
-    this.#lineNumbers.dataset.virtualStart = String(start);
-  }
-
-  #renderCursor(): void {
-    const snapshot = this.session.snapshot();
-    const position = lineAndColumn(
-      snapshot.content,
-      this.#textarea.selectionStart,
-    );
-    this.#position.textContent = `Ln ${position.line}, Col ${position.column}`;
-    this.#currentLine.style.transform = `translateY(${
-      (position.line - 1) * 20 - this.#textarea.scrollTop
-    }px)`;
-    this.#renderCode();
-  }
-
-  #syncScroll(): void {
-    const x = this.#textarea.scrollLeft;
-    const y = this.#textarea.scrollTop;
-    this.#highlight.style.transform = `translate(${-x}px, ${-y}px)`;
-    if (this.element.dataset.plainText === "true")
-      this.#renderLineNumbers(false);
-    const virtualStart = Number(this.#lineNumbers.dataset.virtualStart ?? 0);
-    this.#lineNumbers.style.transform = `translateY(${virtualStart * 20 - y}px)`;
-    const position = lineAndColumn(
-      this.#textarea.value,
-      this.#textarea.selectionStart,
-    );
-    this.#currentLine.style.transform = `translateY(${(position.line - 1) * 20 - y}px)`;
-    this.session.updateViewState({ scrollTop: y });
-  }
-
-  #selectionChanged(): void {
-    this.session.updateViewState({
-      selectionAnchor: this.#textarea.selectionStart,
-      selectionHead: this.#textarea.selectionEnd,
-    });
-    this.#renderCursor();
-  }
-
-  #onKeyDown(event: KeyboardEvent): void {
-    const mod = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-    if (mod && key === "s") {
-      event.preventDefault();
-      void this.session.save();
-    } else if (mod && key === "f" && !(event.metaKey && event.altKey)) {
-      event.preventDefault();
-      this.#openSearch(false);
-    } else if (
-      (event.ctrlKey && key === "h") ||
-      (event.metaKey && event.altKey && key === "f")
-    ) {
-      event.preventDefault();
-      this.#openSearch(true);
-    } else if (mod && key === "g") {
-      event.preventDefault();
-      this.#openGoTo();
-    } else if (mod && key === "z") {
-      event.preventDefault();
-      if (event.shiftKey) this.session.redo();
-      else this.session.undo();
-    } else if (event.key === "Enter" && !this.#textarea.readOnly) {
-      event.preventDefault();
-      const start = this.#textarea.selectionStart;
-      const before = this.#textarea.value.slice(0, start);
-      const line = before.slice(before.lastIndexOf("\n") + 1);
-      const indent = line.match(/^\s*/)?.[0] ?? "";
-      const extra = /[{[(]\s*$/.test(line) ? "  " : "";
-      this.#insertText(`\n${indent}${extra}`);
-    } else if (event.key === "Tab" && !this.#textarea.readOnly) {
-      event.preventDefault();
-      this.#insertText("  ");
-    }
-  }
-
-  #insertText(value: string): void {
-    this.#textarea.setRangeText(
-      value,
-      this.#textarea.selectionStart,
-      this.#textarea.selectionEnd,
-      "end",
-    );
-    this.session.setContent(this.#textarea.value, true);
-    this.#selectionChanged();
+  #renderPosition(): void {
+    const view = this.#view;
+    if (!view) return;
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head);
+    this.#position.textContent = `Ln ${line.number}, Col ${head - line.from + 1}`;
   }
 
   #runToolbarAction(action: string): void {
+    const view = this.#view;
     if (action === "save") void this.session.save();
-    else if (action === "find") this.#openSearch(false);
-    else if (action === "replace") this.#openSearch(true);
-    else if (action === "goto") this.#openGoTo();
+    else if (action === "find" && view) openSearchPanel(view);
+    else if (action === "replace") this.#openReplace();
+    else if (action === "goto" && view) gotoLine(view);
     else if (action === "wrap") {
-      const wrap = !this.session.snapshot().state.wordWrap;
-      this.session.updateViewState({ wordWrap: wrap });
+      const wordWrap = !this.session.snapshot().state.wordWrap;
+      this.session.updateViewState({ wordWrap });
       this.#render();
     }
   }
 
-  #openSearch(replace: boolean): void {
-    this.#searchPanel.hidden = false;
-    this.#searchPanel.dataset.replace = String(replace);
-    const selected = this.#textarea.value.slice(
-      this.#textarea.selectionStart,
-      this.#textarea.selectionEnd,
-    );
-    if (selected && !selected.includes("\n"))
-      this.#searchInput.value = selected;
-    (replace ? this.#replaceInput : this.#searchInput).focus();
-    this.#updateSearchCount();
+  #openReplace(): boolean {
+    const view = this.#view;
+    if (!view) return false;
+    openSearchPanel(view);
+    requestAnimationFrame(() => {
+      view.dom
+        .querySelector<HTMLInputElement>(".cm-search input[name='replace']")
+        ?.focus();
+    });
+    return true;
   }
 
-  #closeSearch(): void {
-    this.#searchPanel.hidden = true;
-    this.#textarea.focus();
-  }
-
-  #runSearchAction(action: string): void {
-    if (action === "close") this.#closeSearch();
-    else if (action === "next") this.#find(true);
-    else if (action === "previous") this.#find(false);
-    else if (action === "replace") this.#replaceCurrent();
-    else if (action === "replace-all") this.#replaceAll();
-  }
-
-  #matches(): Array<{ from: number; to: number }> {
-    const query = this.#searchInput.value;
-    if (!query) return [];
-    const source = this.#textarea.value.toLocaleLowerCase();
-    const target = query.toLocaleLowerCase();
-    const matches: Array<{ from: number; to: number }> = [];
-    let position = 0;
-    while ((position = source.indexOf(target, position)) >= 0) {
-      matches.push({ from: position, to: position + query.length });
-      position += Math.max(1, query.length);
-    }
-    return matches;
-  }
-
-  #updateSearchCount(): void {
-    const matches = this.#matches();
-    this.#searchResult.textContent = this.#searchInput.value
-      ? `${matches.length} result${matches.length === 1 ? "" : "s"}`
+  #updateLanguage(snapshot: SessionSnapshot): void {
+    const key = snapshot.syntaxHighlighting
+      ? snapshot.relativePath.toLowerCase()
       : "";
+    if (key === this.#languageKey) return;
+    this.#languageKey = key;
+    const request = ++this.#languageRequest;
+    const description = key
+      ? LanguageDescription.matchFilename(languages, snapshot.relativePath)
+      : null;
+    this.#languageLabel =
+      description?.name ?? languageForPath(snapshot.relativePath);
+    this.#languageSupport = description?.support ?? [];
+    this.#reconfigureLanguage();
+    if (!description || description.support) return;
+    void description
+      .load()
+      .then((support: LanguageSupport) => {
+        if (this.#destroyed || request !== this.#languageRequest) return;
+        this.#languageSupport = support;
+        this.#reconfigureLanguage();
+      })
+      .catch(() => {
+        // A failed optional language chunk leaves the document in plain text.
+      });
   }
 
-  #find(next: boolean): void {
-    const matches = this.#matches();
-    if (matches.length === 0) {
-      this.#searchResult.textContent = this.#searchInput.value
-        ? "No results"
-        : "";
-      return;
-    }
-    const edge = next
-      ? this.#textarea.selectionEnd
-      : this.#textarea.selectionStart;
-    const match = next
-      ? (matches.find((candidate) => candidate.from >= edge) ?? matches[0])
-      : ([...matches].reverse().find((candidate) => candidate.to <= edge) ??
-        matches.at(-1));
-    if (!match) return;
-    this.#textarea.focus();
-    this.#textarea.setSelectionRange(match.from, match.to);
-    const index = matches.indexOf(match);
-    this.#searchResult.textContent = `${index + 1}/${matches.length}`;
-    this.#selectionChanged();
+  #reconfigureLanguage(): void {
+    const view = this.#view;
+    if (!view) return;
+    view.dispatch({
+      effects: this.#languageCompartment.reconfigure(this.#languageSupport),
+    });
   }
+}
 
-  #replaceCurrent(): void {
-    const query = this.#searchInput.value;
-    const selected = this.#textarea.value.slice(
-      this.#textarea.selectionStart,
-      this.#textarea.selectionEnd,
-    );
-    if (selected.toLocaleLowerCase() !== query.toLocaleLowerCase()) {
-      this.#find(true);
-      return;
-    }
-    this.#textarea.setRangeText(
-      this.#replaceInput.value,
-      this.#textarea.selectionStart,
-      this.#textarea.selectionEnd,
-      "end",
-    );
-    this.session.setContent(this.#textarea.value, true);
-    this.#find(true);
-  }
-
-  #replaceAll(): void {
-    const query = this.#searchInput.value;
-    if (!query) return;
-    const pattern = new RegExp(escapeRegExp(query), "gi");
-    const replaced = this.#textarea.value.replace(
-      pattern,
-      this.#replaceInput.value,
-    );
-    if (replaced === this.#textarea.value) return;
-    this.#textarea.value = replaced;
-    this.session.setContent(replaced, true);
-    this.#searchResult.textContent = "Replaced all";
-  }
-
-  #openGoTo(): void {
-    this.#gotoForm.hidden = false;
-    this.#gotoInput.value = "";
-    this.#gotoInput.focus();
-  }
-
-  #goToLine(line: number): void {
-    if (!Number.isFinite(line) || line < 1) return;
-    const lines = this.#textarea.value.split("\n");
-    const target = Math.min(Math.floor(line), lines.length);
-    let position = 0;
-    for (let index = 1; index < target; index += 1)
-      position += (lines[index - 1]?.length ?? 0) + 1;
-    this.#textarea.focus();
-    this.#textarea.setSelectionRange(position, position);
-    this.#gotoForm.hidden = true;
-    this.#selectionChanged();
-  }
+function editableExtensions(canEdit: boolean): Extension {
+  return [EditorState.readOnly.of(!canEdit), EditorView.editable.of(canEdit)];
 }
 
 function statusLabel(status: EditorStatus): string {
@@ -1040,15 +1018,4 @@ function required<T extends Element>(root: ParentNode, selector: string): T {
   const element = root.querySelector<T>(selector);
   if (!element) throw new Error(`missing File Editor element: ${selector}`);
   return element;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function countLines(value: string): number {
-  let count = 1;
-  for (let index = 0; index < value.length; index += 1)
-    if (value.charCodeAt(index) === 10) count += 1;
-  return count;
 }
