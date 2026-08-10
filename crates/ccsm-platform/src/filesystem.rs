@@ -1,10 +1,15 @@
 use std::{
+    fs::OpenOptions,
+    io::Write,
     path::{Component, Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
 use ccsm_core::{
-    dto::{FileEntryDto, FileEntryKind},
+    dto::{
+        FileDocumentDto, FileEntryDto, FileEntryKind, FileLineEnding, FileOpenStatus,
+        WriteFileRequest, WriteFileResultDto,
+    },
     error::{BackendError, BackendResult},
     ports::{FileSystemBackend, RootDescriptor},
 };
@@ -202,6 +207,281 @@ impl FileSystemBackend for LocalFileSystemBackend {
         });
         Ok(entries)
     }
+
+    fn read_file(
+        &self,
+        root: &RootDescriptor,
+        relative_path: &str,
+    ) -> BackendResult<FileDocumentDto> {
+        let path = existing_file_path(root, relative_path)?;
+        let metadata = std::fs::metadata(&path)
+            .map_err(|error| BackendError::Platform(format!("read file metadata: {error}")))?;
+        let size = metadata.len();
+        if size > MAX_EDITABLE_FILE_SIZE {
+            return Ok(file_document_without_content(
+                root,
+                relative_path,
+                size,
+                FileOpenStatus::TooLarge,
+                "File is larger than 5 MiB.",
+            ));
+        }
+
+        let bytes = std::fs::read(&path)
+            .map_err(|error| BackendError::Platform(format!("read file: {error}")))?;
+        let utf8_bom = bytes.starts_with(UTF8_BOM);
+        let body = if utf8_bom {
+            &bytes[UTF8_BOM.len()..]
+        } else {
+            &bytes
+        };
+        let line_ending = if body.windows(2).any(|pair| pair == b"\r\n") {
+            FileLineEnding::CrLf
+        } else {
+            FileLineEnding::Lf
+        };
+        if body.contains(&0) {
+            return Ok(FileDocumentDto {
+                space_id: root.space_id.clone(),
+                relative_path: relative_path.to_string(),
+                content: None,
+                status: FileOpenStatus::Binary,
+                reason: Some("Binary files are not supported.".into()),
+                size: size as f64,
+                revision: Some(file_revision(&bytes, &metadata)),
+                utf8_bom,
+                line_ending,
+                syntax_highlighting: false,
+            });
+        }
+        let decoded = match std::str::from_utf8(body) {
+            Ok(value) => value,
+            Err(_) => {
+                return Ok(FileDocumentDto {
+                    space_id: root.space_id.clone(),
+                    relative_path: relative_path.to_string(),
+                    content: None,
+                    status: FileOpenStatus::UnsupportedEncoding,
+                    reason: Some("Only UTF-8 encoded text files are supported.".into()),
+                    size: size as f64,
+                    revision: Some(file_revision(&bytes, &metadata)),
+                    utf8_bom,
+                    line_ending,
+                    syntax_highlighting: false,
+                });
+            }
+        };
+        let read_only = metadata.permissions().readonly();
+        let large = size > SYNTAX_HIGHLIGHT_FILE_SIZE;
+        Ok(FileDocumentDto {
+            space_id: root.space_id.clone(),
+            relative_path: relative_path.to_string(),
+            content: Some(normalize_line_endings(decoded)),
+            status: if read_only {
+                FileOpenStatus::ReadOnly
+            } else {
+                FileOpenStatus::Editable
+            },
+            reason: if read_only {
+                Some("File is read-only.".into())
+            } else if large {
+                Some("Large file: syntax highlighting is disabled.".into())
+            } else {
+                None
+            },
+            size: size as f64,
+            revision: Some(file_revision(&bytes, &metadata)),
+            utf8_bom,
+            line_ending,
+            syntax_highlighting: !large,
+        })
+    }
+
+    fn write_file(
+        &self,
+        root: &RootDescriptor,
+        request: &WriteFileRequest,
+    ) -> BackendResult<WriteFileResultDto> {
+        if request.space_id != root.space_id {
+            return Err(BackendError::Conflict(
+                "file write Space does not match the active root".into(),
+            ));
+        }
+        let relative = validated_file_relative_path(&request.relative_path)?;
+        let root_path = canonical_root(root)?;
+        let unresolved = root_path.join(&relative);
+        let (path, exists) = match unresolved.canonicalize() {
+            Ok(path) => {
+                if !path.starts_with(&root_path) {
+                    return Err(BackendError::Invalid(
+                        "file escapes the canonical Space root".into(),
+                    ));
+                }
+                (path, true)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if !request.recreate {
+                    return Err(BackendError::Conflict(
+                        "File no longer exists on disk.".into(),
+                    ));
+                }
+                let parent = unresolved.parent().ok_or_else(|| {
+                    BackendError::Invalid("file path has no parent directory".into())
+                })?;
+                let parent = parent.canonicalize().map_err(|error| {
+                    BackendError::NotFound(format!("file parent directory: {error}"))
+                })?;
+                if !parent.starts_with(&root_path) {
+                    return Err(BackendError::Invalid(
+                        "file parent escapes the canonical Space root".into(),
+                    ));
+                }
+                let name = relative
+                    .file_name()
+                    .ok_or_else(|| BackendError::Invalid("file path must name a file".into()))?;
+                (parent.join(name), false)
+            }
+            Err(error) => {
+                return Err(BackendError::Platform(format!(
+                    "canonicalize file: {error}"
+                )));
+            }
+        };
+
+        if exists {
+            if !path.is_file() {
+                return Err(BackendError::Invalid("path is not a file".into()));
+            }
+            let metadata = std::fs::metadata(&path)
+                .map_err(|error| BackendError::Platform(format!("read file metadata: {error}")))?;
+            if metadata.permissions().readonly() {
+                return Err(BackendError::Platform("file is read-only".into()));
+            }
+            let current = std::fs::read(&path)
+                .map_err(|error| BackendError::Platform(format!("read file: {error}")))?;
+            let revision = file_revision(&current, &metadata);
+            if !request.overwrite && request.expected_revision.as_deref() != Some(revision.as_str())
+            {
+                return Err(BackendError::Conflict(
+                    "File changed on disk since it was loaded.".into(),
+                ));
+            }
+        }
+
+        let normalized = normalize_line_endings(&request.content);
+        let encoded = match request.line_ending {
+            FileLineEnding::Lf => normalized,
+            FileLineEnding::CrLf => normalized.replace('\n', "\r\n"),
+        };
+        let mut bytes = Vec::with_capacity(encoded.len() + UTF8_BOM.len());
+        if request.utf8_bom {
+            bytes.extend_from_slice(UTF8_BOM);
+        }
+        bytes.extend_from_slice(encoded.as_bytes());
+        if bytes.len() as u64 > MAX_EDITABLE_FILE_SIZE {
+            return Err(BackendError::Invalid(
+                "edited file would exceed the 5 MiB limit".into(),
+            ));
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(request.recreate)
+            .open(&path)
+            .map_err(|error| BackendError::Platform(format!("open file for writing: {error}")))?;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| BackendError::Platform(format!("write file: {error}")))?;
+        let metadata = file.metadata().map_err(|error| {
+            BackendError::Platform(format!("read saved file metadata: {error}"))
+        })?;
+        Ok(WriteFileResultDto {
+            space_id: root.space_id.clone(),
+            relative_path: request.relative_path.clone(),
+            revision: file_revision(&bytes, &metadata),
+            size: bytes.len() as f64,
+        })
+    }
+}
+
+const UTF8_BOM: &[u8; 3] = b"\xEF\xBB\xBF";
+const SYNTAX_HIGHLIGHT_FILE_SIZE: u64 = 1024 * 1024;
+const MAX_EDITABLE_FILE_SIZE: u64 = 5 * 1024 * 1024;
+
+fn canonical_root(root: &RootDescriptor) -> BackendResult<PathBuf> {
+    PathBuf::from(&root.root_path)
+        .canonicalize()
+        .map_err(|error| BackendError::Platform(format!("canonicalize Space root: {error}")))
+}
+
+fn existing_file_path(root: &RootDescriptor, relative_path: &str) -> BackendResult<PathBuf> {
+    let root_path = canonical_root(root)?;
+    let relative = validated_file_relative_path(relative_path)?;
+    let path = root_path.join(&relative).canonicalize().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            BackendError::NotFound(format!("file {relative_path}"))
+        } else {
+            BackendError::Platform(format!("canonicalize file: {error}"))
+        }
+    })?;
+    if !path.starts_with(&root_path) {
+        return Err(BackendError::Invalid(
+            "file escapes the canonical Space root".into(),
+        ));
+    }
+    if !path.is_file() {
+        return Err(BackendError::Invalid(format!(
+            "path is not a file: {}",
+            path.display()
+        )));
+    }
+    Ok(path)
+}
+
+fn validated_file_relative_path(value: &str) -> BackendResult<PathBuf> {
+    let path = validated_relative_path(value)?;
+    if path.as_os_str().is_empty() || path.file_name().is_none() {
+        return Err(BackendError::Invalid("file path must name a file".into()));
+    }
+    Ok(path)
+}
+
+fn normalize_line_endings(value: &str) -> String {
+    value.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn file_revision(bytes: &[u8], metadata: &std::fs::Metadata) -> String {
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    let hash = bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    format!("{modified:x}-{:x}-{hash:x}", bytes.len())
+}
+
+fn file_document_without_content(
+    root: &RootDescriptor,
+    relative_path: &str,
+    size: u64,
+    status: FileOpenStatus,
+    reason: &str,
+) -> FileDocumentDto {
+    FileDocumentDto {
+        space_id: root.space_id.clone(),
+        relative_path: relative_path.to_string(),
+        content: None,
+        status,
+        reason: Some(reason.into()),
+        size: size as f64,
+        revision: None,
+        utf8_bom: false,
+        line_ending: FileLineEnding::Lf,
+        syntax_highlighting: false,
+    }
 }
 
 fn validated_relative_path(value: &str) -> BackendResult<PathBuf> {
@@ -344,6 +624,14 @@ fn persisted_path(path: &Path) -> String {
 mod host_directory_tests {
     use super::*;
 
+    fn root_descriptor(path: &Path) -> RootDescriptor {
+        RootDescriptor {
+            space_id: "space-1".into(),
+            root_id: "root-1".into(),
+            root_path: path.to_string_lossy().into_owned(),
+        }
+    }
+
     #[test]
     fn browses_only_visible_child_directories() {
         let root = tempfile::tempdir().unwrap();
@@ -384,6 +672,95 @@ mod host_directory_tests {
             filesystem
                 .create_host_directory(root.path().to_string_lossy().as_ref(), "../escape")
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn reads_and_saves_utf8_bom_crlf_without_changing_format() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("notes.txt");
+        std::fs::write(&path, b"\xEF\xBB\xBFfirst\r\nsecond").unwrap();
+        let filesystem = LocalFileSystemBackend::new();
+        let descriptor = root_descriptor(root.path());
+
+        let loaded = filesystem.read_file(&descriptor, "notes.txt").unwrap();
+        assert_eq!(loaded.content.as_deref(), Some("first\nsecond"));
+        assert!(loaded.utf8_bom);
+        assert_eq!(loaded.line_ending, FileLineEnding::CrLf);
+
+        let saved = filesystem
+            .write_file(
+                &descriptor,
+                &WriteFileRequest {
+                    space_id: descriptor.space_id.clone(),
+                    relative_path: "notes.txt".into(),
+                    content: "first\n中文".into(),
+                    expected_revision: loaded.revision,
+                    utf8_bom: true,
+                    line_ending: FileLineEnding::CrLf,
+                    overwrite: false,
+                    recreate: false,
+                },
+            )
+            .unwrap();
+
+        assert!(!saved.revision.is_empty());
+        assert_eq!(
+            std::fs::read(path).unwrap(),
+            b"\xEF\xBB\xBFfirst\r\n\xE4\xB8\xAD\xE6\x96\x87"
+        );
+    }
+
+    #[test]
+    fn rejects_stale_writes_until_overwrite_is_explicit() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("conflict.txt");
+        std::fs::write(&path, "original").unwrap();
+        let filesystem = LocalFileSystemBackend::new();
+        let descriptor = root_descriptor(root.path());
+        let loaded = filesystem.read_file(&descriptor, "conflict.txt").unwrap();
+        std::fs::write(&path, "external").unwrap();
+        let mut request = WriteFileRequest {
+            space_id: descriptor.space_id.clone(),
+            relative_path: "conflict.txt".into(),
+            content: "local".into(),
+            expected_revision: loaded.revision,
+            utf8_bom: false,
+            line_ending: FileLineEnding::Lf,
+            overwrite: false,
+            recreate: false,
+        };
+
+        assert!(matches!(
+            filesystem.write_file(&descriptor, &request),
+            Err(BackendError::Conflict(_))
+        ));
+        request.overwrite = true;
+        filesystem.write_file(&descriptor, &request).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "local");
+    }
+
+    #[test]
+    fn classifies_binary_and_non_utf8_files_as_not_editable() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("binary.bin"), [1, 0, 2]).unwrap();
+        std::fs::write(root.path().join("legacy.txt"), [0xff, 0xfe]).unwrap();
+        let filesystem = LocalFileSystemBackend::new();
+        let descriptor = root_descriptor(root.path());
+
+        assert_eq!(
+            filesystem
+                .read_file(&descriptor, "binary.bin")
+                .unwrap()
+                .status,
+            FileOpenStatus::Binary
+        );
+        assert_eq!(
+            filesystem
+                .read_file(&descriptor, "legacy.txt")
+                .unwrap()
+                .status,
+            FileOpenStatus::UnsupportedEncoding
         );
     }
 }

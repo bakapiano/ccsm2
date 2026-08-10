@@ -7,6 +7,7 @@ export type TabIconKind =
   | "browser"
   | "claude"
   | "codex"
+  | "document"
   | "files"
   | "git"
   | "shell";
@@ -16,6 +17,13 @@ const ICONS: Record<Exclude<TabIconKind, "claude" | "codex">, string> = {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="9"></circle>
       <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"></path>
+    </svg>`,
+  document: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 3h8l4 4v14H6z"></path>
+      <path d="M14 3v5h5"></path>
+      <line x1="9" y1="12" x2="15" y2="12"></line>
+      <line x1="9" y1="16" x2="15" y2="16"></line>
     </svg>`,
   files: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -50,6 +58,8 @@ export function resolveTabIconKind(
       return "browser";
     case "file-explorer":
       return "files";
+    case "file-editor":
+      return "document";
     case "git":
       return "git";
     case "cli-session": {
@@ -69,11 +79,20 @@ export class CcsmTabRenderer implements ITabRenderer {
   readonly element = document.createElement("div");
   readonly #label = document.createElement("span");
   readonly #close = document.createElement("button");
+  readonly #tooltip: string | null;
   #titleSubscription: { dispose(): void } | null = null;
 
   constructor(tab: TabDto, cliSessions: readonly CliSessionDto[]) {
     this.element.className = "ccsm-tab";
     this.element.dataset.tabKind = tab.kind;
+    this.#tooltip =
+      tab.kind === "file-editor" &&
+      tab.state &&
+      typeof tab.state === "object" &&
+      "relativePath" in tab.state &&
+      typeof (tab.state as { relativePath?: unknown }).relativePath === "string"
+        ? (tab.state as { relativePath: string }).relativePath
+        : null;
 
     const iconKind = resolveTabIconKind(tab, cliSessions);
     const icon = document.createElement("span");
@@ -118,7 +137,7 @@ export class CcsmTabRenderer implements ITabRenderer {
 
   #renderTitle(title: string): void {
     this.#label.textContent = title;
-    this.element.title = title;
+    this.element.title = this.#tooltip ?? title;
     this.#close.setAttribute("aria-label", `Close ${title}`);
   }
 }

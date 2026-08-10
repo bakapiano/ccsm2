@@ -436,7 +436,7 @@ export class Terminal implements ITerminalCore {
       this.textarea.setAttribute("aria-label", "Terminal input");
       // Keep a real one-cell layout box for the platform IME. It is invisible
       // and pointer-transparent, but gets positioned over the terminal cursor.
-      this.textarea.style.position = "fixed";
+      this.textarea.style.position = "absolute";
       this.textarea.style.left = "0";
       this.textarea.style.top = "0";
       this.textarea.style.width = "0";
@@ -459,7 +459,7 @@ export class Terminal implements ITerminalCore {
       this.compositionView.setAttribute("data-ghostty-composition", "");
       this.compositionView.setAttribute("aria-hidden", "true");
       this.compositionView.style.display = "none";
-      this.compositionView.style.position = "fixed";
+      this.compositionView.style.position = "absolute";
       this.compositionView.style.boxSizing = "border-box";
       this.compositionView.style.padding = "0";
       this.compositionView.style.margin = "0";
@@ -858,7 +858,12 @@ export class Terminal implements ITerminalCore {
 
     const cursor = this.wasmTerm.getCursor();
     const metrics = this.renderer.getMetrics();
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = {
+      left: this.canvas.offsetLeft,
+      top: this.canvas.offsetTop,
+      width: this.canvas.offsetWidth,
+      height: this.canvas.offsetHeight,
+    };
     const anchor = calculateInputAnchor(
       rect,
       cursor.x,
@@ -873,7 +878,7 @@ export class Terminal implements ITerminalCore {
     if (!force && key === this.lastInputAnchorKey) return;
 
     const textarea = this.textarea;
-    textarea.style.position = "fixed";
+    textarea.style.position = "absolute";
     textarea.style.left = `${anchor.left}px`;
     textarea.style.top = `${anchor.top}px`;
     textarea.style.width = `${anchor.width}px`;
@@ -911,7 +916,12 @@ export class Terminal implements ITerminalCore {
 
     const cursor = this.wasmTerm.getCursor();
     const metrics = this.renderer.getMetrics();
-    const canvasRect = this.canvas.getBoundingClientRect();
+    const canvasRect = {
+      left: this.canvas.offsetLeft,
+      top: this.canvas.offsetTop,
+      width: this.canvas.offsetWidth,
+      height: this.canvas.offsetHeight,
+    };
     const anchor = calculateInputAnchor(
       canvasRect,
       cursor.x,
@@ -932,7 +942,10 @@ export class Terminal implements ITerminalCore {
     view.style.minWidth = `${anchor.width}px`;
     view.style.height = `${anchor.height}px`;
     view.style.lineHeight = `${anchor.height}px`;
-    view.style.maxWidth = `${Math.max(anchor.width, canvasRect.right - anchor.left)}px`;
+    view.style.maxWidth = `${Math.max(
+      anchor.width,
+      canvasRect.left + canvasRect.width - anchor.left,
+    )}px`;
     view.style.fontFamily = this.options.fontFamily;
     view.style.fontSize = `${this.options.fontSize}px`;
     view.style.fontStyle = "normal";

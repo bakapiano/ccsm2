@@ -5,22 +5,28 @@ type WindowAction = "minimize" | "maximize" | "close";
 export function runWindowAction(
   action: WindowAction,
   client: WindowChromeClient,
+  requestClose?: () => void,
 ): Promise<void> {
   if (action === "minimize") return client.minimize();
   if (action === "maximize") return client.toggleMaximize();
+  if (requestClose) {
+    requestClose();
+    return Promise.resolve();
+  }
   return client.close();
 }
 
 export function bindWindowChrome(
   root: HTMLElement,
   client: WindowChromeClient,
+  requestClose?: () => void,
 ): void {
   root
     .querySelectorAll<HTMLButtonElement>("[data-window-action]")
     .forEach((button) => {
       button.addEventListener("click", () => {
         const action = button.dataset.windowAction as WindowAction | undefined;
-        if (action) void runWindowAction(action, client);
+        if (action) void runWindowAction(action, client, requestClose);
       });
     });
 

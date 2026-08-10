@@ -4,6 +4,7 @@
 
 - Tab header 显示类型图标；Claude Code 与 Codex 使用原版 CCSM 的彩色品牌图标。
 - Tab header 提供独立关闭按钮。
+- 每个Dockview group的Tab header最右侧提供纯加号New Tab操作；最后一个Tab关闭后保留空group header，使New Tab仍可用。
 - 右键菜单依次提供 Close、Close Others、Close to the Right 和 Close All。
 - Close Others、Close to the Right 与 Close All 作用于当前 Dockview group。
 - 关闭动作从Space删除Tab并持久化新布局；应用内部的Space切换只卸载视图。
@@ -34,7 +35,7 @@
 - 以 Space root 为 capability root，并可定位到 Git tree 中选定的 repository 或 Space-relative 子目录。
 - 保存展开节点、选择项和当前路径，并自动协调 watcher 变化。
 - 首版支持 Copy Absolute/Relative Path、Reveal in Explorer/Finder、Open Terminal Here 和 Create CLI Tab Here。
-- 首版文件树采用只读导航；create、rename、delete、move、内容预览和编辑进入后续版本。
+- 文件树采用只读导航；单击普通文件时打开持久的 File Editor Tab。create、rename、delete 和 move 进入后续版本。
 - Duplicate复制当前 Space-relative root、展开节点和选择状态。
 
 ## Git

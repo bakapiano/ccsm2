@@ -140,8 +140,7 @@ export class SpaceTreeView {
     open.className = "space-item";
     open.type = "button";
     open.title = space.rootPath;
-    open.innerHTML =
-      '<span class="space-icon" aria-hidden="true"></span><span class="space-name"></span>';
+    open.innerHTML = '<span class="space-name"></span>';
     open.querySelector(".space-name")!.textContent = space.name;
     open.addEventListener(
       "click",

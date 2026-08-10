@@ -36,6 +36,7 @@ function createBuiltInProviders(deps: AppDependencies) {
     createCliSessionProvider(deps.cli),
     createBrowserProvider(deps.browser),
     createFileExplorerProvider(deps.files),
+    createFileEditorProvider(deps.files),
     createGitProvider(deps.git),
   ];
 }
@@ -54,6 +55,7 @@ function createBuiltInProviders(deps: AppDependencies) {
 | `cli-session`   | terminal view preferences          | AppBackend CliSession    |
 | `browser`       | URL、title、zoom                   | Tauri BrowserSurface     |
 | `file-explorer` | relative root、expanded、selection | Space filesystem service |
+| `file-editor`   | path、selection、scroll、wrap      | Space filesystem service |
 | `git`           | section collapse、selection        | GitStatusService         |
 
 Provider state随TabRecord持久化。PTY、WebView、watcher和CLI process使用独立resource identity与生命周期。

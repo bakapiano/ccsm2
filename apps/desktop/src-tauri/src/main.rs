@@ -17,32 +17,26 @@ fn main() {
         eprintln!("CCSM process-tree containment failed: {error}");
         std::process::exit(1);
     }
-    hide_standalone_console_window();
+    detach_standalone_console();
     ccsm_desktop::run();
 }
 
 #[cfg(windows)]
-fn hide_standalone_console_window() {
-    use windows_sys::Win32::{
-        System::Console::{GetConsoleProcessList, GetConsoleWindow},
-        UI::WindowsAndMessaging::{SW_HIDE, ShowWindow},
-    };
+fn detach_standalone_console() {
+    use windows_sys::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
 
     let mut process_ids = [0_u32; 2];
     let process_count =
         unsafe { GetConsoleProcessList(process_ids.as_mut_ptr(), process_ids.len() as u32) };
-    if should_hide_standalone_console(process_count) {
-        let window = unsafe { GetConsoleWindow() };
-        if !window.is_null() {
-            unsafe { ShowWindow(window, SW_HIDE) };
-        }
+    if should_detach_standalone_console(process_count) {
+        unsafe { FreeConsole() };
     }
 }
 
 #[cfg(not(windows))]
-fn hide_standalone_console_window() {}
+fn detach_standalone_console() {}
 
-fn should_hide_standalone_console(process_count: u32) -> bool {
+fn should_detach_standalone_console(process_count: u32) -> bool {
     process_count == 1
 }
 
@@ -51,9 +45,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hides_only_a_console_created_for_the_desktop_process() {
-        assert!(should_hide_standalone_console(1));
-        assert!(!should_hide_standalone_console(0));
-        assert!(!should_hide_standalone_console(2));
+    fn detaches_only_a_console_created_for_the_desktop_process() {
+        assert!(should_detach_standalone_console(1));
+        assert!(!should_detach_standalone_console(0));
+        assert!(!should_detach_standalone_console(2));
     }
 }

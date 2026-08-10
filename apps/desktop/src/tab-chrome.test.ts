@@ -84,6 +84,12 @@ describe("CCSM Tab chrome", () => {
     expect(
       resolveTabIconKind(tab("file-explorer", "Files", "files-1"), sessions),
     ).toBe("files");
+    expect(
+      resolveTabIconKind(
+        tab("file-editor", "main.ts", "src/main.ts"),
+        sessions,
+      ),
+    ).toBe("document");
     expect(resolveTabIconKind(tab("git", "Git", "git-1"), sessions)).toBe(
       "git",
     );

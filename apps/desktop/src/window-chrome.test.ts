@@ -10,6 +10,7 @@ describe("frameless window chrome", () => {
       toggleMaximize: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
+      subscribeCloseRequested: mock(async () => () => {}),
     };
 
     await runWindowAction("minimize", client);
@@ -27,6 +28,7 @@ describe("frameless window chrome", () => {
       toggleMaximize: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
+      subscribeCloseRequested: mock(async () => () => {}),
     };
 
     await client.setTheme("dark");
@@ -34,5 +36,21 @@ describe("frameless window chrome", () => {
 
     expect(client.setTheme).toHaveBeenNthCalledWith(1, "dark");
     expect(client.setTheme).toHaveBeenNthCalledWith(2, "light");
+  });
+
+  test("lets the application confirm a close before invoking the adapter", async () => {
+    const requestClose = mock(() => {});
+    const client: WindowChromeClient = {
+      minimize: mock(async () => {}),
+      toggleMaximize: mock(async () => {}),
+      setTheme: mock(async () => {}),
+      close: mock(async () => {}),
+      subscribeCloseRequested: mock(async () => () => {}),
+    };
+
+    await runWindowAction("close", client, requestClose);
+
+    expect(requestClose).toHaveBeenCalledTimes(1);
+    expect(client.close).toHaveBeenCalledTimes(0);
   });
 });

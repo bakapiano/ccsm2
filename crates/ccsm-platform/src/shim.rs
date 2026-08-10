@@ -61,7 +61,8 @@ fn provider_from_identity(name: &str, requested: Option<&str>) -> Option<Provide
 pub fn run_cli_shim(provider: ProviderKind) -> i32 {
     let user_args = env::args_os().skip(1).collect::<Vec<_>>();
     let passthrough = env::var_os(WRAPPER_ACTIVE).is_some();
-    let real = match resolve_real_cli(provider, !passthrough) {
+    let search_path = provider_search_path();
+    let real = match resolve_real_cli(provider, !passthrough, &search_path.directories) {
         Ok(path) => path,
         Err(message) => {
             eprintln!("ccsm: {message}");
@@ -89,7 +90,7 @@ pub fn run_cli_shim(provider: ProviderKind) -> i32 {
     {
         ensure_claude_model(&mut args, configured_ccp_model());
     }
-    launch_real_cli(provider, &real, &args)
+    launch_real_cli(provider, &real, &args, search_path.value.as_ref())
 }
 
 fn ensure_claude_model(args: &mut Vec<OsString>, model: Option<String>) {
@@ -141,12 +142,20 @@ fn has_hook_context() -> bool {
 fn hook_command() -> String {
     #[cfg(windows)]
     {
-        "ccsm-hook.exe hook report".into()
+        let reporter = env::var_os("CCSM_HOOK_REPORTER")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("ccsm-hook.exe"));
+        windows_hook_command(&reporter)
     }
     #[cfg(not(windows))]
     {
         "ccsm-hook hook report".into()
     }
+}
+
+#[cfg(windows)]
+fn windows_hook_command(reporter: &Path) -> String {
+    format!("\"{}\" hook report", reporter.display())
 }
 
 fn build_claude_args(
@@ -278,11 +287,7 @@ fn build_codex_args(
     native_session_id: Option<String>,
 ) -> Vec<OsString> {
     let hook_command = hook_command.replace('\'', "");
-    let mut args = vec![
-        "--enable".into(),
-        "hooks".into(),
-        "--dangerously-bypass-hook-trust".into(),
-    ];
+    let mut args = vec!["--enable".into(), "hooks".into()];
     for event in CODEX_HOOK_EVENTS {
         args.push("-c".into());
         args.push(
@@ -292,6 +297,9 @@ fn build_codex_args(
             .into(),
         );
     }
+    // Codex 0.144 evaluates the invocation trust bypass against hook
+    // definitions already loaded from preceding CLI config overrides.
+    args.push("--dangerously-bypass-hook-trust".into());
     args.push("--no-alt-screen".into());
     if user_args.is_empty()
         && let Some(native_session_id) = native_session_id
@@ -307,6 +315,7 @@ fn build_codex_args(
 fn resolve_real_cli(
     provider: ProviderKind,
     prefer_local_launcher: bool,
+    directories: &[PathBuf],
 ) -> Result<PathBuf, String> {
     let commands = launcher_names(provider, prefer_local_launcher);
     let custom_key = match provider {
@@ -324,24 +333,139 @@ fn resolve_real_cli(
     let self_dir = env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
-    let path = env::var_os("PATH").ok_or_else(|| "PATH is not set".to_string())?;
-    let directories = env::split_paths(&path).collect::<Vec<_>>();
-    for command in &commands {
-        for directory in &directories {
-            if same_directory(self_dir.as_deref(), directory) {
-                continue;
-            }
-            for candidate in command_candidates(&directory, command) {
-                if candidate.is_file() {
-                    return Ok(candidate);
-                }
-            }
-        }
+    if let Some(program) = find_cli_in_directories(&commands, directories, self_dir.as_deref()) {
+        return Ok(program);
     }
     Err(format!(
         "{} was not found outside the CCSM shim directory",
         commands.join(" or ")
     ))
+}
+
+struct ProviderSearchPath {
+    value: Option<OsString>,
+    directories: Vec<PathBuf>,
+}
+
+fn provider_search_path() -> ProviderSearchPath {
+    let mut values = env::var_os("PATH").into_iter().collect::<Vec<_>>();
+    #[cfg(windows)]
+    values.extend(current_windows_path_values().into_iter().flatten());
+    provider_search_path_from_values(values)
+}
+
+fn provider_search_path_from_values(values: Vec<OsString>) -> ProviderSearchPath {
+    let mut directories: Vec<PathBuf> = Vec::new();
+    for directory in values.iter().flat_map(env::split_paths) {
+        if !directories
+            .iter()
+            .any(|existing| same_directory(Some(existing), &directory))
+        {
+            directories.push(directory);
+        }
+    }
+    let value = join_path_values(&values);
+    ProviderSearchPath { value, directories }
+}
+
+#[cfg(windows)]
+fn join_path_values(values: &[OsString]) -> Option<OsString> {
+    let mut joined = OsString::new();
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            joined.push(";");
+        }
+        joined.push(value);
+    }
+    (!values.is_empty()).then_some(joined)
+}
+
+#[cfg(not(windows))]
+fn join_path_values(values: &[OsString]) -> Option<OsString> {
+    values.first().cloned()
+}
+
+fn find_cli_in_directories(
+    commands: &[&str],
+    directories: &[PathBuf],
+    self_dir: Option<&Path>,
+) -> Option<PathBuf> {
+    commands.iter().find_map(|command| {
+        directories.iter().find_map(|directory| {
+            if same_directory(self_dir, directory) {
+                return None;
+            }
+            command_candidates(directory, command)
+                .into_iter()
+                .find(|candidate| candidate.is_file())
+        })
+    })
+}
+
+#[cfg(windows)]
+fn current_windows_path_values() -> [Option<OsString>; 2] {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    [
+        read_windows_registry_path(HKEY_CURRENT_USER, "Environment"),
+        read_windows_registry_path(
+            HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    ]
+}
+
+#[cfg(windows)]
+fn read_windows_registry_path(
+    root: windows_sys::Win32::System::Registry::HKEY,
+    subkey: &str,
+) -> Option<OsString> {
+    use std::{os::windows::ffi::OsStringExt, ptr};
+
+    use windows_sys::Win32::{
+        Foundation::ERROR_SUCCESS,
+        System::Registry::{RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegGetValueW},
+    };
+
+    let subkey = subkey.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let value_name = "Path".encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let flags = RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ;
+    let mut byte_count = 0_u32;
+    let status = unsafe {
+        RegGetValueW(
+            root,
+            subkey.as_ptr(),
+            value_name.as_ptr(),
+            flags,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut byte_count,
+        )
+    };
+    if status != ERROR_SUCCESS || byte_count == 0 {
+        return None;
+    }
+
+    let mut buffer = vec![0_u16; (byte_count as usize).div_ceil(2)];
+    let status = unsafe {
+        RegGetValueW(
+            root,
+            subkey.as_ptr(),
+            value_name.as_ptr(),
+            flags,
+            ptr::null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut byte_count,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let length = buffer
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(buffer.len());
+    Some(OsString::from_wide(&buffer[..length]))
 }
 
 fn launcher_names(provider: ProviderKind, prefer_local_launcher: bool) -> Vec<&'static str> {
@@ -382,13 +506,21 @@ fn command_candidates(directory: &Path, command: &str) -> Vec<PathBuf> {
     vec![directory.join(command)]
 }
 
-fn launch_real_cli(provider: ProviderKind, program: &Path, args: &[OsString]) -> i32 {
+fn launch_real_cli(
+    provider: ProviderKind,
+    program: &Path,
+    args: &[OsString],
+    search_path: Option<&OsString>,
+) -> i32 {
     let mut command = platform_command(program, args);
     command
         .env(WRAPPER_ACTIVE, "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    if let Some(search_path) = search_path {
+        command.env("PATH", search_path);
+    }
     if provider == ProviderKind::Claude
         && let Some(base_url) =
             env::var_os("CCSM_CLAUDE_BASE_URL").filter(|value| !value.is_empty())
@@ -547,6 +679,19 @@ mod tests {
                 .any(|value| value.contains("hooks.StopFailure")),
             "Codex must not receive the Claude-only StopFailure hook"
         );
+        let last_hook = strings
+            .iter()
+            .rposition(|value| value.contains("hooks."))
+            .expect("inline hook config");
+        let bypass = strings
+            .iter()
+            .position(|value| *value == "--dangerously-bypass-hook-trust")
+            .expect("hook trust bypass");
+        assert!(
+            bypass > last_hook,
+            "Codex 0.144 applies the invocation trust bypass only after inline hook definitions"
+        );
+        assert!(bypass < strings.len() - 2, "bypass must precede resume");
     }
 
     #[test]
@@ -587,6 +732,16 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_hook_command_uses_the_absolute_reporter_path() {
+        let reporter = Path::new(r"C:\Program Files\CCSM\ccsm-desktop.exe");
+        assert_eq!(
+            windows_hook_command(reporter),
+            r#""C:\Program Files\CCSM\ccsm-desktop.exe" hook report"#
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn preferred_launcher_wins_even_when_raw_cli_is_earlier_on_path() {
         let directory = tempfile::tempdir().unwrap();
         let raw_dir = directory.path().join("raw");
@@ -597,14 +752,34 @@ mod tests {
         std::fs::write(launcher_dir.join("ccp.cmd"), []).unwrap();
         let commands = launcher_names(ProviderKind::Claude, true);
         let directories = [raw_dir, launcher_dir.clone()];
-        let resolved = commands.iter().find_map(|command| {
-            directories.iter().find_map(|directory| {
-                command_candidates(directory, command)
-                    .into_iter()
-                    .find(|candidate| candidate.is_file())
-            })
-        });
+        let resolved = find_cli_in_directories(&commands, &directories, None);
         assert_eq!(resolved, Some(launcher_dir.join("ccp.cmd")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn fresh_windows_path_extends_a_stale_inherited_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let stale_dir = directory.path().join("stale");
+        let fresh_dir = directory.path().join("fresh");
+        std::fs::create_dir_all(&stale_dir).unwrap();
+        std::fs::create_dir_all(&fresh_dir).unwrap();
+        std::fs::write(fresh_dir.join("cxp.cmd"), []).unwrap();
+
+        let search_path = provider_search_path_from_values(vec![
+            stale_dir.as_os_str().to_owned(),
+            fresh_dir.as_os_str().to_owned(),
+        ]);
+        let commands = launcher_names(ProviderKind::Codex, true);
+        let resolved = find_cli_in_directories(&commands, &search_path.directories, None);
+
+        assert_eq!(resolved, Some(fresh_dir.clone().join("cxp.cmd")));
+        assert!(
+            search_path
+                .value
+                .as_ref()
+                .is_some_and(|value| env::split_paths(value).any(|path| path == fresh_dir))
+        );
     }
 
     #[cfg(windows)]

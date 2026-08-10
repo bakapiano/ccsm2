@@ -1,10 +1,21 @@
-import { DockviewComponent, type SerializedDockview } from "dockview";
+import {
+  DockviewComponent,
+  type DockviewGroupPanel,
+  type IDockviewPanel,
+  type SerializedDockview,
+} from "dockview";
 import "dockview/dist/styles/dockview.css";
 
 import { AgentListView } from "./agent-list";
 import type { AgentSummaryDto } from "./generated/AgentSummaryDto";
 import type { BootstrapDto } from "./generated/BootstrapDto";
 import { DirectoryPickerDialog } from "./directory-picker";
+import { DockNewTabAction, dockNewTabMenuPosition } from "./dock-new-tab";
+import {
+  distinctFileEditorTitles,
+  normalizeRelativePath,
+  parseFileEditorState,
+} from "./file-editor-model";
 import {
   BROWSER_POPUP_DOCK_DIRECTION,
   DOCKVIEW_DND_STRATEGY,
@@ -18,11 +29,13 @@ import type { ProviderKind } from "./generated/ProviderKind";
 import type { SpaceSnapshotDto } from "./generated/SpaceSnapshotDto";
 import type { TabDto } from "./generated/TabDto";
 import { NEW_TAB_ACTIONS, type NewTabAction } from "./new-tab-actions";
+import { SidebarLayoutController } from "./sidebar-layout";
 import { SpaceTreeView } from "./space-tree";
 import { SurfaceOcclusionController } from "./surface-occlusion";
 import { createTabContextMenuItems } from "./tab-context-menu";
 import { CcsmTabRenderer } from "./tab-header";
 import { BrowserTabProvider } from "./tabs/browser-provider";
+import { FileEditorTabProvider } from "./tabs/file-editor-provider";
 import { FileExplorerTabProvider } from "./tabs/file-explorer-provider";
 import { GitTabProvider } from "./tabs/git-provider";
 import { TabProviderRegistry } from "./tabs/registry";
@@ -35,6 +48,7 @@ export class CcsmApp {
   readonly #dockview: DockviewComponent;
   readonly #registry = new TabProviderRegistry();
   readonly #browserProvider: BrowserTabProvider;
+  readonly #fileEditorProvider: FileEditorTabProvider;
   readonly #terminalProvider: TerminalTabProvider;
   readonly #surfaceOcclusion: SurfaceOcclusionController;
   readonly #directoryPicker = new DirectoryPickerDialog(
@@ -43,6 +57,10 @@ export class CcsmApp {
   readonly #agentList: AgentListView;
   readonly #tabs = new Map<string, TabDto>();
   readonly #spaceTree: SpaceTreeView;
+  readonly #sidebarLayout: SidebarLayoutController;
+  readonly #newTabMenu: HTMLElement;
+  #newTabAnchor: HTMLButtonElement | null = null;
+  #newTabTargetGroupId: string | null = null;
   #bootstrap: BootstrapDto | null = null;
   #activeSnapshot: SpaceSnapshotDto | null = null;
   #layoutRevision = 0;
@@ -52,6 +70,8 @@ export class CcsmApp {
   #tabContextMenuObserver: MutationObserver | null = null;
   #tabContextMenuToken = 0;
   #eventUnlisten: (() => void) | null = null;
+  #windowCloseUnlisten: (() => void) | null = null;
+  #closingWindow = false;
   #tabDeletionQueue: Promise<void> = Promise.resolve();
   readonly #pendingTabDeletions = new Set<string>();
 
@@ -59,7 +79,13 @@ export class CcsmApp {
     private readonly root: HTMLElement,
     private readonly theme: ThemeController,
   ) {
-    bindWindowChrome(root, desktopClient.windowChrome);
+    bindWindowChrome(root, desktopClient.windowChrome, () => {
+      void this.#requestWindowClose();
+    });
+    this.#sidebarLayout = new SidebarLayoutController(
+      root,
+      window.localStorage,
+    );
     this.#terminalProvider = new TerminalTabProvider(
       desktopClient,
       theme.current,
@@ -86,8 +112,29 @@ export class CcsmApp {
       this.#browserProvider.setOverlaySuspended(occluded),
     );
     this.#registry.register(this.#browserProvider);
-    this.#registry.register(new FileExplorerTabProvider(desktopClient));
+    this.#fileEditorProvider = new FileEditorTabProvider(desktopClient, {
+      presentationChanged: () => this.#refreshFileEditorTitles(),
+      setDialogVisible: (visible) =>
+        this.#surfaceOcclusion.set("file-editor-dialog", visible),
+    });
+    this.#registry.register(
+      new FileExplorerTabProvider(desktopClient, (spaceId, relativePath) => {
+        void this.#openFileEditor(spaceId, relativePath);
+      }),
+    );
+    this.#registry.register(this.#fileEditorProvider);
     this.#registry.register(new GitTabProvider(desktopClient));
+    this.#newTabMenu = requiredElement<HTMLElement>(root, "#new-tab-menu");
+    this.#newTabMenu.replaceChildren(
+      ...NEW_TAB_ACTIONS.map((action) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.role = "menuitem";
+        button.dataset.newTabAction = action.id;
+        button.textContent = action.label;
+        return button;
+      }),
+    );
     const dockRoot = requiredElement<HTMLElement>(root, "#dockview");
     this.#dockview = new DockviewComponent(dockRoot, {
       createComponent: ({ id }) => {
@@ -104,6 +151,10 @@ export class CcsmApp {
         );
       },
       defaultTabComponent: "ccsm-tab",
+      createRightHeaderActionComponent: (group) =>
+        new DockNewTabAction(group, (targetGroup, anchor) =>
+          this.#toggleNewTabMenu(targetGroup, anchor),
+        ),
       disableFloatingGroups: true,
       dndStrategy: DOCKVIEW_DND_STRATEGY,
       defaultRenderer: "always",
@@ -112,6 +163,7 @@ export class CcsmApp {
           this.#beginTabContextMenuOcclusion(),
         ),
       keyboardNavigation: true,
+      noPanelsOverlay: "emptyGroup",
     });
     this.#dockview.onDidLayoutChange(() => this.#handleDockviewStateChange());
     this.#dockview.onDidActivePanelChange(() =>
@@ -140,23 +192,7 @@ export class CcsmApp {
       moveFolder: (folderId, parentId, order) =>
         this.moveFolder(folderId, parentId, order),
     });
-    const newTabButton = requiredElement<HTMLButtonElement>(root, "#new-tab");
-    const newTabMenu = requiredElement<HTMLElement>(root, "#new-tab-menu");
-    newTabMenu.replaceChildren(
-      ...NEW_TAB_ACTIONS.map((action) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.role = "menuitem";
-        button.dataset.newTabAction = action.id;
-        button.textContent = action.label;
-        return button;
-      }),
-    );
-    newTabButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      void this.#setNewTabMenuOpen(newTabMenu, newTabButton, newTabMenu.hidden);
-    });
-    newTabMenu.addEventListener("click", (event) => {
+    this.#newTabMenu.addEventListener("click", (event) => {
       const button = (
         event.target as Element | null
       )?.closest<HTMLButtonElement>("button[data-new-tab-action]");
@@ -164,18 +200,21 @@ export class CcsmApp {
         (candidate) => candidate.id === button?.dataset.newTabAction,
       );
       if (!action) return;
-      void this.#setNewTabMenuOpen(newTabMenu, newTabButton, false).then(() =>
-        this.#runNewTabAction(action),
+      const targetGroupId = this.#newTabTargetGroupId;
+      void this.#setNewTabMenuOpen(false).then(() =>
+        this.#runNewTabAction(action, targetGroupId),
       );
     });
     document.addEventListener("pointerdown", (event) => {
-      if (
-        (event.target as Node | null) &&
-        !newTabMenu.parentElement?.contains(event.target as Node)
-      ) {
-        void this.#setNewTabMenuOpen(newTabMenu, newTabButton, false);
-      }
+      const target = event.target as Node | null;
+      if (!target || this.#newTabMenu.contains(target)) return;
+      if (this.#newTabAnchor?.contains(target)) return;
+      void this.#setNewTabMenuOpen(false);
     });
+    window.addEventListener(
+      "resize",
+      () => void this.#setNewTabMenuOpen(false),
+    );
     void desktopClient.browser.subscribeNewWindow((request) => {
       void this.#openBrowserNewWindow(request.sourceSurfaceId, request.url);
     });
@@ -187,11 +226,19 @@ export class CcsmApp {
         }
       })
       .then((unlisten) => (this.#eventUnlisten = unlisten));
+    void desktopClient.windowChrome
+      .subscribeCloseRequested(() => {
+        void this.#requestWindowClose();
+      })
+      .then((unlisten) => (this.#windowCloseUnlisten = unlisten));
     window.addEventListener("beforeunload", () => {
       this.#tabContextMenuObserver?.disconnect();
       this.#eventUnlisten?.();
       this.#eventUnlisten = null;
+      this.#windowCloseUnlisten?.();
+      this.#windowCloseUnlisten = null;
       this.#terminalProvider.destroyAll();
+      this.#fileEditorProvider.destroyAll();
       void this.flushLayout();
     });
   }
@@ -249,13 +296,37 @@ export class CcsmApp {
     }
   }
 
+  #toggleNewTabMenu(
+    group: DockviewGroupPanel,
+    anchor: HTMLButtonElement,
+  ): void {
+    const open = this.#newTabMenu.hidden || this.#newTabAnchor !== anchor;
+    void this.#setNewTabMenuOpen(open, group, anchor);
+  }
+
   async #setNewTabMenuOpen(
-    menu: HTMLElement,
-    button: HTMLButtonElement,
     open: boolean,
+    group?: DockviewGroupPanel,
+    anchor?: HTMLButtonElement,
   ): Promise<void> {
-    menu.hidden = !open;
-    button.setAttribute("aria-expanded", String(open));
+    this.#newTabAnchor?.setAttribute("aria-expanded", "false");
+    if (open && group && anchor) {
+      this.#dockview.doSetGroupActive(group);
+      this.#newTabAnchor = anchor;
+      this.#newTabTargetGroupId = group.id;
+      anchor.setAttribute("aria-expanded", "true");
+      const position = dockNewTabMenuPosition(
+        anchor.getBoundingClientRect(),
+        164,
+        window.innerWidth,
+      );
+      this.#newTabMenu.style.left = `${position.left}px`;
+      this.#newTabMenu.style.top = `${position.top}px`;
+    } else {
+      this.#newTabAnchor = null;
+      this.#newTabTargetGroupId = null;
+    }
+    this.#newTabMenu.hidden = !open;
     await this.#surfaceOcclusion.set("new-tab-menu", open);
   }
 
@@ -315,6 +386,8 @@ export class CcsmApp {
           ? this.#activeSnapshot
           : await desktopClient.backend.loadSpace(spaceId);
       deletedTabs = snapshot.tabs;
+      if (!(await this.#fileEditorProvider.requestCloseMany(deletedTabs)))
+        return;
       await Promise.all(
         snapshot.tabs
           .filter((tab) => tab.kind === "browser")
@@ -392,7 +465,10 @@ export class CcsmApp {
     );
   }
 
-  async createCliTab(provider: ProviderKind): Promise<void> {
+  async createCliTab(
+    provider: ProviderKind,
+    targetGroupId: string | null = null,
+  ): Promise<void> {
     await this.#tabDeletionQueue;
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
@@ -403,7 +479,7 @@ export class CcsmApp {
         provider,
       });
       snapshot.cliSessions.push(created.cliSession);
-      this.#addCreatedTab(created.tab);
+      this.#addCreatedTab(created.tab, undefined, targetGroupId);
       await this.#refreshAgents();
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
@@ -411,27 +487,32 @@ export class CcsmApp {
     }
   }
 
-  async #runNewTabAction(action: NewTabAction): Promise<void> {
+  async #runNewTabAction(
+    action: NewTabAction,
+    targetGroupId: string | null,
+  ): Promise<void> {
     if (action.type === "cli") {
-      await this.createCliTab(action.provider);
+      await this.createCliTab(action.provider, targetGroupId);
       return;
     }
     switch (action.tabKind) {
       case "browser":
-        await this.#createBrowserTab();
+        await this.#createBrowserTab(targetGroupId);
         return;
       case "file-explorer":
-        await this.#createFileExplorerTab();
+        await this.#createFileExplorerTab(targetGroupId);
+        return;
+      case "file-editor":
         return;
       case "git":
-        await this.#openGitTab();
+        await this.#openGitTab(targetGroupId);
         return;
       case "cli-session":
         return;
     }
   }
 
-  async #createBrowserTab(): Promise<void> {
+  async #createBrowserTab(targetGroupId: string | null): Promise<void> {
     await this.#tabDeletionQueue;
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
@@ -441,14 +522,14 @@ export class CcsmApp {
         spaceId: snapshot.space.id,
         url: "https://example.com/",
       });
-      this.#addCreatedTab(tab);
+      this.#addCreatedTab(tab, undefined, targetGroupId);
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus("error", describeError(error));
     }
   }
 
-  async #createFileExplorerTab(): Promise<void> {
+  async #createFileExplorerTab(targetGroupId: string | null): Promise<void> {
     await this.#tabDeletionQueue;
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
@@ -457,14 +538,47 @@ export class CcsmApp {
       const tab = await desktopClient.backend.createFileExplorerTab({
         spaceId: snapshot.space.id,
       });
-      this.#addCreatedTab(tab);
+      this.#addCreatedTab(tab, undefined, targetGroupId);
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus("error", describeError(error));
     }
   }
 
-  async #openGitTab(): Promise<void> {
+  async #openFileEditor(spaceId: string, relativePath: string): Promise<void> {
+    await this.#tabDeletionQueue;
+    const snapshot = this.#activeSnapshot;
+    if (!snapshot || snapshot.space.id !== spaceId) return;
+    const path = normalizeRelativePath(relativePath);
+    const existing = snapshot.tabs.find(
+      (tab) =>
+        tab.kind === "file-editor" &&
+        normalizeRelativePath(
+          tab.resourceId ?? parseFileEditorState(tab).relativePath,
+        ) === path,
+    );
+    if (existing) {
+      this.#focusTab(existing);
+      return;
+    }
+    this.#setGlobalStatus("starting", `opening ${path}`);
+    try {
+      const tab = await desktopClient.backend.createFileEditorTab({
+        spaceId,
+        relativePath: path,
+      });
+      const alreadyLoaded = snapshot.tabs.find(
+        (candidate) => candidate.id === tab.id,
+      );
+      if (alreadyLoaded) this.#focusTab(alreadyLoaded);
+      else this.#addCreatedTab(tab);
+      this.#setGlobalStatus("running", "ready");
+    } catch (error) {
+      this.#setGlobalStatus("error", `open file · ${describeError(error)}`);
+    }
+  }
+
+  async #openGitTab(targetGroupId: string | null): Promise<void> {
     await this.#tabDeletionQueue;
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
@@ -478,7 +592,7 @@ export class CcsmApp {
       const tab = await desktopClient.backend.createGitTab({
         spaceId: snapshot.space.id,
       });
-      this.#addCreatedTab(tab);
+      this.#addCreatedTab(tab, undefined, targetGroupId);
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus("error", describeError(error));
@@ -508,26 +622,44 @@ export class CcsmApp {
     this.#setGlobalStatus("running", "ready");
   }
 
-  #addCreatedTab(tab: TabDto, reference = this.#dockview.activePanel): void {
+  #addCreatedTab(
+    tab: TabDto,
+    reference: IDockviewPanel | undefined = undefined,
+    targetGroupId: string | null = null,
+  ): void {
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
     snapshot.tabs.push(tab);
     this.#tabs.set(tab.id, tab);
+    const targetGroupExists =
+      targetGroupId !== null &&
+      this.#dockview.groups.some((group) => group.id === targetGroupId);
+    const resolvedReference = targetGroupExists
+      ? undefined
+      : (reference ?? this.#dockview.activePanel);
     const panel = this.#dockview.addPanel({
       id: tab.id,
       component: tab.kind,
       title: tab.title,
       renderer: "always",
-      ...(reference
+      ...(targetGroupExists
         ? {
             position: {
-              referencePanel: reference.id,
-              direction: BROWSER_POPUP_DOCK_DIRECTION,
+              referenceGroup: targetGroupId!,
+              direction: "within" as const,
             },
           }
-        : {}),
+        : resolvedReference
+          ? {
+              position: {
+                referencePanel: resolvedReference.id,
+                direction: BROWSER_POPUP_DOCK_DIRECTION,
+              },
+            }
+          : {}),
     });
     this.#dockview.setActivePanel(panel);
+    this.#refreshFileEditorTitles();
     this.#scheduleLayoutSave();
   }
 
@@ -584,6 +716,8 @@ export class CcsmApp {
         this.#createDefaultLayout(snapshot.tabs);
       }
       this.#addMissingPanels(snapshot.tabs);
+      if (this.#dockview.groups.length === 0) this.#dockview.addGroup();
+      this.#refreshFileEditorTitles();
       const restoredActivePanel = findRestoredActivePanel(
         this.#dockview.panels,
         this.#dockview.groups,
@@ -703,6 +837,14 @@ export class CcsmApp {
     if (this.#activeSnapshot?.space.id !== tab.spaceId) {
       throw new Error("Tab Space changed while closing");
     }
+    if (
+      tab.kind === "file-editor" &&
+      !(await this.#fileEditorProvider.requestClose(tab))
+    ) {
+      this.#focusTab(tab);
+      this.#setGlobalStatus("running", "ready");
+      return;
+    }
     this.#setGlobalStatus("starting", `deleting ${tab.title} Tab`);
     await this.flushLayout();
     const deleted = await desktopClient.backend.deleteTab({
@@ -721,7 +863,10 @@ export class CcsmApp {
       this.#terminalProvider.releaseTabs([deleted.id]);
     } else if (deleted.kind === "browser") {
       await desktopClient.browser.close(deleted.resourceId ?? deleted.id);
+    } else if (deleted.kind === "file-editor") {
+      this.#fileEditorProvider.releaseTab(deleted.id);
     }
+    this.#refreshFileEditorTitles();
     await this.#refreshAgents();
     this.#setGlobalStatus("running", "ready");
   }
@@ -791,6 +936,35 @@ export class CcsmApp {
     const status = requiredElement<HTMLElement>(this.root, "#global-status");
     status.dataset.state = state;
     status.textContent = text;
+  }
+
+  #refreshFileEditorTitles(): void {
+    const fileTabs = [...this.#tabs.values()]
+      .filter((tab) => tab.kind === "file-editor")
+      .map((tab) => ({
+        id: tab.id,
+        path: parseFileEditorState(tab).relativePath,
+        dirty: this.#fileEditorProvider.isDirty(tab.id),
+      }));
+    const titles = distinctFileEditorTitles(fileTabs);
+    for (const panel of this.#dockview.panels) {
+      const title = titles.get(panel.id);
+      if (title && panel.title !== title) panel.api.setTitle(title);
+    }
+  }
+
+  async #requestWindowClose(): Promise<void> {
+    if (this.#closingWindow) return;
+    if (!(await this.#fileEditorProvider.requestCloseAll())) return;
+    this.#closingWindow = true;
+    try {
+      await this.#tabDeletionQueue;
+      await this.flushLayout();
+      await desktopClient.windowChrome.close();
+    } catch (error) {
+      this.#closingWindow = false;
+      this.#setGlobalStatus("error", `close · ${describeError(error)}`);
+    }
   }
 
   #beginDockDrag(): void {

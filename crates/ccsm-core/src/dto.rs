@@ -22,6 +22,7 @@ export_ts! {
         CliSession,
         Browser,
         FileExplorer,
+        FileEditor,
         Git,
     }
 }
@@ -200,6 +201,15 @@ export_ts! {
 export_ts! {
     #[derive(Debug, Clone, Serialize, Deserialize, TS)]
     #[serde(rename_all = "camelCase")]
+    pub struct CreateFileEditorTabRequest {
+        pub space_id: String,
+        pub relative_path: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
     pub struct CreateGitTabRequest {
         pub space_id: String,
     }
@@ -343,6 +353,79 @@ export_ts! {
     pub struct ListDirectoryRequest {
         pub space_id: String,
         pub relative_path: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ReadFileRequest {
+        pub space_id: String,
+        pub relative_path: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum FileOpenStatus {
+        Editable,
+        ReadOnly,
+        TooLarge,
+        Binary,
+        UnsupportedEncoding,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "lowercase")]
+    pub enum FileLineEnding {
+        Lf,
+        CrLf,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct FileDocumentDto {
+        pub space_id: String,
+        pub relative_path: String,
+        pub content: Option<String>,
+        pub status: FileOpenStatus,
+        pub reason: Option<String>,
+        pub size: f64,
+        pub revision: Option<String>,
+        pub utf8_bom: bool,
+        pub line_ending: FileLineEnding,
+        pub syntax_highlighting: bool,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct WriteFileRequest {
+        pub space_id: String,
+        pub relative_path: String,
+        pub content: String,
+        pub expected_revision: Option<String>,
+        pub utf8_bom: bool,
+        pub line_ending: FileLineEnding,
+        pub overwrite: bool,
+        pub recreate: bool,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct WriteFileResultDto {
+        pub space_id: String,
+        pub relative_path: String,
+        pub revision: String,
+        pub size: f64,
     }
 }
 

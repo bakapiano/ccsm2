@@ -31,6 +31,8 @@ portable-pty platform backend
 - 使用 vendored ghostty-web fork，保留 CJK spacer、单字符 selection、行边界 hysteresis、IME anchor 和 box drawing 修复。
 - scrollback 使用 64 MiB byte budget。
 - IME preedit 覆盖显示在 Canvas cursor 上；`compositionend` 将最终文本提交给 VT/PTY。
+- IME input proxy和preedit overlay使用Terminal host内的Canvas布局坐标；Dockview transform不能重复叠加Panel viewport偏移。
+- 新GhosttyTerminal handle在首次viewport读取和render前执行RIS；WASM allocator复用的已释放screen cells不能出现在新Tab首帧。
 
 ## Tab 集成
 
@@ -44,13 +46,14 @@ portable-pty platform backend
 - Runtime注册完成前产生的PTY事件进入有序队列；快速Exit不能遗留幽灵runtime或覆盖最后一段错误输出。
 - Session resume 等待首个稳定尺寸，再以该 rows/cols 创建 PTY 和启动 TUI。
 - GUI进程生命周期内 ghostty-web持有完整 VT/scrollback。应用退出释放PTY和CLI process tree；下次启动根据Session desired state创建新runtime。
+- 每个retained Terminal renderer持有独立Ghostty WASM实例；WASM module下载可缓存，allocator和RenderState arena不跨Tab共享，关闭后新建Tab不能观察已释放VT的cells。
 
 ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `WindowsPtyBackend`；Unix fd、process group 和 signal 属于 macOS/Linux backend。ghostty-web byte contract 对三平台完全相同。
 
 ## Windows executable mode
 
 - `ccsm-desktop.exe`使用Windows Console subsystem，使同一构建可作为ConPTY provider与Hook reporter运行。
-- 桌面模式在启动后隐藏仅属于自身的console window；从现有Windows Terminal启动时保留父console。
+- 桌面模式在启动后通过`FreeConsole`解除仅属于自身的console；从现有Windows Terminal启动时保留父console。
 - 每个agent runtime创建中性`ccsm-provider.exe`与`ccsm-hook.exe`硬链接。`CCSM_PROVIDER`选择Claude或Codex。
 - 中性shim目录加入PATH。真实`codex`/`claude`名称保持可解析到`cxp`/`ccp`及其底层CLI。
 - Provider、wrapper和真实CLI继承同一个ConPTY，所有stdin/stdout/stderr保持在CCSM Tab内。

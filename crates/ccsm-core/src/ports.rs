@@ -3,11 +3,12 @@ use std::{path::Path, sync::Arc};
 use crate::{
     dto::{
         AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest,
-        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
-        CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
-        FileEntryDto, GitSnapshotDto, MoveFolderRequest, MoveSpaceRequest, ProviderKind,
-        RenameFolderRequest, RenameSpaceRequest, SaveLayoutRequest, SetFolderCollapsedRequest,
-        SpaceLayoutDto, SpaceSnapshotDto, TabDto, UpdateTabStateRequest,
+        CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
+        CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
+        DeleteSpaceRequest, DeleteTabRequest, DesiredState, FileDocumentDto, FileEntryDto,
+        GitSnapshotDto, MoveFolderRequest, MoveSpaceRequest, ProviderKind, RenameFolderRequest,
+        RenameSpaceRequest, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
+        SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
     },
     error::BackendResult,
 };
@@ -39,6 +40,7 @@ pub trait StateStore: Send + Sync {
         &self,
         request: CreateFileExplorerTabRequest,
     ) -> BackendResult<TabDto>;
+    fn create_file_editor_tab(&self, request: CreateFileEditorTabRequest) -> BackendResult<TabDto>;
     fn create_git_tab(&self, request: CreateGitTabRequest) -> BackendResult<TabDto>;
     fn get_cli_session(&self, session_id: &str) -> BackendResult<CliSessionDto>;
     fn list_agents(&self) -> BackendResult<Vec<AgentSummaryDto>> {
@@ -76,6 +78,16 @@ pub trait FileSystemBackend: Send + Sync {
         root: &RootDescriptor,
         relative_path: &str,
     ) -> BackendResult<Vec<FileEntryDto>>;
+    fn read_file(
+        &self,
+        root: &RootDescriptor,
+        relative_path: &str,
+    ) -> BackendResult<FileDocumentDto>;
+    fn write_file(
+        &self,
+        root: &RootDescriptor,
+        request: &WriteFileRequest,
+    ) -> BackendResult<WriteFileResultDto>;
 }
 
 pub trait GitBackend: Send + Sync {

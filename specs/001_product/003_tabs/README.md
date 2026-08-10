@@ -5,3 +5,4 @@
 - [内置 Tabs](000-built-in-tabs.md)
 - [Git tree](001-git-tree.md)
 - [Git Tab](002-git-tab.md)
+- [File Editor](003-file-editor.md)

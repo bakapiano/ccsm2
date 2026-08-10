@@ -1,6 +1,13 @@
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
 import { BackgroundScanController } from "../background-scan";
+import {
+  fileExplorerIconKind,
+  fileTreeKeyboardAction,
+  flattenFileTree,
+  type FileExplorerIconKind,
+  type VisibleFileRow,
+} from "../file-explorer-tree";
 import type { FileEntryDto } from "../generated/FileEntryDto";
 import type { TabDto } from "../generated/TabDto";
 import { affectedLoadedDirectories } from "../scan-routing";
@@ -17,10 +24,13 @@ interface FileExplorerState {
 export class FileExplorerTabProvider implements TabProvider {
   readonly kind = "file-explorer" as const;
 
-  constructor(private readonly client: CcsmDesktopClient) {}
+  constructor(
+    private readonly client: CcsmDesktopClient,
+    private readonly openFile: (spaceId: string, relativePath: string) => void,
+  ) {}
 
   createRenderer(tab: TabDto): IContentRenderer {
-    return new FileExplorerPanel(tab, this.client);
+    return new FileExplorerPanel(tab, this.client, this.openFile);
   }
 }
 
@@ -28,18 +38,25 @@ class FileExplorerPanel implements IContentRenderer {
   readonly element = document.createElement("section");
   readonly #tab: TabDto;
   readonly #client: CcsmDesktopClient;
+  readonly #openFile: (spaceId: string, relativePath: string) => void;
   readonly #entries = new Map<string, FileEntryDto[]>();
   #state: FileExplorerState;
   #tree: HTMLElement | null = null;
   #status: HTMLElement | null = null;
+  #rows: VisibleFileRow[] = [];
   #disposed = false;
   #unlisten: (() => void) | null = null;
   readonly #pendingPaths = new Set<string>();
   readonly #scanner: BackgroundScanController;
 
-  constructor(tab: TabDto, client: CcsmDesktopClient) {
+  constructor(
+    tab: TabDto,
+    client: CcsmDesktopClient,
+    openFile: (spaceId: string, relativePath: string) => void,
+  ) {
     this.#tab = tab;
     this.#client = client;
+    this.#openFile = openFile;
     this.#state = parseState(tab.state);
     this.#scanner = new BackgroundScanController(
       (manual) => this.#runRefresh(manual),
@@ -58,22 +75,30 @@ class FileExplorerPanel implements IContentRenderer {
     this.element.className = "file-explorer-panel";
     this.element.innerHTML = `
       <div class="files-toolbar">
-        <strong>Files</strong>
-        <span class="files-status">loading</span>
-        <button class="files-refresh" type="button">Refresh</button>
+        <strong>Explorer</strong>
+        <span class="files-status">Loading…</span>
+        <button class="files-refresh" type="button" aria-label="Refresh Explorer" title="Refresh Explorer">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M13 3v4H9"></path>
+            <path d="M12.2 10.5A5 5 0 1 1 12 5"></path>
+          </svg>
+        </button>
       </div>
-      <div class="files-tree" role="tree" aria-label="File Explorer"></div>
+      <div class="files-tree" role="tree" aria-label="Files Explorer" tabindex="0"></div>
     `;
   }
 
   init(_parameters: GroupPanelPartInitParameters): void {
     this.#tree = this.element.querySelector(".files-tree");
     this.#status = this.element.querySelector(".files-status");
+    this.#tree?.addEventListener("keydown", (event) =>
+      this.#handleTreeKeyDown(event),
+    );
     this.element
       .querySelector(".files-refresh")
       ?.addEventListener("click", () => {
         this.#queueAllPaths();
-        this.#setStatus("refreshing");
+        this.#setStatus("Refreshing…");
         this.#scanner.request(true);
       });
     void this.#client.events
@@ -96,7 +121,7 @@ class FileExplorerPanel implements IContentRenderer {
 
   layout(): void {}
   focus(): void {
-    this.#tree?.focus();
+    this.#focusRow(this.#state.selectedPath);
   }
   dispose(): void {
     this.#disposed = true;
@@ -105,7 +130,7 @@ class FileExplorerPanel implements IContentRenderer {
   }
 
   async #loadDirectory(relativePath: string): Promise<void> {
-    this.#setStatus("loading");
+    this.#setStatus("Loading…");
     try {
       const listing = await this.#client.backend.listDirectory({
         spaceId: this.#tab.spaceId,
@@ -113,8 +138,7 @@ class FileExplorerPanel implements IContentRenderer {
       });
       if (this.#disposed) return;
       this.#entries.set(relativePath, listing.entries);
-      this.#render();
-      this.#setStatus(`${this.#entries.size} folders loaded`);
+      this.#setStatus("");
     } catch (error) {
       this.#setStatus(`error · ${describeError(error)}`);
     }
@@ -141,7 +165,7 @@ class FileExplorerPanel implements IContentRenderer {
     if (this.#disposed) return;
     this.#render();
     if (firstError) throw firstError;
-    this.#setStatus(`${this.#entries.size} folders loaded`);
+    this.#setStatus("");
   }
 
   #queueAllPaths(): void {
@@ -149,74 +173,92 @@ class FileExplorerPanel implements IContentRenderer {
     for (const path of this.#state.expandedPaths) this.#pendingPaths.add(path);
   }
 
-  #render(): void {
+  #render(requestedFocusPath: string | null = null): void {
     if (!this.#tree) return;
+    const hadFocus = this.#tree.contains(document.activeElement);
+    this.#rows = flattenFileTree(
+      this.#state.rootRelativePath,
+      this.#entries,
+      this.#state.expandedPaths,
+    );
     this.#tree.replaceChildren();
-    this.#renderChildren(this.#state.rootRelativePath, 0, this.#tree);
-  }
-
-  #renderChildren(
-    relativePath: string,
-    depth: number,
-    parent: HTMLElement,
-  ): void {
-    const entries = this.#entries.get(relativePath) ?? [];
-    for (const entry of entries) {
+    this.#tree.tabIndex = this.#rows.length === 0 ? 0 : -1;
+    for (const [index, item] of this.#rows.entries()) {
+      const { entry, depth, expanded } = item;
       const row = document.createElement("div");
       row.className = "file-row";
       row.role = "treeitem";
       row.dataset.kind = entry.kind;
+      row.dataset.path = entry.relativePath;
       row.dataset.selected = String(
         entry.relativePath === this.#state.selectedPath,
       );
+      row.tabIndex =
+        entry.relativePath === this.#state.selectedPath ||
+        (!this.#state.selectedPath && index === 0)
+          ? 0
+          : -1;
+      row.setAttribute(
+        "aria-selected",
+        String(entry.relativePath === this.#state.selectedPath),
+      );
+      row.setAttribute("aria-level", String(depth + 1));
       row.style.setProperty("--file-depth", String(depth));
       const isDirectory = entry.kind === "directory";
-      const expanded =
-        isDirectory && this.#state.expandedPaths.includes(entry.relativePath);
-      const toggle = document.createElement("button");
-      toggle.type = "button";
+      if (isDirectory) row.setAttribute("aria-expanded", String(expanded));
+
+      const guides = document.createElement("span");
+      guides.className = "file-indent-guides";
+      guides.setAttribute("aria-hidden", "true");
+      for (let guideIndex = 0; guideIndex < depth; guideIndex += 1) {
+        const guide = document.createElement("span");
+        guide.className = "file-indent-guide";
+        guides.append(guide);
+      }
+
+      const toggle = document.createElement(isDirectory ? "button" : "span");
       toggle.className = "file-toggle";
-      toggle.disabled = !isDirectory;
-      toggle.textContent = isDirectory
-        ? expanded
-          ? "▾"
-          : "▸"
-        : fileGlyph(entry);
-      toggle.setAttribute(
-        "aria-label",
-        isDirectory
-          ? `${expanded ? "Collapse" : "Expand"} ${entry.name}`
-          : entry.name,
-      );
-      toggle.addEventListener("click", () => {
-        if (isDirectory)
+      toggle.setAttribute("aria-hidden", String(!isDirectory));
+      if (toggle instanceof HTMLButtonElement) {
+        toggle.type = "button";
+        toggle.dataset.expanded = String(expanded);
+        toggle.innerHTML = TREE_TWISTIE_ICON;
+        toggle.setAttribute(
+          "aria-label",
+          `${expanded ? "Collapse" : "Expand"} ${entry.name}`,
+        );
+        toggle.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.#selectPath(entry.relativePath, true);
           void this.#toggleDirectory(entry.relativePath, expanded);
-      });
-      const label = document.createElement("button");
-      label.type = "button";
+        });
+      }
+
+      const icon = document.createElement("span");
+      const iconKind = fileExplorerIconKind(entry, expanded);
+      icon.className = "file-resource-icon";
+      icon.dataset.icon = iconKind;
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = fileIconSvg(iconKind);
+
+      const label = document.createElement("span");
       label.className = "file-name";
       label.textContent = entry.name;
       label.title = entry.relativePath;
-      label.addEventListener("click", () => {
-        this.#state.selectedPath = entry.relativePath;
-        this.#render();
-        void this.#persist();
+      row.addEventListener("focus", () => this.#setRovingFocus(row));
+      row.addEventListener("click", (event) => {
+        this.#selectPath(entry.relativePath, true);
+        if (entry.kind === "file") {
+          this.#openFile(this.#tab.spaceId, entry.relativePath);
+        } else if (isDirectory && event.detail === 1) {
+          void this.#toggleDirectory(entry.relativePath, expanded);
+        }
       });
-      const meta = document.createElement("span");
-      meta.className = "file-meta";
-      meta.textContent =
-        entry.kind === "file" && entry.size !== null
-          ? formatBytes(entry.size)
-          : "";
-      row.append(toggle, label, meta);
-      parent.append(row);
-      if (expanded) {
-        const children = document.createElement("div");
-        children.className = "file-children";
-        this.#renderChildren(entry.relativePath, depth + 1, children);
-        parent.append(children);
-      }
+      row.append(guides, toggle, icon, label);
+      this.#tree.append(row);
     }
+    if (hadFocus || requestedFocusPath)
+      this.#focusRow(requestedFocusPath ?? this.#state.selectedPath);
   }
 
   async #toggleDirectory(path: string, expanded: boolean): Promise<void> {
@@ -224,8 +266,67 @@ class FileExplorerPanel implements IContentRenderer {
       ? this.#state.expandedPaths.filter((value) => value !== path)
       : [...this.#state.expandedPaths, path];
     if (!expanded && !this.#entries.has(path)) await this.#loadDirectory(path);
-    this.#render();
+    this.#render(path);
     await this.#persist();
+  }
+
+  #handleTreeKeyDown(event: KeyboardEvent): void {
+    if (!isFileTreeKey(event.key)) return;
+    const targetPath = (event.target as Element | null)?.closest<HTMLElement>(
+      ".file-row",
+    )?.dataset.path;
+    const result = fileTreeKeyboardAction(
+      this.#rows,
+      targetPath ?? this.#state.selectedPath,
+      event.key,
+    );
+    if (!result) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (result.action === "focus") {
+      this.#selectPath(result.path, true);
+      return;
+    }
+    const row = this.#rows.find(
+      (candidate) => candidate.entry.relativePath === result.path,
+    );
+    if (!row) return;
+    if (result.action === "open") {
+      this.#selectPath(result.path, true);
+      this.#openFile(this.#tab.spaceId, result.path);
+      return;
+    }
+    this.#selectPath(result.path, true);
+    void this.#toggleDirectory(result.path, result.action === "collapse");
+  }
+
+  #selectPath(path: string, focus: boolean): void {
+    this.#state.selectedPath = path;
+    if (this.#tree) {
+      for (const row of this.#tree.querySelectorAll<HTMLElement>(".file-row")) {
+        const selected = row.dataset.path === path;
+        row.dataset.selected = String(selected);
+        row.setAttribute("aria-selected", String(selected));
+        row.tabIndex = selected ? 0 : -1;
+        if (selected && focus) row.focus({ preventScroll: true });
+      }
+    }
+    void this.#persist().catch((error) =>
+      this.#setStatus(`Error · ${describeError(error)}`),
+    );
+  }
+
+  #setRovingFocus(active: HTMLElement): void {
+    if (!this.#tree) return;
+    for (const row of this.#tree.querySelectorAll<HTMLElement>(".file-row"))
+      row.tabIndex = row === active ? 0 : -1;
+  }
+
+  #focusRow(path: string | null): void {
+    const row = [
+      ...(this.#tree?.querySelectorAll<HTMLElement>(".file-row") ?? []),
+    ].find((candidate) => candidate.dataset.path === path);
+    (row ?? this.#tree)?.focus({ preventScroll: true });
   }
 
   async #persist(): Promise<void> {
@@ -263,14 +364,38 @@ function parseState(value: unknown): FileExplorerState {
   return { rootRelativePath: "", expandedPaths: [], selectedPath: null };
 }
 
-function fileGlyph(entry: FileEntryDto): string {
-  if (entry.kind === "symlink") return "↗";
-  if (entry.kind === "file") return "·";
-  return "◇";
+function isFileTreeKey(
+  key: string,
+): key is Parameters<typeof fileTreeKeyboardAction>[2] {
+  return [
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "End",
+    "Enter",
+    "Home",
+  ].includes(key);
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+const TREE_TWISTIE_ICON = `
+  <svg viewBox="0 0 16 16" aria-hidden="true">
+    <path d="m5.5 3.5 4.5 4.5-4.5 4.5"></path>
+  </svg>`;
+
+const FILE_ICONS: Record<FileExplorerIconKind, string> = {
+  folder: `<svg viewBox="0 0 16 16"><path d="M1.5 4.5h5l1.5 1.5h6.5v6.5h-13z"></path></svg>`,
+  "folder-open": `<svg viewBox="0 0 16 16"><path d="M1.5 4.5h5l1.5 1.5h6.5l-1.4 6.5H2.4z"></path><path d="M1.5 6V4.5h5L8 6"></path></svg>`,
+  document: `<svg viewBox="0 0 16 16"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="M9.5 1.5v3h3"></path></svg>`,
+  code: `<svg viewBox="0 0 16 16"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="m7 7-2 2 2 2m2-4 2 2-2 2"></path></svg>`,
+  json: `<svg viewBox="0 0 16 16"><path d="M6 2.5H4.5v4L3 8l1.5 1.5v4H6m4-11h1.5v4L13 8l-1.5 1.5v4H10"></path></svg>`,
+  markdown: `<svg viewBox="0 0 16 16"><path d="M1.5 3.5h13v9h-13z"></path><path d="M3.5 10V6l2 2 2-2v4m2-2 1.5 2 1.5-2"></path></svg>`,
+  config: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"></circle><path d="M8 1.5v2m0 9v2m6.5-6.5h-2m-9 0h-2m11-4.5-1.4 1.4m-6.2 6.2-1.4 1.4m9 0-1.4-1.4M4.9 4.9 3.5 3.5"></path></svg>`,
+  image: `<svg viewBox="0 0 16 16"><path d="M2 2.5h12v11H2z"></path><circle cx="5" cy="5.5" r="1"></circle><path d="m3.5 12 3-3 2 2 1.5-1.5L12.5 12"></path></svg>`,
+  archive: `<svg viewBox="0 0 16 16"><path d="M3 1.5h10v13H3z"></path><path d="M7 2h2v2H7zm0 4h2v2H7zm0 4h2v2H7z"></path></svg>`,
+  symlink: `<svg viewBox="0 0 16 16"><path d="M6.5 5.5 5 4a2.1 2.1 0 0 0-3 3l2 2a2.1 2.1 0 0 0 3 0l.5-.5m1-1L9 7a2.1 2.1 0 0 1 3 0l2 2a2.1 2.1 0 0 1-3 3l-1.5-1.5"></path></svg>`,
+};
+
+function fileIconSvg(kind: FileExplorerIconKind): string {
+  return FILE_ICONS[kind];
 }

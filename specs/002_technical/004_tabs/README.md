@@ -6,3 +6,4 @@
 - [Git Tab](001-git.md)
 - [File Explorer Tab](002-file-explorer.md)
 - [Browser Tab](003-browser.md)
+- [File Editor Tab](004-file-editor.md)

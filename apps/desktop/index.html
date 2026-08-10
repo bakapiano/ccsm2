@@ -42,7 +42,10 @@
             aria-label="New Folder"
             title="New Folder"
           >
-            <span aria-hidden="true">▱+</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M1.5 4.5h5l1.5 1.5h6.5v7h-13z" />
+              <path d="M10.5 7.5v4m-2-2h4" />
+            </svg>
           </button>
           <button
             id="new-space"
@@ -50,7 +53,10 @@
             aria-label="New Space"
             title="New Space"
           >
-            <span aria-hidden="true">+</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="1" />
+              <path d="M8 5.5v5m-2.5-2.5h5" />
+            </svg>
           </button>
         </div>
         <div class="sidebar-tree-scroll">
@@ -62,8 +68,28 @@
         </section>
         <div class="sidebar-footer">v2 · local desktop</div>
       </aside>
+      <div
+        id="sidebar-resizer"
+        class="sidebar-resizer"
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        tabindex="0"
+      ></div>
       <section class="workspace">
         <header class="workspace-header" data-tauri-drag-region>
+          <button
+            id="sidebar-toggle"
+            class="sidebar-toggle"
+            type="button"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="1.5" y="2" width="13" height="12" rx="1" />
+              <path d="M5.5 2v12" />
+            </svg>
+          </button>
           <div class="workspace-title" data-tauri-drag-region>
             <strong id="active-space-name">Opening Space…</strong>
             <small id="active-space-root">—</small>
@@ -96,25 +122,6 @@
                 />
               </svg>
             </button>
-            <div class="new-tab-control">
-              <button
-                id="new-tab"
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded="false"
-              >
-                + New Tab
-              </button>
-              <div
-                id="new-tab-menu"
-                class="new-tab-menu"
-                role="menu"
-                hidden
-              ></div>
-            </div>
-            <span id="global-status" class="status" data-state="starting"
-              >starting</span
-            >
           </div>
           <div class="window-controls" aria-label="Window controls">
             <button
@@ -158,6 +165,14 @@
           aria-label="Space layout"
         ></main>
       </section>
+      <div id="new-tab-menu" class="new-tab-menu" role="menu" hidden></div>
+      <span
+        id="global-status"
+        class="visually-hidden"
+        data-state="starting"
+        aria-live="polite"
+        >starting</span
+      >
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -7,6 +7,8 @@ GlobalRegistrator.register();
 
 const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
 const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+let canvasViewportRect = domRect(10, 64, 800, 456);
+let canvasLayoutRect = { left: 10, top: 64, width: 800, height: 456 };
 
 function domRect(
   left: number,
@@ -70,6 +72,8 @@ function compositionEvent(type: string, data: string): CompositionEvent {
 
 beforeEach(() => {
   document.body.replaceChildren();
+  canvasViewportRect = domRect(10, 64, 800, 456);
+  canvasLayoutRect = { left: 10, top: 64, width: 800, height: 456 };
   globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
   globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
 
@@ -83,7 +87,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
     configurable: true,
     value: function getBoundingClientRect(this: HTMLElement) {
-      if (this.tagName === "CANVAS") return domRect(10, 64, 800, 456);
+      if (this.tagName === "CANVAS") return canvasViewportRect;
 
       const left = Number.parseFloat(this.style.left) || 0;
       const top = Number.parseFloat(this.style.top) || 0;
@@ -97,6 +101,18 @@ beforeEach(() => {
       return domRect(left, top, width, height);
     },
   });
+
+  for (const [property, key] of [
+    ["offsetLeft", "left"],
+    ["offsetTop", "top"],
+    ["offsetWidth", "width"],
+    ["offsetHeight", "height"],
+  ] as const) {
+    Object.defineProperty(HTMLCanvasElement.prototype, property, {
+      configurable: true,
+      get: () => canvasLayoutRect[key],
+    });
+  }
 });
 
 afterEach(() => {
@@ -124,6 +140,58 @@ describe("IME composition overlay", () => {
     ).not.toBeNull();
 
     terminal.dispose();
+  });
+
+  test("anchors IME in canvas layout coordinates inside a transformed panel", async () => {
+    canvasViewportRect = domRect(242, 107, 800, 456);
+    canvasLayoutRect = { left: 8, top: 7, width: 800, height: 456 };
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({ ghostty, cols: 80, rows: 24 });
+    const host = document.createElement("div");
+    document.body.append(host);
+    terminal.open(host);
+    terminal.focus();
+
+    terminal.textarea!.dispatchEvent(compositionEvent("compositionstart", ""));
+    terminal.textarea!.dispatchEvent(
+      compositionEvent("compositionupdate", "ni'hao"),
+    );
+    const overlay = host.querySelector<HTMLElement>(
+      "[data-ghostty-composition]",
+    )!;
+
+    expect(terminal.textarea!.style.position).toBe("absolute");
+    expect(terminal.textarea!.style.left).toBe("8px");
+    expect(terminal.textarea!.style.top).toBe("7px");
+    expect(overlay.style.position).toBe("absolute");
+    expect(overlay.style.left).toBe("8px");
+    expect(overlay.style.top).toBe("7px");
+
+    terminal.dispose();
+  });
+
+  test("a new terminal clears cells released by a disposed terminal", async () => {
+    const ghostty = await Ghostty.load();
+    const firstHost = document.createElement("div");
+    document.body.append(firstHost);
+    const first = new Terminal({ ghostty, cols: 80, rows: 24 });
+    first.open(firstHost);
+    first.write("OLD_TERMINAL_CONTENT_MUST_NOT_SURVIVE");
+    expect(first.buffer.active.getLine(0)?.translateToString(true)).toContain(
+      "OLD_TERMINAL_CONTENT_MUST_NOT_SURVIVE",
+    );
+    first.dispose();
+
+    const secondHost = document.createElement("div");
+    document.body.append(secondHost);
+    const second = new Terminal({ ghostty, cols: 80, rows: 24 });
+    second.open(secondHost);
+
+    expect(second.buffer.active.getLine(0)?.translateToString(true)).toBe("");
+    expect(secondHost.textContent).not.toContain(
+      "OLD_TERMINAL_CONTENT_MUST_NOT_SURVIVE",
+    );
+    second.dispose();
   });
 
   test("renders preedit at the cursor without mutating VT and commits exactly once", async () => {

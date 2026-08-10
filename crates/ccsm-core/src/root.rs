@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     dto::{
-        AppEvent, DirectoryListingDto, FileChangeHintDto, GitSnapshotDto, ListDirectoryRequest,
-        RefreshGitRequest,
+        AppEvent, DirectoryListingDto, FileChangeHintDto, FileDocumentDto, GitSnapshotDto,
+        ListDirectoryRequest, ReadFileRequest, RefreshGitRequest, WriteFileRequest,
+        WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
     ports::{
@@ -100,6 +101,16 @@ impl ActiveRootContext {
             relative_path: request.relative_path,
             entries,
         })
+    }
+
+    pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {
+        let root = self.store.space_root(&request.space_id)?;
+        self.filesystem.read_file(&root, &request.relative_path)
+    }
+
+    pub fn write_file(&self, request: WriteFileRequest) -> BackendResult<WriteFileResultDto> {
+        let root = self.store.space_root(&request.space_id)?;
+        self.filesystem.write_file(&root, &request)
     }
 
     pub fn cached_git(&self, space_id: &str) -> BackendResult<GitSnapshotDto> {

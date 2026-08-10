@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use ccsm_core::{
     dto::{
-        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileExplorerTabRequest,
-        CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest, DeleteFolderRequest,
-        DeleteSpaceRequest, DeleteTabRequest, MoveSpaceRequest, NativeBindingState, ProviderKind,
-        RenameFolderRequest, SaveLayoutRequest, SetFolderCollapsedRequest,
+        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
+        DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, MoveSpaceRequest,
+        NativeBindingState, ProviderKind, RenameFolderRequest, SaveLayoutRequest,
+        SetFolderCollapsedRequest,
     },
     ports::StateStore,
 };
@@ -421,5 +422,34 @@ fn new_file_explorer_tab_is_persisted_with_default_state() {
             .tabs
             .iter()
             .any(|candidate| candidate.id == tab.id)
+    );
+}
+
+#[test]
+fn file_editor_tab_is_unique_per_space_relative_path() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStateStore::open(&directory.path().join("data.db")).unwrap();
+    let state = store.bootstrap(directory.path()).unwrap();
+    let request = CreateFileEditorTabRequest {
+        space_id: state.active_space_id.clone(),
+        relative_path: "src\\main.rs".into(),
+    };
+
+    let first = store.create_file_editor_tab(request.clone()).unwrap();
+    let second = store.create_file_editor_tab(request).unwrap();
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.kind, ccsm_core::dto::TabKind::FileEditor);
+    assert_eq!(first.resource_id.as_deref(), Some("src/main.rs"));
+    assert_eq!(first.state["wordWrap"], false);
+    assert_eq!(
+        store
+            .load_space(&state.active_space_id)
+            .unwrap()
+            .tabs
+            .iter()
+            .filter(|tab| tab.kind == ccsm_core::dto::TabKind::FileEditor)
+            .count(),
+        1
     );
 }

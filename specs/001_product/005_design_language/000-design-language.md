@@ -80,7 +80,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - 基础间距按 4px 递进。
 - 顶栏高度为 40px。
-- 展开侧栏宽度为 232px。
+- 展开侧栏默认宽度为232px，可在176–480px之间拖动resize，并可折叠。
 - 侧栏树行高度为 28px。
 - Dockview 标签带高度为 30px。
 - 内容工具栏高度为 30–38px。
@@ -95,7 +95,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - 左侧 232px 区域显示 20px CCSM terminal mark 与品牌名。
 - 主区域显示当前 Space 名称和单行 root path。
-- New Tab 与全局状态靠近窗口控制区域。
+- 主顶栏保留当前Space、主题和窗口控制；New Tab进入Dockview group header。
 - 窗口控制按钮占满 40px 顶栏高度。
 - 关闭按钮 hover 使用系统可识别的红色表面。
 
@@ -105,7 +105,8 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 区域标题使用 12px medium 文本。
 - Folder 与 Space 使用同一 28px 行网格。
 - hover 使用浅蓝表面，active 使用更深一级浅蓝表面。
-- Space 使用小状态点；当前 Space 使用蓝色状态点。
+- 当前Space使用整行selected表面表达，不使用左侧状态点。
+- 主区域左上提供sidebar折叠操作；分隔线支持pointer拖动和键盘resize。
 - 行内操作在 hover 或键盘聚焦时出现。
 - 深色模式保持相同层级关系，并将表面、文字与边框映射到暖黑色 token。
 
@@ -120,13 +121,14 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - Tab 右键菜单复用原版 CCSM 的 210px 宽度、条目顺序、禁用态和分隔线。
 - split sash 在交互时使用 accent 色提示。
 - Tab overflow scrollbar 跟随当前主题。
+- 每个Tab group header最右侧显示24px纯加号New Tab操作；空group仍保留header与该操作。
 
 ### Terminal
 
 - Terminal 使用原版 VS Code Light+/Dark+ 16 色。
 - 浅色背景为 `#ffffff`，深色背景为 `#1e1e1e`。
 - 工具条和 Terminal scrollbar 跟随当前模式。
-- 运行状态、进程信息和 Stop 操作保持一行。
+- Terminal画布占据上方剩余空间；运行状态、进程信息和Stop操作在panel最底部保持一行。
 - 滚动条贴齐终端 host 的右边界。
 
 ### Browser
@@ -138,7 +140,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 ### Files 与 Git
 
-- Files 行复用侧栏树的 28px 节奏与选择色。
+- Files采用VS Code Explorer风格的22px紧凑行、16px twistie/indent和资源类型图标。
 - Git repository 使用轻边框 section，header 高度为 32px。
 - 文件状态通过短代码和语义色表达。
 - loading、empty 和 error 状态保持在原布局内，避免大面积占位卡片。
@@ -161,7 +163,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 ## 验收
 
-- 1440×900 下侧栏实测宽度为 232px，顶栏实测高度为 40px。
+- 1440×900 下侧栏默认宽度为232px，顶栏实测高度为40px；resize与折叠状态在本地恢复。
 - 应用启动后不显示操作系统原生标题栏。
 - 顶栏空白区域可拖动窗口，双击可切换最大化。
 - 最小化、最大化和关闭按钮可以通过键盘与指针操作。

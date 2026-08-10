@@ -5,7 +5,7 @@ Tab 是可持久化的视图抽象。Session、PTY 和 WebView 分别使用独�
 ## 数据模型
 
 ```ts
-type TabKind = "cli-session" | "browser" | "file-explorer" | "git";
+type TabKind = "cli-session" | "browser" | "file-explorer" | "file-editor" | "git";
 
 interface TabRecord<State = unknown> {
   id: string;
@@ -50,6 +50,7 @@ interface TabView {
 - Dockview mount/unmount 驱动 TabView 生命周期；resource 生命周期由对应 provider 管理。
 - Tab inactive 时调用 `setActive(false)`；native browser 必须隐藏，终端停止 resize ownership。
 - Dockview用户关闭事件先提交不含目标Panel的布局，再调用`deleteTab`。CLI删除停止runtime并删除CliSession；Browser删除关闭native surface。布局恢复和Space切换期间的Panel移除跳过该流程。
+- Dockview使用right header action渲染每个group的New Tab加号。`noPanelsOverlay=emptyGroup`保留最后一个空group，使零Tab状态仍有创建入口。
 - Provider定义resource cardinality和Duplicate语义。
 - Space layout snapshot 与 TabRecord 分开持久化，恢复时先加载 records，再重建 Dockview。
 
@@ -60,12 +61,14 @@ interface TabView {
 | `cli-session`   | `cli_session_id`     | Rust AppBackend          |
 | `browser`       | `browser_surface_id` | Tauri host               |
 | `file-explorer` | `space_id`           | Space filesystem service |
+| `file-editor`   | Space-relative path  | Space filesystem service |
 | `git`           | `space_id`           | GitStatusService         |
 
 - CLI view mount 时 attach runtime；打开已有 CliSession时通过 Tab index聚焦唯一 CLI Tab。
 - Browser panel提供DOM anchor和toolbar；`BrowserSurfaceClient`同步bounds、visibility、focus和navigation。
 - `BrowserProfileManager` 创建一个全局持久 profile handle，并提供给所有 Browser surfaces。
 - File Explorer state 保存 Space-relative root、展开节点和选择项；只读 filesystem API 使用 canonical capability root。
+- File Editor state 保存 Space-relative path、selection、scroll 和 wrap；未保存文本与 undo history 保存在 renderer 内存会话。
 - Git Tab state 保存 section collapse 和 selection；同一 Space 的 Open Git 操作复用已有 Tab。
 - Browser Duplicate创建新 surface并复制 URL；File Explorer Duplicate复制当前相对 root和view state。
 - Dockview使用pointer DnD backend；drag开始时全部native child WebView临时隐藏，pointerup、cancel或drop后按各Panel visibility恢复。

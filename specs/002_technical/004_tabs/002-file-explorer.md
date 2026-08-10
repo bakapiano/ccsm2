@@ -49,4 +49,16 @@ AppBackend将`space_id`解析为`root_id`。File Explorer使用active Space的Ac
 
 Copy Path由前端clipboard capability执行。Reveal使用平台opener。Open Terminal Here和Create CLI Tab Here将选中目录作为cwd提交给AppBackend。
 
-首版 API 集合覆盖 list/stat/watch/reveal/runtime-create。文件 mutation 和内容 editor API进入后续版本。
+File Explorer 保持只读树；单击普通文件通过 File Editor Provider 打开对应 Space-relative path。文件 create、rename、move 和 delete API 进入后续版本。
+
+## Renderer
+
+File Explorer renderer参考VS Code Explorer/tree/list的结构与交互，并适配CCSM现有DOM renderer：
+
+- row固定22px，twistie宽16px，层级indent为16px。
+- 文件夹、普通文件、code、config、JSON、Markdown、image、archive和symlink使用资源类型图标。
+- hover、selection和keyboard focus使用独立状态；label超长时ellipsis。
+- Arrow Up/Down/Home/End移动焦点，Arrow Left/Right折叠、展开或进入child，Enter打开文件或切换目录。
+- 展开、选择和watch refresh继续使用`FileExplorerTabState`与现有filesystem DTO，不引入VS Code runtime依赖。
+
+参考源码commit和MIT许可保存在`apps/desktop/vendor/vscode-explorer/`。

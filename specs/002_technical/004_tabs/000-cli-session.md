@@ -12,6 +12,8 @@ CLI Session Tab 通过稳定 `cli_session_id` 引用 Session，并在 mount 时 
 
 Provider resolver先遍历完整PATH寻找本地launcher，再遍历完整PATH寻找raw CLI。launcher内部再次调用同名CLI时，per-runtime shim通过depth guard只解析raw CLI，避免`ccp/cxp → shim → ccp/cxp`递归。用户自定义 command/args/env/resume template进入后续版本。
 
+Windows resolver将进程继承的PATH与当前HKCU/HKLM环境PATH合并，并把合并结果传给launcher。Explorer在CLI安装前启动所持有的旧环境不能导致已安装Provider持续不可用；开发终端临时PATH保持最高优先级。
+
 ## Hook 注入
 
 ## 目标
@@ -56,11 +58,16 @@ claude --settings '<merged-hook-json>' --resume <id>
 Codex：
 
 ```text
-codex --enable hooks --dangerously-bypass-hook-trust \
+codex --enable hooks \
   -c 'hooks.SessionStart=...' \
   -c 'hooks.UserPromptSubmit=...' \
-  ...
+  ... \
+  --dangerously-bypass-hook-trust
 ```
+
+inline hook definitions必须位于`--dangerously-bypass-hook-trust`之前；Codex 0.144按CLI config加载顺序计算本次invocation trust，顺序反转会让`SessionStart`进入review pending并被跳过。
+
+Hook command使用本次desktop executable的绝对`CCSM_HOOK_REPORTER`路径并保真引用；不得依赖Codex为command hook重建的shell PATH仍包含per-runtime shim目录。
 
 ## 上下文与校验
 
@@ -80,6 +87,7 @@ AppBackend校验token、provider、session、runtime ID和payload ID。Hook命�
 RuntimeManager维护进程内状态：
 
 ```text
+Codex runtime spawn → idle（native binding可以保持pending）
 SessionStart       → idle
 UserPromptSubmit   → working，开启turn
 PermissionRequest → blocked
@@ -90,6 +98,8 @@ SessionEnd         → stopped
 ```
 
 关闭turn后到达的`PreToolUse`和`PermissionRequest`保持当前状态，下一次`UserPromptSubmit`开启新turn。PTY exit始终发布`stopped`。activity通过`agent.activityChanged`进入DesktopEventStream，并由`list_agents` snapshot完成启动和重连恢复。activity、turn和runtime ID保持在内存中。
+
+Codex TUI在空提示符阶段尚未创建native session，首次prompt前不会发送`SessionStart`。因此Codex成功spawn后仅将activity置为`idle`；native Session ID仍只接受后续认证HookReport。Claude继续由启动期`SessionStart`完成`starting → idle`。
 
 `CCSM_HOOK_TOKEN`按runtime随机生成，由RuntimeManager保存在内存中，通过子进程环境传递，并在runtime结束时失效。Token不写入`data.db`或logs。
 

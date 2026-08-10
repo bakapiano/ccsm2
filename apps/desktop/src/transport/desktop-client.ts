@@ -12,6 +12,7 @@ import type { BrowseHostDirectoryRequest } from "../generated/BrowseHostDirector
 import type { CliSessionDto } from "../generated/CliSessionDto";
 import type { CreateBrowserTabRequest } from "../generated/CreateBrowserTabRequest";
 import type { CreateCliTabRequest } from "../generated/CreateCliTabRequest";
+import type { CreateFileEditorTabRequest } from "../generated/CreateFileEditorTabRequest";
 import type { CreateFileExplorerTabRequest } from "../generated/CreateFileExplorerTabRequest";
 import type { CreateFolderRequest } from "../generated/CreateFolderRequest";
 import type { CreateGitTabRequest } from "../generated/CreateGitTabRequest";
@@ -22,6 +23,7 @@ import type { DeleteFolderRequest } from "../generated/DeleteFolderRequest";
 import type { DeleteSpaceRequest } from "../generated/DeleteSpaceRequest";
 import type { DeleteTabRequest } from "../generated/DeleteTabRequest";
 import type { DirectoryListingDto } from "../generated/DirectoryListingDto";
+import type { FileDocumentDto } from "../generated/FileDocumentDto";
 import type { GitSnapshotDto } from "../generated/GitSnapshotDto";
 import type { HostDirectoryEntryDto } from "../generated/HostDirectoryEntryDto";
 import type { HostDirectoryListingDto } from "../generated/HostDirectoryListingDto";
@@ -31,6 +33,7 @@ import type { MoveSpaceRequest } from "../generated/MoveSpaceRequest";
 import type { RenameFolderRequest } from "../generated/RenameFolderRequest";
 import type { RenameSpaceRequest } from "../generated/RenameSpaceRequest";
 import type { RefreshGitRequest } from "../generated/RefreshGitRequest";
+import type { ReadFileRequest } from "../generated/ReadFileRequest";
 import type { ReplaceCliSessionRequest } from "../generated/ReplaceCliSessionRequest";
 import type { RuntimeEvent } from "../generated/RuntimeEvent";
 import type { RuntimeStartedDto } from "../generated/RuntimeStartedDto";
@@ -42,6 +45,8 @@ import type { StartRuntimeRequest } from "../generated/StartRuntimeRequest";
 import type { TabDto } from "../generated/TabDto";
 import type { ThemeMode } from "../theme";
 import type { UpdateTabStateRequest } from "../generated/UpdateTabStateRequest";
+import type { WriteFileRequest } from "../generated/WriteFileRequest";
+import type { WriteFileResultDto } from "../generated/WriteFileResultDto";
 
 export interface AppBackendClient {
   bootstrap(): Promise<BootstrapDto>;
@@ -58,6 +63,8 @@ export interface AppBackendClient {
   moveSpace(request: MoveSpaceRequest): Promise<BootstrapDto>;
   moveFolder(request: MoveFolderRequest): Promise<BootstrapDto>;
   listDirectory(request: ListDirectoryRequest): Promise<DirectoryListingDto>;
+  readFile(request: ReadFileRequest): Promise<FileDocumentDto>;
+  writeFile(request: WriteFileRequest): Promise<WriteFileResultDto>;
   cachedGit(spaceId: string): Promise<GitSnapshotDto>;
   refreshGit(request: RefreshGitRequest): Promise<GitSnapshotDto>;
   saveLayout(request: SaveLayoutRequest): Promise<SpaceLayoutDto>;
@@ -65,6 +72,7 @@ export interface AppBackendClient {
   deleteTab(request: DeleteTabRequest): Promise<TabDto>;
   createBrowserTab(request: CreateBrowserTabRequest): Promise<TabDto>;
   createFileExplorerTab(request: CreateFileExplorerTabRequest): Promise<TabDto>;
+  createFileEditorTab(request: CreateFileEditorTabRequest): Promise<TabDto>;
   createGitTab(request: CreateGitTabRequest): Promise<TabDto>;
   createCliTab(request: CreateCliTabRequest): Promise<CreatedCliTabDto>;
   getCliSession(cliSessionId: string): Promise<CliSessionDto>;
@@ -105,6 +113,7 @@ export interface WindowChromeClient {
   toggleMaximize(): Promise<void>;
   setTheme(theme: ThemeMode): Promise<void>;
   close(): Promise<void>;
+  subscribeCloseRequested(listener: () => void): Promise<UnlistenFn>;
 }
 
 export interface CcsmDesktopClient {
@@ -178,6 +187,14 @@ class TauriBackendClient implements AppBackendClient {
     return invoke("list_directory", { request });
   }
 
+  readFile(request: ReadFileRequest): Promise<FileDocumentDto> {
+    return invoke("read_file", { request });
+  }
+
+  writeFile(request: WriteFileRequest): Promise<WriteFileResultDto> {
+    return invoke("write_file", { request });
+  }
+
   cachedGit(spaceId: string): Promise<GitSnapshotDto> {
     return invoke("cached_git", { spaceId });
   }
@@ -206,6 +223,10 @@ class TauriBackendClient implements AppBackendClient {
     request: CreateFileExplorerTabRequest,
   ): Promise<TabDto> {
     return invoke("create_file_explorer_tab", { request });
+  }
+
+  createFileEditorTab(request: CreateFileEditorTabRequest): Promise<TabDto> {
+    return invoke("create_file_editor_tab", { request });
   }
 
   createGitTab(request: CreateGitTabRequest): Promise<TabDto> {
@@ -301,6 +322,8 @@ class TauriDirectoryBrowserClient implements DirectoryBrowserClient {
 }
 
 class TauriWindowChromeClient implements WindowChromeClient {
+  #allowClose = false;
+
   minimize(): Promise<void> {
     return getCurrentWindow().minimize();
   }
@@ -314,7 +337,19 @@ class TauriWindowChromeClient implements WindowChromeClient {
   }
 
   close(): Promise<void> {
+    this.#allowClose = true;
     return getCurrentWindow().close();
+  }
+
+  subscribeCloseRequested(listener: () => void): Promise<UnlistenFn> {
+    return getCurrentWindow().onCloseRequested((event) => {
+      if (this.#allowClose) {
+        this.#allowClose = false;
+        return;
+      }
+      event.preventDefault();
+      listener();
+    });
   }
 }
 

@@ -7,12 +7,13 @@ use std::{
 use ccsm_core::{
     dto::{
         AgentActivity, AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest,
-        CreateCliTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
-        CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
-        DeleteSpaceRequest, DeleteTabRequest, DesiredState, GitRepositoryStatusDto, GitSnapshotDto,
-        MoveFolderRequest, MoveSpaceRequest, NativeBindingState, ProviderKind, RenameFolderRequest,
-        RenameSpaceRequest, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceDto, SpaceFolderDto,
-        SpaceLayoutDto, SpaceSnapshotDto, TabDto, TabKind, UpdateTabStateRequest,
+        CreateCliTabRequest, CreateFileEditorTabRequest, CreateFileExplorerTabRequest,
+        CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto,
+        DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
+        GitRepositoryStatusDto, GitSnapshotDto, MoveFolderRequest, MoveSpaceRequest,
+        NativeBindingState, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
+        SaveLayoutRequest, SetFolderCollapsedRequest, SpaceDto, SpaceFolderDto, SpaceLayoutDto,
+        SpaceSnapshotDto, TabDto, TabKind, UpdateTabStateRequest,
     },
     error::{BackendError, BackendResult},
     ports::{RootDescriptor, StateStore},
@@ -99,6 +100,9 @@ impl SqliteStateStore {
                 CREATE UNIQUE INDEX IF NOT EXISTS tabs_git_space_unique
                     ON tabs(space_id)
                     WHERE kind = 'git';
+                CREATE UNIQUE INDEX IF NOT EXISTS tabs_file_editor_path_unique
+                    ON tabs(space_id, resource_id)
+                    WHERE kind = 'file-editor' AND resource_id IS NOT NULL;
 
                 CREATE TABLE IF NOT EXISTS space_layouts (
                     space_id TEXT PRIMARY KEY REFERENCES spaces(id) ON DELETE CASCADE,
@@ -675,6 +679,60 @@ impl StateStore for SqliteStateStore {
                     r#"{"rootRelativePath":"","expandedPaths":[],"selectedPath":null}"#,
                     now,
                 ],
+            )
+            .map_err(storage_error)?;
+        load_tab(&connection, &tab_id)
+    }
+
+    fn create_file_editor_tab(&self, request: CreateFileEditorTabRequest) -> BackendResult<TabDto> {
+        let relative_path = normalized_editor_path(&request.relative_path)?;
+        let title = relative_path
+            .rsplit('/')
+            .next()
+            .ok_or_else(|| BackendError::Invalid("file path must name a file".into()))?;
+        let connection = self.connection()?;
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM spaces WHERE id = ?1)",
+                [&request.space_id],
+                |row| row.get(0),
+            )
+            .map_err(storage_error)?;
+        if !exists {
+            return Err(BackendError::NotFound(format!(
+                "Space {}",
+                request.space_id
+            )));
+        }
+        if let Some(existing_id) = connection
+            .query_row(
+                "SELECT id FROM tabs
+                 WHERE space_id = ?1 AND kind = 'file-editor' AND resource_id = ?2",
+                params![request.space_id, relative_path],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage_error)?
+        {
+            return load_tab(&connection, &existing_id);
+        }
+        let tab_id = Uuid::new_v4().to_string();
+        let state = serde_json::to_string(&serde_json::json!({
+            "relativePath": relative_path,
+            "selectionAnchor": 0,
+            "selectionHead": 0,
+            "scrollTop": 0,
+            "wordWrap": false
+        }))
+        .map_err(|error| BackendError::Storage(error.to_string()))?;
+        let now = now_timestamp();
+        connection
+            .execute(
+                "INSERT INTO tabs(
+                    id, space_id, kind, title, resource_id, state_version, state_json,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, 'file-editor', ?3, ?4, 1, ?5, ?6, ?6)",
+                params![tab_id, request.space_id, title, relative_path, state, now],
             )
             .map_err(storage_error)?;
         load_tab(&connection, &tab_id)
@@ -1501,9 +1559,26 @@ fn parse_tab_kind(value: &str) -> BackendResult<TabKind> {
         "cli-session" => Ok(TabKind::CliSession),
         "browser" => Ok(TabKind::Browser),
         "file-explorer" => Ok(TabKind::FileExplorer),
+        "file-editor" => Ok(TabKind::FileEditor),
         "git" => Ok(TabKind::Git),
         _ => Err(BackendError::Storage(format!("unknown tab kind {value}"))),
     }
+}
+
+fn normalized_editor_path(value: &str) -> BackendResult<String> {
+    let value = value.trim().replace('\\', "/");
+    if value.is_empty()
+        || value.starts_with('/')
+        || value.ends_with('/')
+        || value
+            .split('/')
+            .any(|part| part.is_empty() || matches!(part, "." | ".."))
+    {
+        return Err(BackendError::Invalid(
+            "file paths must name a Space-relative file".into(),
+        ));
+    }
+    Ok(value)
 }
 
 fn parse_provider(value: &str) -> BackendResult<ProviderKind> {

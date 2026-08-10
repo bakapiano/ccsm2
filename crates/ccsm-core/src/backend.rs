@@ -6,14 +6,15 @@ use std::{
 use crate::{
     dto::{
         AgentActivity, AgentActivityChangedDto, AgentSummaryDto, AppEvent, BootstrapDto,
-        CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest, CreateFileExplorerTabRequest,
-        CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto,
-        DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
-        DirectoryListingDto, GitSnapshotDto, HookReport, ListDirectoryRequest, MoveFolderRequest,
-        MoveSpaceRequest, NativeBindingDto, NativeBindingState, RefreshGitRequest,
-        RenameFolderRequest, RenameSpaceRequest, RuntimeEvent, RuntimeStartedDto,
-        SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto,
-        StartRuntimeRequest, TabDto, TabKind, UpdateTabStateRequest,
+        CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
+        CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
+        DirectoryListingDto, FileDocumentDto, GitSnapshotDto, HookReport, ListDirectoryRequest,
+        MoveFolderRequest, MoveSpaceRequest, NativeBindingDto, NativeBindingState, ReadFileRequest,
+        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, RuntimeEvent,
+        RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
+        SpaceSnapshotDto, StartRuntimeRequest, TabDto, TabKind, UpdateTabStateRequest,
+        WriteFileRequest, WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
     ports::{FileSystemBackend, FileWatchBackend, GitBackend, PtyBackend, StateStore},
@@ -189,6 +190,19 @@ impl AppBackend {
         self.store.create_file_explorer_tab(request)
     }
 
+    pub fn create_file_editor_tab(
+        &self,
+        request: CreateFileEditorTabRequest,
+    ) -> BackendResult<TabDto> {
+        let active = self.store.workspace_state()?.active_space_id;
+        if request.space_id != active {
+            return Err(BackendError::Conflict(
+                "File Editor Tabs can only be created in the active Space".into(),
+            ));
+        }
+        self.store.create_file_editor_tab(request)
+    }
+
     pub fn create_git_tab(&self, request: CreateGitTabRequest) -> BackendResult<TabDto> {
         let active = self.store.workspace_state()?.active_space_id;
         if request.space_id != active {
@@ -230,6 +244,14 @@ impl AppBackend {
         request: ListDirectoryRequest,
     ) -> BackendResult<DirectoryListingDto> {
         self.root_context.list_directory(request)
+    }
+
+    pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {
+        self.root_context.read_file(request)
+    }
+
+    pub fn write_file(&self, request: WriteFileRequest) -> BackendResult<WriteFileResultDto> {
+        self.root_context.write_file(request)
     }
 
     pub fn cached_git(&self, space_id: &str) -> BackendResult<GitSnapshotDto> {
@@ -291,7 +313,6 @@ impl AppBackend {
         if lifecycle_provider != crate::dto::ProviderKind::Shell
             && let Some((runtime_id, activity)) =
                 self.runtimes.agent_activity(&started.cli_session_id)?
-            && activity == AgentActivity::Starting
         {
             (self.event_sink)(activity_event(AgentActivityChangedDto {
                 cli_session_id: started.cli_session_id.clone(),

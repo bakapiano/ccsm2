@@ -158,6 +158,18 @@ impl RuntimeManager {
             }
         };
 
+        // Codex TUI creates its native session lazily on the first prompt, so
+        // SessionStart cannot mark an untouched prompt as ready. Process spawn
+        // is sufficient for activity only; native binding remains Hook-only.
+        if session.provider == ProviderKind::Codex {
+            let mut state = self.lock_state()?;
+            if let Some(registration) = state.hook_registrations.get_mut(&runtime_id)
+                && registration.activity == AgentActivity::Starting
+            {
+                registration.activity = AgentActivity::Idle;
+            }
+        }
+
         let event_session_id = session.id.clone();
         let started = {
             let mut state = self.lock_state()?;
@@ -573,6 +585,10 @@ mod tests {
                 Arc::new(|_| {}),
             )
             .unwrap();
+        assert_eq!(
+            manager.agent_activity(&started.cli_session_id).unwrap(),
+            Some((started.runtime_id.clone(), AgentActivity::Idle))
+        );
         let token = manager
             .state
             .lock()
@@ -592,10 +608,7 @@ mod tests {
         };
         let validated = manager.apply_hook_report(&report).unwrap();
         assert_eq!(validated.binding.native_session_id, "native-1");
-        assert_eq!(
-            validated.activity_changed.unwrap().activity,
-            AgentActivity::Idle
-        );
+        assert!(validated.activity_changed.is_none());
 
         let mut prompt_report = report.clone();
         prompt_report.hook_event_name = "UserPromptSubmit".into();

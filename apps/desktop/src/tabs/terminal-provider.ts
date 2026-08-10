@@ -24,7 +24,13 @@ import type { TabProvider } from "./registry";
 
 const SCROLLBACK_BYTES = 64 * 1024 * 1024;
 const OUTPUT_BUDGET_PER_FRAME = 256 * 1024;
-const ghosttyPromise = Ghostty.load(ghosttyWasmUrl);
+
+function loadIsolatedGhostty(): Promise<Ghostty> {
+  // Each retained renderer owns its WASM allocator and RenderState arena.
+  // Sharing one Ghostty instance lets a freshly allocated terminal observe a
+  // released terminal's cached RenderState before the first full redraw.
+  return Ghostty.load(ghosttyWasmUrl);
+}
 
 export class TerminalTabProvider implements TabProvider {
   readonly kind = "cli-session" as const;
@@ -108,12 +114,12 @@ class TerminalPanel implements IContentRenderer {
     (this.element as TerminalDebugElement).__CCSM_TERMINAL_DEBUG__ = () =>
       this.#debugSnapshot();
     this.element.innerHTML = `
+      <div class="terminal-host" aria-label="Terminal"></div>
       <div class="terminal-panel-toolbar">
         <span class="terminal-status" data-state="starting">loading terminal</span>
         <span class="terminal-meta">—</span>
         <button class="terminal-action" type="button">Stop</button>
       </div>
-      <div class="terminal-host" aria-label="Terminal"></div>
     `;
   }
 
@@ -238,7 +244,7 @@ class TerminalPanel implements IContentRenderer {
   async #initialize(): Promise<void> {
     if (!this.#host) return;
     try {
-      const ghostty = await ghosttyPromise;
+      const ghostty = await loadIsolatedGhostty();
       if (this.#destroyed || !this.#host) return;
       this.#terminal = new Terminal({
         ghostty,

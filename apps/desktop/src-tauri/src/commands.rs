@@ -4,13 +4,14 @@ use ccsm_core::{
     RuntimeEventSink,
     dto::{
         AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest,
-        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
-        CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest,
-        DirectoryListingDto, GitSnapshotDto, ListDirectoryRequest, MoveFolderRequest,
-        MoveSpaceRequest, RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest,
-        ReplaceCliSessionRequest, RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest,
-        SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto,
-        UpdateTabStateRequest,
+        CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
+        CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
+        DeleteSpaceRequest, DeleteTabRequest, DirectoryListingDto, FileDocumentDto, GitSnapshotDto,
+        ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, ReadFileRequest,
+        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, ReplaceCliSessionRequest,
+        RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest,
+        SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto, UpdateTabStateRequest,
+        WriteFileRequest, WriteFileResultDto,
     },
     error::{ApiErrorDto, BackendError},
 };
@@ -233,6 +234,17 @@ pub fn create_file_explorer_tab(
 }
 
 #[tauri::command]
+pub fn create_file_editor_tab(
+    request: CreateFileEditorTabRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<TabDto> {
+    state
+        .backend
+        .create_file_editor_tab(request)
+        .map_err(ApiErrorDto::from)
+}
+
+#[tauri::command]
 pub fn create_git_tab(
     request: CreateGitTabRequest,
     state: State<'_, DesktopState>,
@@ -272,6 +284,24 @@ pub async fn list_directory(
 ) -> CommandResult<DirectoryListingDto> {
     let backend = Arc::clone(&state.backend);
     on_blocking_worker(move || backend.list_directory(request).map_err(ApiErrorDto::from)).await
+}
+
+#[tauri::command]
+pub async fn read_file(
+    request: ReadFileRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<FileDocumentDto> {
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || backend.read_file(request).map_err(ApiErrorDto::from)).await
+}
+
+#[tauri::command]
+pub async fn write_file(
+    request: WriteFileRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<WriteFileResultDto> {
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || backend.write_file(request).map_err(ApiErrorDto::from)).await
 }
 
 #[tauri::command]
