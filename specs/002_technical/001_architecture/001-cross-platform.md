@@ -28,6 +28,7 @@ Installer、package format、signing和notarization由Tauri bundle config与GitH
 | CLI shim        | 中性console `.exe`，处理 `.cmd/.bat`     | executable/symlink                       | executable/symlink                                    |
 | Browser         | WebView2                                 | WKWebView                                | WebKitGTK                                             |
 | Browser runtime | 系统 WebView2 Runtime                    | 系统 WKWebView                           | 系统 WebKitGTK 包                                     |
+| Browser浮层截图 | WebView2 CapturePreview                  | planned：WKWebView snapshot              | planned：WebKitGTK snapshot                           |
 | 文件监听        | Windows filesystem notifications         | FSEvents/kqueue adapter                  | inotify adapter                                       |
 | 数据目录        | LocalAppData                             | Application Support                      | XDG data/state                                        |
 | 路径            | drive、UNC、默认大小写不敏感             | POSIX、通常大小写不敏感但不可假设        | POSIX、通常大小写敏感                                 |

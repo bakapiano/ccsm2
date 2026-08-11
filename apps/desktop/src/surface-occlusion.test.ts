@@ -18,4 +18,26 @@ describe("native surface occlusion", () => {
     expect(controller.occluded).toBe(false);
     expect(applied).toEqual([true, false]);
   });
+
+  test("serializes a close behind an in-flight snapshot transition", async () => {
+    const applied: boolean[] = [];
+    let releaseCapture!: () => void;
+    const captureGate = new Promise<void>((resolve) => {
+      releaseCapture = resolve;
+    });
+    const controller = new SurfaceOcclusionController(async (occluded) => {
+      if (occluded) await captureGate;
+      applied.push(occluded);
+    });
+
+    const open = controller.set("menu", true);
+    await Promise.resolve();
+    const close = controller.set("menu", false);
+    expect(controller.occluded).toBe(false);
+    expect(applied).toEqual([]);
+
+    releaseCapture();
+    await Promise.all([open, close]);
+    expect(applied).toEqual([true, false]);
+  });
 });

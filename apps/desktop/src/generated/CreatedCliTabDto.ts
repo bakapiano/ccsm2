@@ -2,4 +2,4 @@
 import type { CliSessionDto } from "./CliSessionDto";
 import type { TabDto } from "./TabDto";
 
-export type CreatedCliTabDto = { tab: TabDto; cliSession: CliSessionDto };
+export type CreatedCliTabDto = { tab: TabDto, cliSession: CliSessionDto, };

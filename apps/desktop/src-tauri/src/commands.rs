@@ -427,6 +427,15 @@ pub fn set_browser_visible(
 }
 
 #[tauri::command]
+pub async fn capture_browser(
+    app: AppHandle,
+    surface_id: String,
+    state: State<'_, DesktopState>,
+) -> Result<String, String> {
+    state.browser.capture(&app, &surface_id).await
+}
+
+#[tauri::command]
 pub fn focus_browser(
     app: AppHandle,
     surface_id: String,

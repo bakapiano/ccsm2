@@ -2,10 +2,4 @@
 import type { HostDirectoryEntryDto } from "./HostDirectoryEntryDto";
 import type { HostDirectoryStartDto } from "./HostDirectoryStartDto";
 
-export type HostDirectoryListingDto = {
-  path: string;
-  parent: string | null;
-  exists: boolean;
-  entries: Array<HostDirectoryEntryDto>;
-  starts: Array<HostDirectoryStartDto>;
-};
+export type HostDirectoryListingDto = { path: string, parent: string | null, exists: boolean, entries: Array<HostDirectoryEntryDto>, starts: Array<HostDirectoryStartDto>, };

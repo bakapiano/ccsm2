@@ -2,15 +2,4 @@
 import type { FileLineEnding } from "./FileLineEnding";
 import type { FileOpenStatus } from "./FileOpenStatus";
 
-export type FileDocumentDto = {
-  spaceId: string;
-  relativePath: string;
-  content: string | null;
-  status: FileOpenStatus;
-  reason: string | null;
-  size: number;
-  revision: string | null;
-  utf8Bom: boolean;
-  lineEnding: FileLineEnding;
-  syntaxHighlighting: boolean;
-};
+export type FileDocumentDto = { spaceId: string, relativePath: string, content: string | null, status: FileOpenStatus, reason: string | null, size: number, revision: string | null, utf8Bom: boolean, lineEnding: FileLineEnding, syntaxHighlighting: boolean, };

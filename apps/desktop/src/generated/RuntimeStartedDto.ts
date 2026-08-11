@@ -2,12 +2,4 @@
 import type { NativeBindingState } from "./NativeBindingState";
 import type { ProviderKind } from "./ProviderKind";
 
-export type RuntimeStartedDto = {
-  runtimeId: string;
-  cliSessionId: string;
-  pid: number | null;
-  provider: ProviderKind;
-  nativeBindingState: NativeBindingState;
-  shell: string;
-  engine: string;
-};
+export type RuntimeStartedDto = { runtimeId: string, cliSessionId: string, pid: number | null, provider: ProviderKind, nativeBindingState: NativeBindingState, shell: string, engine: string, };

@@ -94,6 +94,7 @@ export interface BrowserSurfaceClient {
   ): Promise<BrowserInfo>;
   setBounds(surfaceId: string, bounds: BrowserBounds): Promise<void>;
   setVisible(surfaceId: string, visible: boolean): Promise<void>;
+  capture(surfaceId: string): Promise<string>;
   focus(surfaceId: string): Promise<void>;
   navigate(surfaceId: string, url: string): Promise<string>;
   reload(surfaceId: string): Promise<void>;
@@ -282,6 +283,10 @@ class TauriBrowserSurfaceClient implements BrowserSurfaceClient {
 
   setVisible(surfaceId: string, visible: boolean): Promise<void> {
     return invoke("set_browser_visible", { surfaceId, visible });
+  }
+
+  capture(surfaceId: string): Promise<string> {
+    return invoke("capture_browser", { surfaceId });
   }
 
   focus(surfaceId: string): Promise<void> {

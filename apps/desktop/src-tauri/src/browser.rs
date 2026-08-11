@@ -1,5 +1,11 @@
-use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Mutex, mpsc},
+    time::Duration,
+};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use tauri::{
     Emitter, LogicalPosition, LogicalSize, Manager, Rect, WebviewBuilder, WebviewUrl, Window,
@@ -176,6 +182,29 @@ impl BrowserSurfaceManager {
         }
     }
 
+    pub async fn capture(
+        &self,
+        app: &tauri::AppHandle,
+        surface_id: &str,
+    ) -> Result<String, String> {
+        let browser = self.get(app, surface_id)?;
+        let (sender, receiver) = mpsc::sync_channel(1);
+        browser
+            .with_webview(move |webview| capture_platform_webview(webview, sender))
+            .map_err(|error| format!("schedule browser capture failed: {error}"))?;
+        let received = tauri::async_runtime::spawn_blocking(move || {
+            receiver.recv_timeout(Duration::from_secs(2))
+        })
+        .await
+        .map_err(|error| format!("join browser capture failed: {error}"))?
+        .map_err(|error| format!("browser capture timed out: {error}"))?;
+        let png = received?;
+        Ok(format!(
+            "data:image/png;base64,{}",
+            BASE64_STANDARD.encode(png)
+        ))
+    }
+
     pub fn focus(&self, app: &tauri::AppHandle, surface_id: &str) -> Result<(), String> {
         self.get(app, surface_id)?
             .set_focus()
@@ -240,6 +269,93 @@ impl BrowserSurfaceManager {
         app.get_webview(&label)
             .ok_or_else(|| format!("browser surface {surface_id} has not been created"))
     }
+}
+
+type CaptureSender = mpsc::SyncSender<Result<Vec<u8>, String>>;
+
+#[cfg(target_os = "windows")]
+fn capture_platform_webview(webview: tauri::webview::PlatformWebview, sender: CaptureSender) {
+    use webview2_com::{
+        CapturePreviewCompletedHandler,
+        Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+    };
+    use windows::Win32::{
+        Foundation::HGLOBAL,
+        System::Com::{
+            IStream, STATFLAG_NONAME, STATSTG, STREAM_SEEK_SET,
+            StructuredStorage::CreateStreamOnHGlobal,
+        },
+    };
+
+    let result = (|| -> Result<(), String> {
+        let controller = webview.controller();
+        let browser = unsafe { controller.CoreWebView2() }
+            .map_err(|error| format!("get WebView2 instance failed: {error}"))?;
+        let stream = unsafe { CreateStreamOnHGlobal(HGLOBAL::default(), true) }
+            .map_err(|error| format!("create browser capture stream failed: {error}"))?;
+        let completed_stream = stream.clone();
+        let completed_sender = sender.clone();
+        let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+            let captured = result
+                .map_err(|error| format!("capture browser preview failed: {error}"))
+                .and_then(|()| read_capture_stream(&completed_stream));
+            let _ = completed_sender.send(captured);
+            Ok(())
+        }));
+        unsafe {
+            browser.CapturePreview(
+                COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+                &stream,
+                &handler,
+            )
+        }
+        .map_err(|error| format!("start browser capture failed: {error}"))?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = sender.send(Err(error));
+    }
+
+    fn read_capture_stream(stream: &IStream) -> Result<Vec<u8>, String> {
+        const MAX_CAPTURE_BYTES: u64 = 64 * 1024 * 1024;
+        let mut stat = STATSTG::default();
+        unsafe { stream.Stat(&mut stat, STATFLAG_NONAME) }
+            .map_err(|error| format!("read browser capture size failed: {error}"))?;
+        if stat.cbSize > MAX_CAPTURE_BYTES {
+            return Err(format!(
+                "browser capture exceeds {} MiB",
+                MAX_CAPTURE_BYTES / 1024 / 1024
+            ));
+        }
+        let length = usize::try_from(stat.cbSize)
+            .map_err(|_| "browser capture size is not addressable".to_string())?;
+        let mut bytes = vec![0_u8; length];
+        unsafe { stream.Seek(0, STREAM_SEEK_SET, None) }
+            .map_err(|error| format!("rewind browser capture failed: {error}"))?;
+        let mut bytes_read = 0_u32;
+        unsafe {
+            stream.Read(
+                bytes.as_mut_ptr().cast(),
+                u32::try_from(bytes.len())
+                    .map_err(|_| "browser capture exceeds the IStream read limit".to_string())?,
+                Some(&mut bytes_read),
+            )
+        }
+        .ok()
+        .map_err(|error| format!("read browser capture failed: {error}"))?;
+        bytes.truncate(bytes_read as usize);
+        if bytes.is_empty() {
+            return Err("browser capture returned an empty image".into());
+        }
+        Ok(bytes)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn capture_platform_webview(_webview: tauri::webview::PlatformWebview, sender: CaptureSender) {
+    let _ = sender.send(Err(
+        "browser preview capture is not implemented on this platform".into(),
+    ));
 }
 
 fn surface_label(surface_id: &str) -> String {

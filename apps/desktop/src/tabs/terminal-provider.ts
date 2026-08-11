@@ -6,8 +6,11 @@ import type { TabDto } from "../generated/TabDto";
 import { focusWhenPanelActive } from "../panel-visibility";
 import { RetainedRendererCache } from "../retained-renderer-cache";
 import {
+  DebouncedTask,
   LatestValue,
   runtimeStartCanCommit,
+  shouldAutoStartCliRuntime,
+  TailByteBuffer,
   takeByteBatch,
 } from "../terminal-flow";
 import { isDockGeometrySettled } from "../terminal-layout";
@@ -20,10 +23,20 @@ import {
   Terminal,
 } from "../../vendor/ghostty-web/lib/index.ts";
 import ghosttyWasmUrl from "../../vendor/ghostty-web/ghostty-vt.wasm?url";
+import {
+  TERMINAL_FONT_CELL_HEIGHT,
+  TERMINAL_FONT_CELL_WIDTH,
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+} from "../terminal-typography";
 import type { TabProvider } from "./registry";
 
 const SCROLLBACK_BYTES = 64 * 1024 * 1024;
-const OUTPUT_BUDGET_PER_FRAME = 256 * 1024;
+const OUTPUT_BUDGET_PER_FRAME = 64 * 1024;
+const FIT_DEBOUNCE_MS = 80;
+const CODEX_RESUME_TAIL_BYTES = 192 * 1024;
+const CODEX_RESUME_HISTORY_QUIET_MS = 250;
+const CODEX_RESUME_HISTORY_MAX_MS = 1800;
 
 function loadIsolatedGhostty(): Promise<Ghostty> {
   // Each retained renderer owns its WASM allocator and RenderState arena.
@@ -82,6 +95,7 @@ class TerminalPanel implements IContentRenderer {
   #session: CliSessionDto | null = null;
   #runtimeId: string | null = null;
   #starting = false;
+  #manualStopBlocked = false;
   #initialized = false;
   #attached = false;
   #destroyed = false;
@@ -89,13 +103,19 @@ class TerminalPanel implements IContentRenderer {
   #panelApi: GroupPanelPartInitParameters["api"] | null = null;
   #dimensionSubscription: { dispose(): void } | null = null;
   #visibilitySubscription: { dispose(): void } | null = null;
+  #activeSubscription: { dispose(): void } | null = null;
   #resizeRaf = 0;
   #fitRaf = 0;
+  readonly #fitDebounce = new DebouncedTask(FIT_DEBOUNCE_MS);
+  #fitCount = 0;
   #hasValidFit = false;
   readonly #fitWaiters = new Set<() => void>();
   #resizeInFlight = false;
   readonly #pendingResize = new LatestValue<{ cols: number; rows: number }>();
   readonly #outputQueue: Uint8Array[] = [];
+  #resumeHistoryBuffer: TailByteBuffer | null = null;
+  #resumeHistoryQuietTimer: number | null = null;
+  #resumeHistoryMaxTimer: number | null = null;
   #outputRaf = 0;
   #pendingExitCode: number | null = null;
   readonly #exitedRuntimeIds = new Set<string>();
@@ -164,7 +184,7 @@ class TerminalPanel implements IContentRenderer {
 
   onShow(): void {
     this.#syncInputState();
-    this.#scheduleFit();
+    this.#scheduleFit(true);
   }
 
   focus(): void {
@@ -188,11 +208,14 @@ class TerminalPanel implements IContentRenderer {
     this.#resizeObserver?.disconnect();
     this.#dimensionSubscription?.dispose();
     this.#visibilitySubscription?.dispose();
+    this.#activeSubscription?.dispose();
     this.#dimensionSubscription = null;
     this.#visibilitySubscription = null;
+    this.#activeSubscription = null;
     this.#panelApi = null;
     if (this.#resizeRaf) cancelAnimationFrame(this.#resizeRaf);
     if (this.#fitRaf) cancelAnimationFrame(this.#fitRaf);
+    this.#fitDebounce.cancel();
     this.#resizeRaf = 0;
     this.#fitRaf = 0;
     this.#pendingResize.clear();
@@ -205,6 +228,8 @@ class TerminalPanel implements IContentRenderer {
     this.dispose();
     if (this.#outputRaf) cancelAnimationFrame(this.#outputRaf);
     this.#outputRaf = 0;
+    this.#clearResumeHistoryTimers();
+    this.#resumeHistoryBuffer = null;
     this.#outputQueue.length = 0;
     this.#unlisten?.();
     this.#unlisten = null;
@@ -223,15 +248,26 @@ class TerminalPanel implements IContentRenderer {
   #bindPanelEvents(api: GroupPanelPartInitParameters["api"]): void {
     this.#dimensionSubscription?.dispose();
     this.#visibilitySubscription?.dispose();
+    this.#activeSubscription?.dispose();
     this.#dimensionSubscription = api.onDidDimensionsChange(() =>
       this.#scheduleFit(),
     );
     this.#visibilitySubscription = api.onDidVisibilityChange(
       ({ isVisible }) => {
         this.#syncInputState();
-        if (isVisible) this.#scheduleFit();
+        if (isVisible) {
+          this.#scheduleFit(true);
+          void this.#maybeAutoStart();
+        }
       },
     );
+    this.#activeSubscription = api.onDidActiveChange(({ isActive }) => {
+      this.#syncInputState();
+      if (isActive) {
+        this.#scheduleFit(true);
+        void this.#maybeAutoStart();
+      }
+    });
   }
 
   #syncInputState(): void {
@@ -252,8 +288,10 @@ class TerminalPanel implements IContentRenderer {
         rows: 24,
         cursorBlink: true,
         cursorStyle: "bar",
-        fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
-        fontSize: 15,
+        fontFamily: TERMINAL_FONT_FAMILY,
+        fontSize: TERMINAL_FONT_SIZE,
+        fontCellWidth: TERMINAL_FONT_CELL_WIDTH,
+        fontCellHeight: TERMINAL_FONT_CELL_HEIGHT,
         disableStdin: true,
         scrollback: SCROLLBACK_BYTES,
         theme: { ...TERMINAL_THEMES[this.theme] },
@@ -265,22 +303,34 @@ class TerminalPanel implements IContentRenderer {
       this.#terminal.onResize(({ cols, rows }) =>
         this.#scheduleResize(cols, rows),
       );
-      this.#scheduleFit();
+      this.#scheduleFit(true);
       if (this.#panelApi?.isVisible) await this.#waitForValidFit();
       const sessionId = this.#tab.resourceId;
       if (!sessionId) throw new Error("CLI Tab is missing resourceId");
       this.#session = await this.#client.backend.getCliSession(sessionId);
-      if (
-        this.#session.desiredState === "running" &&
-        this.#session.nativeBindingState !== "unavailable"
-      ) {
-        await this.#start();
-      } else {
+      const attemptedStart = await this.#maybeAutoStart();
+      if (!attemptedStart && !this.#starting && !this.#runtimeId)
         this.#renderRuntimeStatus();
-      }
     } catch (error) {
       this.#setStatus("error", `terminal error · ${describeError(error)}`);
     }
+  }
+
+  async #maybeAutoStart(): Promise<boolean> {
+    const session = this.#session;
+    if (!session || !this.#terminal || this.#starting || this.#runtimeId)
+      return false;
+    if (
+      !shouldAutoStartCliRuntime(
+        session,
+        Boolean(this.#panelApi?.isVisible && this.#panelApi?.isActive),
+        this.#manualStopBlocked,
+      )
+    )
+      return false;
+    if (this.#panelApi?.isVisible) await this.#waitForValidFit();
+    await this.#start();
+    return true;
   }
 
   async #start(): Promise<void> {
@@ -290,6 +340,7 @@ class TerminalPanel implements IContentRenderer {
     this.#starting = true;
     this.#syncAction();
     this.#setStatus("starting", `starting ${this.#tab.title}`);
+    this.#beginResumeHistoryLimit();
     try {
       const started = await this.#client.backend.startRuntime(
         {
@@ -324,6 +375,7 @@ class TerminalPanel implements IContentRenderer {
         focusWhenPanelActive(this.#panelApi, () => this.#terminal?.focus());
       }
     } catch (error) {
+      this.#flushResumeHistory();
       this.#setStatus("error", `start failed · ${describeError(error)}`);
       this.#terminal.writeln(
         `\r\n\x1b[31m[start failed: ${describeError(error)}]\x1b[0m`,
@@ -339,7 +391,9 @@ class TerminalPanel implements IContentRenderer {
     if (event.type === "output") {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
       this.#runtimeId ??= event.runtimeId;
-      this.#outputQueue.push(new Uint8Array(event.data));
+      const output = this.#limitResumeHistory(new Uint8Array(event.data));
+      if (!output) return;
+      this.#outputQueue.push(output);
       this.#scheduleOutputFlush();
       return;
     }
@@ -350,6 +404,7 @@ class TerminalPanel implements IContentRenderer {
       return;
     }
     this.#exitedRuntimeIds.add(event.runtimeId);
+    this.#flushResumeHistory();
     if (this.#runtimeId === event.runtimeId) this.#runtimeId = null;
     this.#pendingExitCode = event.code;
     this.#setStatus("stopped", `exit ${event.code}`);
@@ -445,7 +500,78 @@ class TerminalPanel implements IContentRenderer {
     });
   }
 
-  #scheduleFit(): void {
+  #beginResumeHistoryLimit(): void {
+    const session = this.#session;
+    if (
+      session?.provider !== "codex" ||
+      session.nativeBindingState !== "bound" ||
+      !session.nativeSessionId
+    ) {
+      this.#resumeHistoryBuffer = null;
+      return;
+    }
+    this.#clearResumeHistoryTimers();
+    this.#resumeHistoryBuffer = new TailByteBuffer(CODEX_RESUME_TAIL_BYTES);
+    this.#resumeHistoryMaxTimer = window.setTimeout(
+      () => this.#flushResumeHistory(),
+      CODEX_RESUME_HISTORY_MAX_MS,
+    );
+  }
+
+  #limitResumeHistory(output: Uint8Array): Uint8Array | null {
+    const buffer = this.#resumeHistoryBuffer;
+    if (!buffer) return output;
+    buffer.push(output);
+    if (this.#resumeHistoryQuietTimer !== null)
+      window.clearTimeout(this.#resumeHistoryQuietTimer);
+    this.#resumeHistoryQuietTimer = window.setTimeout(
+      () => this.#flushResumeHistory(),
+      CODEX_RESUME_HISTORY_QUIET_MS,
+    );
+    return null;
+  }
+
+  #flushResumeHistory(): void {
+    const buffer = this.#resumeHistoryBuffer;
+    if (!buffer) return;
+    this.#resumeHistoryBuffer = null;
+    this.#clearResumeHistoryTimers();
+    const output = buffer.take();
+    if (buffer.omittedBytes > 0) {
+      this.#terminal?.writeln(
+        `\r\n\x1b[2m[resume history truncated · skipped ${formatBytes(buffer.omittedBytes)}]\x1b[0m`,
+      );
+    }
+    if (output) {
+      this.#outputQueue.push(output);
+      this.#scheduleOutputFlush();
+    }
+  }
+
+  #clearResumeHistoryTimers(): void {
+    if (this.#resumeHistoryQuietTimer !== null) {
+      window.clearTimeout(this.#resumeHistoryQuietTimer);
+      this.#resumeHistoryQuietTimer = null;
+    }
+    if (this.#resumeHistoryMaxTimer !== null) {
+      window.clearTimeout(this.#resumeHistoryMaxTimer);
+      this.#resumeHistoryMaxTimer = null;
+    }
+  }
+
+  #scheduleFit(immediate = false): void {
+    if (!this.#attached || this.#destroyed || !this.#panelApi?.isVisible) {
+      return;
+    }
+    if (immediate) {
+      this.#fitDebounce.cancel();
+      this.#requestFitFrame();
+      return;
+    }
+    this.#fitDebounce.schedule(() => this.#requestFitFrame());
+  }
+
+  #requestFitFrame(): void {
     if (
       !this.#attached ||
       this.#destroyed ||
@@ -478,6 +604,7 @@ class TerminalPanel implements IContentRenderer {
     }
     try {
       this.#fitAddon.fit();
+      this.#fitCount += 1;
       this.#hasValidFit = true;
       this.#releaseFitWaiters();
       return true;
@@ -503,6 +630,7 @@ class TerminalPanel implements IContentRenderer {
       return;
     }
     if (!this.#session) return;
+    this.#manualStopBlocked = false;
     if (this.#session.nativeBindingState === "unavailable") {
       this.#setStatus("starting", "starting a new native Session");
       try {
@@ -520,6 +648,7 @@ class TerminalPanel implements IContentRenderer {
   async #stop(): Promise<void> {
     if (!this.#runtimeId) return;
     const runtimeId = this.#runtimeId;
+    this.#manualStopBlocked = true;
     this.#setStatus("stopping", "stopping");
     try {
       await this.#client.backend.stopRuntime(runtimeId);
@@ -586,6 +715,8 @@ class TerminalPanel implements IContentRenderer {
       scrollbackLength: terminal?.getScrollbackLength() ?? null,
       viewportY: terminal?.getViewportY() ?? null,
       queuedOutputChunks: this.#outputQueue.length,
+      fitCount: this.#fitCount,
+      fitDebouncePending: this.#fitDebounce.pending,
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,
       theme: this.theme,
@@ -597,3 +728,10 @@ class TerminalPanel implements IContentRenderer {
 type TerminalDebugElement = HTMLElement & {
   __CCSM_TERMINAL_DEBUG__?: () => object;
 };
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kib = bytes / 1024;
+  if (kib < 1024) return `${Math.round(kib)} KiB`;
+  return `${(kib / 1024).toFixed(1)} MiB`;
+}

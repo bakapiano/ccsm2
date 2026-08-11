@@ -3,14 +3,24 @@ import { describe, expect, test } from "bun:test";
 const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
 
 describe("application shell layout", () => {
-  test("overlays the sidebar resizer without adding a gap before Dockview", () => {
+  test("uses VS Code-style full-width title and status bars", () => {
     expect(cssRule(".app-shell")).toContain(
       "grid-template-columns: var(--sidebar-width) minmax(0, 1fr)",
     );
+    expect(cssRule(".app-shell")).toContain(
+      "grid-template-rows: 35px minmax(0, 1fr) 22px",
+    );
+    expect(cssRule(".app-titlebar")).toContain("grid-area: titlebar");
+    expect(cssRule(".app-statusbar")).toContain("grid-area: statusbar");
+  });
+
+  test("overlays the sidebar resizer between title and status bars", () => {
     expect(cssRule(".sidebar-resizer")).toContain("position: absolute");
     expect(cssRule(".sidebar-resizer")).toContain(
       "left: calc(var(--sidebar-width) - 2px)",
     );
+    expect(cssRule(".sidebar-resizer")).toContain("top: 35px");
+    expect(cssRule(".sidebar-resizer")).toContain("bottom: 22px");
   });
 });
 

@@ -1,9 +1,14 @@
 export const DEFAULT_SIDEBAR_WIDTH = 232;
 export const MIN_SIDEBAR_WIDTH = 176;
 export const MAX_SIDEBAR_WIDTH = 480;
+export const DEFAULT_AGENTS_HEIGHT = 280;
+export const MIN_AGENTS_HEIGHT = 112;
+export const MIN_SPACE_TREE_HEIGHT = 96;
+
+const SIDEBAR_FIXED_HEIGHT = 32 + 5;
 
 const WIDTH_KEY = "ccsm.sidebar.width";
-const COLLAPSED_KEY = "ccsm.sidebar.collapsed";
+const AGENTS_HEIGHT_KEY = "ccsm.sidebar.agentsHeight";
 
 type SidebarStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -21,30 +26,61 @@ export function resizeSidebarWidth(startWidth: number, deltaX: number): number {
   return normalizeSidebarWidth(startWidth + deltaX);
 }
 
+export function maxAgentsHeight(sidebarHeight: number): number {
+  return Math.max(
+    MIN_AGENTS_HEIGHT,
+    Math.round(sidebarHeight - SIDEBAR_FIXED_HEIGHT - MIN_SPACE_TREE_HEIGHT),
+  );
+}
+
+export function normalizeAgentsHeight(
+  value: unknown,
+  sidebarHeight: number,
+): number {
+  const maximum = maxAgentsHeight(sidebarHeight);
+  if (value === null || value === undefined || value === "")
+    return Math.min(DEFAULT_AGENTS_HEIGHT, maximum);
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric))
+    return Math.min(DEFAULT_AGENTS_HEIGHT, maximum);
+  return Math.round(Math.min(maximum, Math.max(MIN_AGENTS_HEIGHT, numeric)));
+}
+
+export function resizeAgentsHeight(
+  startHeight: number,
+  deltaY: number,
+  sidebarHeight: number,
+): number {
+  return normalizeAgentsHeight(startHeight - deltaY, sidebarHeight);
+}
+
 export class SidebarLayoutController {
   readonly #resizer: HTMLElement;
-  readonly #toggle: HTMLButtonElement;
+  readonly #agentsResizer: HTMLElement;
   #width: number;
-  #collapsed: boolean;
+  #agentsHeight: number;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly storage: SidebarStorage,
   ) {
     this.#resizer = required(root, "#sidebar-resizer");
-    this.#toggle = required(root, "#sidebar-toggle");
+    this.#agentsResizer = required(root, "#agents-resizer");
     this.#width = normalizeSidebarWidth(storage.getItem(WIDTH_KEY));
-    this.#collapsed = storage.getItem(COLLAPSED_KEY) === "true";
-    this.#toggle.addEventListener("click", () => this.toggle());
+    this.#agentsHeight = normalizeAgentsHeight(
+      storage.getItem(AGENTS_HEIGHT_KEY),
+      this.#layoutHeight(),
+    );
     this.#resizer.addEventListener("pointerdown", (event) =>
       this.#beginResize(event),
     );
+    this.#agentsResizer.addEventListener("pointerdown", (event) =>
+      this.#beginAgentsResize(event),
+    );
     this.#resizer.addEventListener("dblclick", () => {
-      if (this.#collapsed) return;
       this.#setWidth(DEFAULT_SIDEBAR_WIDTH, true);
     });
     this.#resizer.addEventListener("keydown", (event) => {
-      if (this.#collapsed) return;
       const delta = event.shiftKey ? 32 : 8;
       if (event.key === "ArrowLeft") this.#setWidth(this.#width - delta, true);
       else if (event.key === "ArrowRight")
@@ -54,17 +90,34 @@ export class SidebarLayoutController {
       else return;
       event.preventDefault();
     });
-    this.#apply();
-  }
-
-  toggle(): void {
-    this.#collapsed = !this.#collapsed;
-    this.storage.setItem(COLLAPSED_KEY, String(this.#collapsed));
+    this.#agentsResizer.addEventListener("dblclick", () => {
+      this.#setAgentsHeight(DEFAULT_AGENTS_HEIGHT, true);
+    });
+    this.#agentsResizer.addEventListener("keydown", (event) => {
+      const delta = event.shiftKey ? 32 : 8;
+      if (event.key === "ArrowUp")
+        this.#setAgentsHeight(this.#agentsHeight + delta, true);
+      else if (event.key === "ArrowDown")
+        this.#setAgentsHeight(this.#agentsHeight - delta, true);
+      else if (event.key === "Home")
+        this.#setAgentsHeight(MIN_AGENTS_HEIGHT, true);
+      else if (event.key === "End")
+        this.#setAgentsHeight(maxAgentsHeight(this.#layoutHeight()), true);
+      else return;
+      event.preventDefault();
+    });
+    window.addEventListener("resize", () => {
+      this.#agentsHeight = normalizeAgentsHeight(
+        this.#agentsHeight,
+        this.#layoutHeight(),
+      );
+      this.#apply();
+    });
     this.#apply();
   }
 
   #beginResize(event: PointerEvent): void {
-    if (this.#collapsed || event.button !== 0) return;
+    if (event.button !== 0) return;
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = this.#width;
@@ -94,20 +147,68 @@ export class SidebarLayoutController {
     this.#apply();
   }
 
+  #beginAgentsResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = this.#agentsHeight;
+    this.root.dataset.agentsResizing = "true";
+    this.#agentsResizer.setPointerCapture?.(event.pointerId);
+    const move = (moveEvent: PointerEvent) => {
+      this.#setAgentsHeight(
+        resizeAgentsHeight(
+          startHeight,
+          moveEvent.clientY - startY,
+          this.#layoutHeight(),
+        ),
+        false,
+      );
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      delete this.root.dataset.agentsResizing;
+      this.storage.setItem(AGENTS_HEIGHT_KEY, String(this.#agentsHeight));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish, { once: true });
+    window.addEventListener("pointercancel", finish, { once: true });
+  }
+
+  #setAgentsHeight(height: number, persist: boolean): void {
+    this.#agentsHeight = normalizeAgentsHeight(height, this.#layoutHeight());
+    if (persist)
+      this.storage.setItem(AGENTS_HEIGHT_KEY, String(this.#agentsHeight));
+    this.#apply();
+  }
+
+  #layoutHeight(): number {
+    return this.root.getBoundingClientRect().height || window.innerHeight;
+  }
+
   #apply(): void {
     this.root.style.setProperty("--sidebar-width", `${this.#width}px`);
-    this.root.dataset.sidebarCollapsed = String(this.#collapsed);
-    this.#toggle.setAttribute("aria-expanded", String(!this.#collapsed));
-    this.#toggle.setAttribute(
-      "aria-label",
-      this.#collapsed ? "Expand sidebar" : "Collapse sidebar",
-    );
-    this.#toggle.title = this.#toggle.getAttribute("aria-label") ?? "Sidebar";
-    this.#resizer.tabIndex = this.#collapsed ? -1 : 0;
-    this.#resizer.setAttribute("aria-disabled", String(this.#collapsed));
+    this.root.style.setProperty("--agents-height", `${this.#agentsHeight}px`);
+    this.#resizer.tabIndex = 0;
+    this.#resizer.setAttribute("aria-disabled", "false");
     this.#resizer.setAttribute("aria-valuemin", String(MIN_SIDEBAR_WIDTH));
     this.#resizer.setAttribute("aria-valuemax", String(MAX_SIDEBAR_WIDTH));
     this.#resizer.setAttribute("aria-valuenow", String(this.#width));
+    this.#agentsResizer.tabIndex = 0;
+    this.#agentsResizer.setAttribute("aria-disabled", "false");
+    this.#agentsResizer.setAttribute(
+      "aria-valuemin",
+      String(MIN_AGENTS_HEIGHT),
+    );
+    this.#agentsResizer.setAttribute(
+      "aria-valuemax",
+      String(maxAgentsHeight(this.#layoutHeight())),
+    );
+    this.#agentsResizer.setAttribute(
+      "aria-valuenow",
+      String(this.#agentsHeight),
+    );
   }
 }
 

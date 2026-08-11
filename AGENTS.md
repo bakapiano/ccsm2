@@ -26,6 +26,10 @@
 
 ## Development
 
+- Run `pnpm dev` from the repository root for the normal desktop development loop. It starts `tauri dev`, which starts the Vite server through `beforeDevCommand`; TypeScript and CSS changes use Vite HMR in the running desktop window.
+- Treat `pnpm desktop:build:debug` as a final build verification command, not as the frontend iteration loop. Do not repeatedly kill, rebuild, and reopen the packaged debug executable for ordinary renderer changes.
+- Rust or Tauri host changes may trigger a native rebuild/restart under `tauri dev`; frontend-only changes must stay on the existing HMR instance. Keep one dev instance per workspace so Vite/CDP ports and WebView profiles do not conflict.
+- Run interactive verification against the workspace dev instance or an isolated fixture/profile. Do not attach expensive full-tree snapshots to a user's long-running desktop instance; prefer targeted locators/eval and clean up owned dev processes.
 - Deliver vertical slices across core, platform, desktop adapter, TypeScript Provider, and tests.
 - Keep platform conditionals in platform modules or `ccsm-desktop/browser`; preserve shared domain behavior.
 - Preserve vendored ghostty-web CJK, selection, box-drawing, and IME fixes, plus portable-pty/ConPTY notices and integrity checks.

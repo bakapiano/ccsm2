@@ -14,10 +14,11 @@ CCSM is a cross-platform desktop workspace for persistent layouts containing CLI
 
 ```powershell
 pnpm install
+pnpm dev                 # Tauri desktop + Vite frontend HMR
 pnpm check
 pnpm test
 pnpm build
-pnpm desktop:dev
+pnpm desktop:build:debug # final debug executable verification
 ```
 
 Architecture starts at [specs/README.md](specs/README.md).

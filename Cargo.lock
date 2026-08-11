@@ -423,12 +423,15 @@ dependencies = [
 name = "ccsm-desktop"
 version = "0.1.0-beta.1"
 dependencies = [
+ "base64 0.22.1",
  "ccsm-core",
  "ccsm-platform",
  "serde",
  "tauri",
  "tauri-build",
  "ts-rs",
+ "webview2-com",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

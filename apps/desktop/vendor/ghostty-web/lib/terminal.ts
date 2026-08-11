@@ -167,6 +167,8 @@ export class Terminal implements ITerminalCore {
       scrollback: options.scrollback ?? 10000,
       fontSize: options.fontSize ?? 15,
       fontFamily: options.fontFamily ?? "monospace",
+      fontCellWidth: options.fontCellWidth,
+      fontCellHeight: options.fontCellHeight,
       allowTransparency: options.allowTransparency ?? false,
       convertEol: options.convertEol ?? false,
       disableStdin: options.disableStdin ?? false,
@@ -487,6 +489,8 @@ export class Terminal implements ITerminalCore {
       this.renderer = new CanvasRenderer(this.canvas, {
         fontSize: this.options.fontSize,
         fontFamily: this.options.fontFamily,
+        fontCellWidth: this.options.fontCellWidth,
+        fontCellHeight: this.options.fontCellHeight,
         cursorStyle: this.options.cursorStyle,
         cursorBlink: this.options.cursorBlink,
         theme: this.options.theme,

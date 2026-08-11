@@ -17,6 +17,15 @@ describe("Terminal status layout", () => {
       "border-top: 1px solid var(--term-rule)",
     );
   });
+
+  test("guards long-scrollback resize bursts with trailing fit debounce", () => {
+    expect(provider).toContain("const FIT_DEBOUNCE_MS = 80");
+    expect(provider).toContain("new DebouncedTask(FIT_DEBOUNCE_MS)");
+    expect(provider).toContain(
+      "this.#fitDebounce.schedule(() => this.#requestFitFrame())",
+    );
+    expect(provider).toContain("this.#scheduleFit(true)");
+  });
 });
 
 function cssRule(selector: string): string {

@@ -3,6 +3,10 @@ import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 import type { BrowserBounds } from "../generated/BrowserBounds";
 import type { TabDto } from "../generated/TabDto";
 import { planNativeVisibility } from "../browser-visibility";
+import {
+  clearBrowserSnapshot,
+  presentBrowserSnapshot,
+} from "../browser-snapshot";
 import { OrderedTaskQueue } from "../ordered-task-queue";
 import { observePanelVisibility } from "../panel-visibility";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
@@ -49,6 +53,7 @@ class BrowserPanel implements IContentRenderer {
   readonly #surfaceId: string;
   #anchor: HTMLElement | null = null;
   #address: HTMLInputElement | null = null;
+  #snapshot: HTMLImageElement | null = null;
   #status: HTMLElement | null = null;
   #resizeObserver: ResizeObserver | null = null;
   #visibilitySubscription: { dispose(): void } | null = null;
@@ -86,13 +91,16 @@ class BrowserPanel implements IContentRenderer {
         <button class="browser-go" type="submit">Go</button>
         <span class="browser-state" data-state="starting">starting</span>
       </form>
-      <div class="browser-anchor" aria-label="Native browser viewport"></div>
+      <div class="browser-anchor" data-snapshot-visible="false" aria-label="Native browser viewport">
+        <img class="browser-snapshot" alt="" aria-hidden="true" hidden />
+      </div>
     `;
   }
 
   init(parameters: GroupPanelPartInitParameters): void {
     this.#anchor = this.element.querySelector(".browser-anchor");
     this.#address = this.element.querySelector(".browser-address");
+    this.#snapshot = this.element.querySelector(".browser-snapshot");
     this.#status = this.element.querySelector(".browser-state");
     if (!this.#anchor || !this.#address)
       throw new Error("browser panel DOM is incomplete");
@@ -142,6 +150,7 @@ class BrowserPanel implements IContentRenderer {
     document.removeEventListener("dragstart", this.#onDragStart, true);
     document.removeEventListener("dragend", this.#onDragEnd, true);
     if (this.#raf) cancelAnimationFrame(this.#raf);
+    clearBrowserSnapshot(this.#anchor, this.#snapshot);
     void this.#queueVisibilitySync();
   }
 
@@ -160,13 +169,47 @@ class BrowserPanel implements IContentRenderer {
     this.#syncAfterVisibilityConstraintChange();
   }
 
-  setOverlaySuspended(suspended: boolean): Promise<void> {
-    this.#overlaySuspended = suspended;
-    const hidden = this.#shouldShow()
-      ? Promise.resolve()
-      : this.#queueVisibilitySync();
-    this.#scheduleSync();
-    return hidden;
+  async setOverlaySuspended(suspended: boolean): Promise<void> {
+    if (suspended === this.#overlaySuspended) return;
+    if (suspended) {
+      await this.#captureOverlaySnapshot();
+      this.#overlaySuspended = true;
+      await this.#queueVisibilitySync();
+      this.#scheduleSync();
+      return;
+    }
+
+    this.#overlaySuspended = false;
+    try {
+      const bounds = this.#measureBounds();
+      if (this.#created && bounds && boundsChanged(this.#lastBounds, bounds)) {
+        await this.#client.browser.setBounds(this.#surfaceId, bounds);
+        this.#lastBounds = bounds;
+      }
+      await this.#queueVisibilitySync();
+    } finally {
+      clearBrowserSnapshot(this.#anchor, this.#snapshot);
+      this.#scheduleSync();
+    }
+  }
+
+  async #captureOverlaySnapshot(): Promise<void> {
+    if (
+      !this.#created ||
+      !this.#lastVisible ||
+      !this.#anchor ||
+      !this.#snapshot
+    )
+      return;
+    try {
+      const dataUrl = await this.#client.browser.capture(this.#surfaceId);
+      if (this.#disposed || !this.#anchor || !this.#snapshot) return;
+      await presentBrowserSnapshot(this.#anchor, this.#snapshot, dataUrl);
+      delete this.element.dataset.snapshotError;
+    } catch (error) {
+      clearBrowserSnapshot(this.#anchor, this.#snapshot);
+      this.element.dataset.snapshotError = describeError(error);
+    }
   }
 
   #setDesiredVisible(visible: boolean): void {

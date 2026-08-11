@@ -2,17 +2,19 @@
  * xterm.js-compatible interfaces
  */
 
-import type { Ghostty } from './ghostty';
+import type { Ghostty } from "./ghostty";
 
 export interface ITerminalOptions {
   cols?: number; // Default: 80
   rows?: number; // Default: 24
   cursorBlink?: boolean; // Default: false
-  cursorStyle?: 'block' | 'underline' | 'bar';
+  cursorStyle?: "block" | "underline" | "bar";
   theme?: ITheme;
   scrollback?: number; // Default: 1000
   fontSize?: number; // Default: 15
   fontFamily?: string; // Default: 'monospace'
+  fontCellWidth?: number; // Optional fixed cell width in CSS pixels
+  fontCellHeight?: number; // Optional fixed cell height in CSS pixels
   allowTransparency?: boolean;
 
   // Phase 1 additions
@@ -120,7 +122,7 @@ export interface IBufferNamespace {
  */
 export interface IBuffer {
   /** Buffer type: 'normal' or 'alternate' */
-  readonly type: 'normal' | 'alternate';
+  readonly type: "normal" | "alternate";
   /** Cursor X position (0-indexed) */
   readonly cursorX: number;
   /** Cursor Y position (0-indexed, relative to viewport) */
@@ -168,7 +170,11 @@ export interface IBufferLine {
    * @param endColumn End column (default: length)
    * @returns String representation of the line
    */
-  translateToString(trimRight?: boolean, startColumn?: number, endColumn?: number): string;
+  translateToString(
+    trimRight?: boolean,
+    startColumn?: number,
+    endColumn?: number,
+  ): string;
 }
 
 /**

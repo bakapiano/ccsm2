@@ -3,7 +3,4 @@ import type { AgentActivityChangedDto } from "./AgentActivityChangedDto";
 import type { FileChangeHintDto } from "./FileChangeHintDto";
 import type { NativeBindingDto } from "./NativeBindingDto";
 
-export type AppEvent =
-  | { kind: "filesystem.changed"; payload: FileChangeHintDto }
-  | { kind: "session.bindingChanged"; payload: NativeBindingDto }
-  | { kind: "agent.activityChanged"; payload: AgentActivityChangedDto };
+export type AppEvent = { "kind": "filesystem.changed", payload: FileChangeHintDto, } | { "kind": "session.bindingChanged", payload: NativeBindingDto, } | { "kind": "agent.activityChanged", payload: AgentActivityChangedDto, };

@@ -16,6 +16,22 @@ Development Testing 为开发阶段提供按需、交互式、探索性的验证
 
 开发测试可以使用真实用户交互和视觉判断。自动化测试使用确定性 assertions 和可重复 fixtures。
 
+## Desktop hot-reload loop
+
+日常桌面开发从repository root运行：
+
+```powershell
+pnpm dev
+```
+
+命令链固定为`root dev → desktop:dev → @ccsm/desktop dev:desktop → tauri dev`。Tauri通过`beforeDevCommand`启动`@ccsm/desktop dev`的Vite server，并让主WebView加载`devUrl`。
+
+- `apps/desktop/src`中的TypeScript和CSS修改使用Vite HMR更新现有桌面窗口，不重启Rust host、PTY、CLI process tree或native Browser surface。
+- `apps/desktop/src-tauri`或Rust crate修改由Tauri dev触发native重新编译；需要重启host时按native lifecycle处理，不能假设runtime与WebView状态跨重启保留。
+- `pnpm desktop:build:debug`生成内嵌`dist`的debug executable，用于最终build验证，不提供HMR，也不作为普通前端迭代入口。
+- 同一workspace保持一个Tauri dev实例。固定Vite/CDP端口、Browser profile和测试data directory不得被重复实例争用。
+- 交互验证优先使用小范围locator、targeted eval和隔离fixture。完整accessibility tree或大范围snapshot不得对用户长期运行的实例执行。
+
 ## 适用场景
 
 - 新功能首次接入，自动化 contract 尚未稳定。
@@ -45,13 +61,14 @@ OS tools           process tree、PTY、window、filesystem watcher
 
 ```text
 create isolated dev sandbox
-→ build/start debug executable
+→ start or reuse `pnpm dev` hot-reload desktop
 → attach debugger or playwright-cli
 → reproduce and inspect
 → verify candidate change
 → capture useful artifacts
 → detach and clean owned resources
 → add/update automated regression
+→ run `pnpm desktop:build:debug` before handoff
 ```
 
 ## 隔离

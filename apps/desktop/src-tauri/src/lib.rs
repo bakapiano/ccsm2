@@ -165,6 +165,7 @@ pub fn run() {
             commands::create_browser,
             commands::set_browser_bounds,
             commands::set_browser_visible,
+            commands::capture_browser,
             commands::focus_browser,
             commands::navigate_browser,
             commands::reload_browser,

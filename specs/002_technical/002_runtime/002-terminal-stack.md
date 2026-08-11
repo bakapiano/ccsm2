@@ -29,6 +29,7 @@ portable-pty platform backend
 - PTY output 有序且只写入 ghostty-web 一次；input/query reply 原样回传。
 - ghostty-web 是终端实现；ANSI 解析和兼容修复集中在其 WASM/TypeScript 层。
 - 使用 vendored ghostty-web fork，保留 CJK spacer、单字符 selection、行边界 hysteresis、IME anchor 和 box drawing 修复。
+- Box-drawing的整格水平线与垂直线使用单个连续Canvas shape，cell中心和边界不产生重复alpha接缝。
 - scrollback 使用 64 MiB byte budget。
 - IME preedit 覆盖显示在 Canvas cursor 上；`compositionend` 将最终文本提交给 VT/PTY。
 - IME input proxy和preedit overlay使用Terminal host内的Canvas布局坐标；Dockview transform不能重复叠加Panel viewport偏移。
@@ -38,7 +39,7 @@ portable-pty platform backend
 
 - 一个 writable runtime 同时只有一个 resize/input owner。
 - inactive Tab 保留 ghostty-web 实例和 scroll position；follow-output 仅在 viewport 原本位于底部时生效。
-- Dockview layout/resize后debounce fit，并把最终rows/cols发给AppBackend。
+- Dockview layout/resize使用trailing debounce合并连续几何变化，并把最终rows/cols发给AppBackend；首次显示和Space切换立即fit。
 - 前端同一runtime同时只有一个resize command在途；resize burst只保留最新rows/cols。
 - PTY input writer、resize worker和process waiter相互独立；底层resize停顿不阻塞input。短命进程退出时，reader先排空stdout/stderr；750ms上限保证孤立pipe无法阻塞Exit。
 - 大段resume历史按动画帧限额批量写入ghostty-web，避免每个PTY chunk触发一次同步render。

@@ -20,20 +20,82 @@
   </head>
   <body>
     <div id="app" class="app-shell">
-      <aside class="sidebar">
-        <div class="brand" data-tauri-drag-region>
-          <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32">
-              <rect x="2" y="4" width="28" height="24" rx="3" />
-              <line x1="2" y1="10" x2="30" y2="10" />
-              <circle cx="6" cy="7" r="1" class="brand-light-red" />
-              <circle cx="9.5" cy="7" r="1" class="brand-light-yellow" />
-              <circle cx="13" cy="7" r="1" class="brand-light-green" />
-              <text x="16" y="19.5">ccsm</text>
+      <header class="app-titlebar" data-tauri-drag-region>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32">
+            <rect x="2" y="4" width="28" height="24" rx="3" />
+            <line x1="2" y1="10" x2="30" y2="10" />
+            <circle cx="6" cy="7" r="1" class="brand-light-red" />
+            <circle cx="9.5" cy="7" r="1" class="brand-light-yellow" />
+            <circle cx="13" cy="7" r="1" class="brand-light-green" />
+            <text x="16" y="19.5">ccsm</text>
+          </svg>
+        </span>
+        <div class="app-titlebar-drag" data-tauri-drag-region></div>
+        <button
+          id="theme-toggle"
+          class="theme-toggle"
+          type="button"
+          aria-label="Switch to dark mode"
+          title="Switch to dark mode"
+        >
+          <svg
+            class="theme-icon theme-icon-moon"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path
+              d="M12.8 10.2A5.5 5.5 0 0 1 5.8 3.2 5.5 5.5 0 1 0 12.8 10.2Z"
+            />
+          </svg>
+          <svg
+            class="theme-icon theme-icon-sun"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <circle cx="8" cy="8" r="2.6" />
+            <path
+              d="M8 1.2v1.5M8 13.3v1.5M1.2 8h1.5M13.3 8h1.5M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1"
+            />
+          </svg>
+        </button>
+        <div class="window-controls" aria-label="Window controls">
+          <button
+            type="button"
+            class="window-control"
+            data-window-action="minimize"
+            aria-label="Minimize"
+            title="Minimize"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2 8.5h8" />
             </svg>
-          </span>
-          <strong>CCSM</strong>
+          </button>
+          <button
+            type="button"
+            class="window-control"
+            data-window-action="maximize"
+            aria-label="Maximize"
+            title="Maximize"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="7" height="7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="window-control window-close"
+            data-window-action="close"
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <path d="m2.5 2.5 7 7m0-7-7 7" />
+            </svg>
+          </button>
         </div>
+      </header>
+      <aside class="sidebar">
         <div class="sidebar-toolbar">
           <span>Spaces</span>
           <button
@@ -43,8 +105,7 @@
             title="New Folder"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M1.5 4.5h5l1.5 1.5h6.5v7h-13z" />
-              <path d="M10.5 7.5v4m-2-2h4" />
+              <path d="M1.5 4.5h5l1.5 1.5h6.5v6.5h-13z" />
             </svg>
           </button>
           <button
@@ -53,20 +114,29 @@
             aria-label="New Space"
             title="New Space"
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="2" y="2.5" width="12" height="11" rx="1" />
-              <path d="M8 5.5v5m-2.5-2.5h5" />
-            </svg>
+            <span aria-hidden="true">+</span>
           </button>
         </div>
         <div class="sidebar-tree-scroll">
-          <nav id="space-tree" class="space-tree" aria-label="Spaces"></nav>
+          <nav
+            id="space-tree"
+            class="space-tree"
+            role="tree"
+            aria-label="Spaces"
+          ></nav>
         </div>
+        <div
+          id="agents-resizer"
+          class="agents-resizer"
+          role="separator"
+          aria-label="Resize Spaces and Agents"
+          aria-orientation="horizontal"
+          tabindex="0"
+        ></div>
         <section class="agents-panel" aria-labelledby="agents-heading">
           <div class="agents-header" id="agents-heading">Agents</div>
           <div id="agent-list" class="agent-list"></div>
         </section>
-        <div class="sidebar-footer">v2 · local desktop</div>
       </aside>
       <div
         id="sidebar-resizer"
@@ -77,94 +147,16 @@
         tabindex="0"
       ></div>
       <section class="workspace">
-        <header class="workspace-header" data-tauri-drag-region>
-          <button
-            id="sidebar-toggle"
-            class="sidebar-toggle"
-            type="button"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="1.5" y="2" width="13" height="12" rx="1" />
-              <path d="M5.5 2v12" />
-            </svg>
-          </button>
-          <div class="workspace-title" data-tauri-drag-region>
-            <strong id="active-space-name">Opening Space…</strong>
-            <small id="active-space-root">—</small>
-          </div>
-          <div class="workspace-actions">
-            <button
-              id="theme-toggle"
-              class="theme-toggle"
-              type="button"
-              aria-label="Switch to dark mode"
-              title="Switch to dark mode"
-            >
-              <svg
-                class="theme-icon theme-icon-moon"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <path
-                  d="M12.8 10.2A5.5 5.5 0 0 1 5.8 3.2 5.5 5.5 0 1 0 12.8 10.2Z"
-                />
-              </svg>
-              <svg
-                class="theme-icon theme-icon-sun"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <circle cx="8" cy="8" r="2.6" />
-                <path
-                  d="M8 1.2v1.5M8 13.3v1.5M1.2 8h1.5M13.3 8h1.5M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1"
-                />
-              </svg>
-            </button>
-          </div>
-          <div class="window-controls" aria-label="Window controls">
-            <button
-              type="button"
-              class="window-control"
-              data-window-action="minimize"
-              aria-label="Minimize"
-              title="Minimize"
-            >
-              <svg viewBox="0 0 12 12" aria-hidden="true">
-                <path d="M2 8.5h8" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="window-control"
-              data-window-action="maximize"
-              aria-label="Maximize"
-              title="Maximize"
-            >
-              <svg viewBox="0 0 12 12" aria-hidden="true">
-                <rect x="2.5" y="2.5" width="7" height="7" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="window-control window-close"
-              data-window-action="close"
-              aria-label="Close"
-              title="Close"
-            >
-              <svg viewBox="0 0 12 12" aria-hidden="true">
-                <path d="m2.5 2.5 7 7m0-7-7 7" />
-              </svg>
-            </button>
-          </div>
-        </header>
         <main
           id="dockview"
           class="dockview-theme-dark"
           aria-label="Space layout"
         ></main>
       </section>
+      <footer class="app-statusbar" data-tauri-drag-region>
+        <strong id="active-space-name">Opening Space…</strong>
+        <span id="active-space-root">—</span>
+      </footer>
       <div id="new-tab-menu" class="new-tab-menu" role="menu" hidden></div>
       <span
         id="global-status"

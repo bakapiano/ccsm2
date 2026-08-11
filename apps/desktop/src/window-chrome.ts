@@ -30,10 +30,8 @@ export function bindWindowChrome(
       });
     });
 
-  root
-    .querySelector(".workspace-header")
-    ?.addEventListener("dblclick", (event) => {
-      if ((event.target as Element | null)?.closest("button, input")) return;
-      void client.toggleMaximize();
-    });
+  root.querySelector(".app-titlebar")?.addEventListener("dblclick", (event) => {
+    if ((event.target as Element | null)?.closest("button, input")) return;
+    void client.toggleMaximize();
+  });
 }

@@ -4,9 +4,4 @@ import type { SpaceDto } from "./SpaceDto";
 import type { SpaceLayoutDto } from "./SpaceLayoutDto";
 import type { TabDto } from "./TabDto";
 
-export type SpaceSnapshotDto = {
-  space: SpaceDto;
-  tabs: Array<TabDto>;
-  layout: SpaceLayoutDto;
-  cliSessions: Array<CliSessionDto>;
-};
+export type SpaceSnapshotDto = { space: SpaceDto, tabs: Array<TabDto>, layout: SpaceLayoutDto, cliSessions: Array<CliSessionDto>, };

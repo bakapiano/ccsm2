@@ -613,6 +613,34 @@ function drawEdges(
   const v_double_left = Math.max(0, v_light_left - lt);
   const v_double_right = v_light_right + lt;
 
+  ctx.fillStyle = color;
+  const rect = (x0: number, y0: number, x1: number, y1: number) => {
+    ctx.fillRect(ox + x0, oy + y0, x1 - x0, y1 - y0);
+  };
+
+  // Straight full-cell lines must be painted as one continuous shape.
+  // Splitting them into left/right or up/down arms overpaints the center.
+  // With a 1px stroke centered on a half-pixel row, that overlap produces
+  // a brighter seam once per cell and makes a long divider look segmented.
+  if (e.u === N && e.d === N && e.l === e.r && e.l !== N) {
+    if (e.l === L) rect(0, h_light_top, w, h_light_bottom);
+    if (e.l === H) rect(0, h_heavy_top, w, h_heavy_bottom);
+    if (e.l === D) {
+      rect(0, h_double_top, w, h_light_top);
+      rect(0, h_light_bottom, w, h_double_bottom);
+    }
+    return;
+  }
+  if (e.l === N && e.r === N && e.u === e.d && e.u !== N) {
+    if (e.u === L) rect(v_light_left, 0, v_light_right, h);
+    if (e.u === H) rect(v_heavy_left, 0, v_heavy_right, h);
+    if (e.u === D) {
+      rect(v_double_left, 0, v_light_left, h);
+      rect(v_light_right, 0, v_double_right, h);
+    }
+    return;
+  }
+
   // Bottom of the up-arm.
   let up_bottom: number;
   if (e.l === H || e.r === H) {
@@ -660,11 +688,6 @@ function drawEdges(
   } else {
     right_left = v_light_right;
   }
-
-  ctx.fillStyle = color;
-  const rect = (x0: number, y0: number, x1: number, y1: number) => {
-    ctx.fillRect(ox + x0, oy + y0, x1 - x0, y1 - y0);
-  };
 
   // UP arm.
   switch (e.u) {

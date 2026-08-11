@@ -282,51 +282,28 @@ describe('box-drawing', () => {
   });
 
   describe('line drawing (U+2500..U+257F)', () => {
-    // drawEdges emits one fillRect per non-empty arm (left, right, up,
-    // down). Adjacent arms overlap at the cell center to cover the
-    // junction. So a plain horizontal `─` is 2 rects (left arm + right
-    // arm), not 1. We assert the union of rects, not individual counts.
-    test('─ U+2500 light horizontal: arms cover full width at vertical center', () => {
+    test('─ U+2500 light horizontal: one continuous rect covers the full cell', () => {
       const { ctx } = draw(0x2500);
-      const rects = rectsOnly(ctx.ops);
-      expect(rects.length).toBeGreaterThanOrEqual(1);
-      // All rects sit at the vertical center, light-thick high.
-      for (const r of rects) {
-        expect(r.h).toBe(LT);
-        expect(r.y + r.h / 2).toBeCloseTo(CH / 2, 9);
-      }
-      // Union covers full cell width.
-      const minX = Math.min(...rects.map((r) => r.x));
-      const maxX = Math.max(...rects.map((r) => r.x + r.w));
-      expect(minX).toBe(0);
-      expect(maxX).toBe(CW);
+      expect(rectsOnly(ctx.ops)).toEqual([
+        { x: 0, y: (CH - LT) / 2, w: CW, h: LT },
+      ]);
     });
-    test('│ U+2502 light vertical: arms cover full height at horizontal center', () => {
+    test('│ U+2502 light vertical: one continuous rect covers the full cell', () => {
       const { ctx } = draw(0x2502);
-      const rects = rectsOnly(ctx.ops);
-      expect(rects.length).toBeGreaterThanOrEqual(1);
-      for (const r of rects) {
-        expect(r.w).toBe(LT);
-        expect(r.x + r.w / 2).toBeCloseTo(CW / 2, 9);
-      }
-      const minY = Math.min(...rects.map((r) => r.y));
-      const maxY = Math.max(...rects.map((r) => r.y + r.h));
-      expect(minY).toBe(0);
-      expect(maxY).toBe(CH);
+      expect(rectsOnly(ctx.ops)).toEqual([
+        { x: (CW - LT) / 2, y: 0, w: LT, h: CH },
+      ]);
     });
-    test('━ U+2501 heavy horizontal: rects are 2× light thickness', () => {
+    test('━ U+2501 heavy horizontal: one rect is 2× light thickness', () => {
       const { ctx } = draw(0x2501);
       const rects = rectsOnly(ctx.ops);
-      expect(rects.length).toBeGreaterThanOrEqual(1);
-      for (const r of rects) {
-        expect(r.h).toBe(2 * LT);
-      }
+      expect(rects).toHaveLength(1);
+      expect(rects[0]?.h).toBe(2 * LT);
     });
     test('═ U+2550 double horizontal: two parallel light strokes, 1-light gap', () => {
       const { ctx } = draw(0x2550);
       const rects = rectsOnly(ctx.ops);
-      // Two arms × two parallels per arm = 4 rects.
-      expect(rects).toHaveLength(4);
+      expect(rects).toHaveLength(2);
       // All are light-thick.
       for (const r of rects) {
         expect(r.h).toBe(LT);
@@ -337,6 +314,20 @@ describe('box-drawing', () => {
       const ys = [...new Set(rects.map((r) => r.y))].sort((a, b) => a - b);
       expect(ys).toHaveLength(2);
       expect(ys[1] - ys[0]).toBeCloseTo(2 * LT, 9);
+    });
+    test('a 7x18 xterm-compatible divider has no center overpaint', () => {
+      const ctx = makeCtx();
+      drawBoxOrBlock(
+        ctx as unknown as CanvasRenderingContext2D,
+        0x2500,
+        0,
+        0,
+        7,
+        18,
+        COLOR,
+        LT
+      );
+      expect(rectsOnly(ctx.ops)).toEqual([{ x: 0, y: 8.5, w: 7, h: 1 }]);
     });
     test('┼ U+253C light cross = all four arms cover their respective edges', () => {
       const { ctx } = draw(0x253c);

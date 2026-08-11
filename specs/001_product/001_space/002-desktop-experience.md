@@ -13,7 +13,7 @@
 - New Tab 菜单展示 Shell、Claude Code、Codex、Browser、File Explorer、Git 和其他内置 Providers。
 - 新CLI Tab默认在Space root启动；用户可从Git tree选择某个repository root。
 - Tab 支持 drag、split、move group、pin 和 rename；Duplicate由具体 Tab Provider声明。
-- 用户关闭Tab会把它从Space中删除。CLI Tab同时停止runtime并删除CliSession；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
+- 用户关闭Tab会把它从Space中删除。关闭CLI Tab前显示应用内警告并要求确认，确认后停止runtime并从`data.db`删除Tab与CliSession；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
 - active Tab 获得 focus 和 input/resize ownership。
 
 ## Agents
@@ -23,6 +23,7 @@
 - 点击Agent先切换所属Space，再激活所属Tab并把终端输入焦点带到前台。
 - 当前Space中每个可见Dockview group的Agent使用选中背景；切换、分屏和关闭Tab时即时同步。
 - `blocked`和`working`项目优先排列，其后为`starting/idle/stopped`。
+- Spaces与Agents之间的水平separator支持pointer拖动、键盘调整和双击恢复默认高度；Agents高度本地持久化，同时为Space tree保留最小可用高度。
 
 ## 启动体验
 

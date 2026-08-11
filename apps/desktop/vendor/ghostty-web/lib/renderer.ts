@@ -45,6 +45,8 @@ export interface IScrollbackProvider {
 export interface RendererOptions {
   fontSize?: number; // Default: 15
   fontFamily?: string; // Default: 'monospace'
+  fontCellWidth?: number; // Optional fixed cell width in CSS pixels
+  fontCellHeight?: number; // Optional fixed cell height in CSS pixels
   cursorStyle?: "block" | "underline" | "bar"; // Default: 'block'
   cursorBlink?: boolean; // Default: false
   theme?: ITheme;
@@ -93,6 +95,27 @@ export function calculateFontMetrics(
     height: ascent + descent,
     baseline: ascent,
     boxThickness: Math.max(1, Math.round(fontSize / 16)),
+  };
+}
+
+export function applyFontCellOverrides(
+  measured: FontMetrics,
+  width?: number,
+  height?: number,
+): FontMetrics {
+  const resolvedWidth =
+    width !== undefined && Number.isFinite(width)
+      ? Math.max(1, Math.round(width))
+      : measured.width;
+  const resolvedHeight =
+    height !== undefined && Number.isFinite(height)
+      ? Math.max(1, Math.round(height))
+      : measured.height;
+  return {
+    ...measured,
+    width: resolvedWidth,
+    height: resolvedHeight,
+    baseline: Math.min(measured.baseline, resolvedHeight),
   };
 }
 
@@ -185,6 +208,8 @@ export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private fontSize: number;
   private fontFamily: string;
+  private fontCellWidth?: number;
+  private fontCellHeight?: number;
   private cursorStyle: "block" | "underline" | "bar";
   private cursorBlink: boolean;
   private sourceTheme: Required<ITheme>;
@@ -244,6 +269,8 @@ export class CanvasRenderer {
     // Apply options
     this.fontSize = options.fontSize ?? 15;
     this.fontFamily = options.fontFamily ?? "monospace";
+    this.fontCellWidth = options.fontCellWidth;
+    this.fontCellHeight = options.fontCellHeight;
     this.cursorStyle = options.cursorStyle ?? "block";
     this.cursorBlink = options.cursorBlink ?? false;
     this.sourceTheme = { ...DEFAULT_THEME, ...options.theme };
@@ -302,7 +329,11 @@ export class CanvasRenderer {
     // browser exposes them. With Cascadia Mono 16px this is 15px + 4px,
     // rather than the old and visibly cramped 12px + 5px approximation.
     const heightMetrics = ctx.measureText("Mgjpqy│中");
-    return calculateFontMetrics(this.fontSize, widthMetrics, heightMetrics);
+    return applyFontCellOverrides(
+      calculateFontMetrics(this.fontSize, widthMetrics, heightMetrics),
+      this.fontCellWidth,
+      this.fontCellHeight,
+    );
   }
 
   /**

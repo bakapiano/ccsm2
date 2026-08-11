@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { calculateInputAnchor } from "./input-anchor";
-import { calculateFontMetrics, createThemeColorRemap } from "./renderer";
+import {
+  applyFontCellOverrides,
+  calculateFontMetrics,
+  createThemeColorRemap,
+} from "./renderer";
 import { crossedDragThreshold, resolveDragRow } from "./selection-hit-test";
 import { SelectionManager } from "./selection-manager";
 import { calculateScrollbarGeometry } from "./scrollbar-geometry";
@@ -79,6 +83,16 @@ describe("local ghostty-web regressions", () => {
         },
       ),
     ).toEqual({ width: 10, height: 19, baseline: 15, boxThickness: 1 });
+  });
+
+  test("explicit cell geometry can match an xterm reference grid", () => {
+    expect(
+      applyFontCellOverrides(
+        { width: 8, height: 17, baseline: 13, boxThickness: 1 },
+        7,
+        18,
+      ),
+    ).toEqual({ width: 7, height: 18, baseline: 13, boxThickness: 1 });
   });
 
   test("width-zero CJK spacer cells do not add copied spaces", () => {

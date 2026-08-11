@@ -81,7 +81,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 基础间距按 4px 递进。
 - 顶栏高度为 40px。
 - 展开侧栏默认宽度为232px，可在176–480px之间拖动resize，并可折叠。
-- 侧栏树行高度为 28px。
+- 侧栏树行高度为22px，与File Explorer行高一致。
 - Dockview 标签带高度为 30px。
 - 内容工具栏高度为 30–38px。
 - 普通圆角为 4px，弹窗最大圆角为 6px。
@@ -103,10 +103,10 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - 侧栏以浅蓝灰表面和一条中性右边框建立边界。
 - 区域标题使用 12px medium 文本。
-- Folder 与 Space 使用同一 28px 行网格。
+- Folder 与 Space 使用同一22px行网格、8px层级indent、12px leaf spacer和16px twistie；Folder使用开合目录图标，Space叶节点只显示名称。
 - hover 使用浅蓝表面，active 使用更深一级浅蓝表面。
 - 当前Space使用整行selected表面表达，不使用左侧状态点。
-- 主区域左上提供sidebar折叠操作；分隔线支持pointer拖动和键盘resize。
+- 主区域左上提供sidebar折叠操作；侧栏宽度分隔线以及Spaces/Agents水平分隔线都支持pointer拖动和键盘resize，并持久化尺寸。
 - 行内操作在 hover 或键盘聚焦时出现。
 - 深色模式保持相同层级关系，并将表面、文字与边框映射到暖黑色 token。
 
@@ -126,6 +126,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 ### Terminal
 
 - Terminal 使用原版 VS Code Light+/Dark+ 16 色。
+- Terminal Canvas复用原版CCSM xterm字形：`Cascadia Mono, Geist Mono, JetBrains Mono, Consolas, monospace`，桌面字号为`13px`；Windows Cascadia Mono cell geometry为`7×18px`。
 - 浅色背景为 `#ffffff`，深色背景为 `#1e1e1e`。
 - 工具条和 Terminal scrollbar 跟随当前模式。
 - Terminal画布占据上方剩余空间；运行状态、进程信息和Stop操作在panel最底部保持一行。
@@ -137,6 +138,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 地址栏使用白色表面、等宽字体和 accent focus ring。
 - native WebView 从工具栏下方开始铺满 panel viewport。
 - Light/Dark 切换同步设置native WebView preferred color scheme；网页通过`prefers-color-scheme`跟随CCSM主题。
+- Modal、New Tab菜单、Tab右键菜单和overflow菜单出现时，Browser viewport保持弹出前一瞬间的静态截图，不闪现空白占位；关闭浮层后恢复live页面。
 
 ### Files 与 Git
 
@@ -151,6 +153,8 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 菜单项高度为 28px，hover 复用侧栏 hover 色。
 - 模态遮罩使用约 38% 的深色透明层。
 - 弹窗头、工具栏、内容和 footer 通过细边框分层。
+- 输入、确认和警告统一使用应用内自定义 Modal，不调用浏览器原生 `alert`、`confirm` 或 `prompt`。
+- Modal 支持明确的字段标签、危险操作语义、初始焦点、焦点循环、`Escape` 取消和焦点恢复。
 - 目录选择器左侧快捷区域复用侧栏表面与选择态。
 - 主要操作使用 Ocean blue，普通操作使用当前 elevated surface。
 
@@ -169,7 +173,9 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 最小化、最大化和关闭按钮可以通过键盘与指针操作。
 - 右上角主题按钮可往返切换 Light/Dark，重启后恢复上次选择。
 - Terminal、Dockview Tab strip、Tab overflow scrollbar 与 Terminal scrollbar 同步切换。
+- Terminal Canvas的computed font family与原版CCSM保持一致，桌面字号为`13px`；Windows实测cell geometry为`7×18px`。
 - 切换主题前后的终端文字、scrollback 长度、滚动位置和输入能力保持一致。
-- New Tab 菜单和目录选择器出现时 native Browser surface 正确隐藏。
-- Tab 右键菜单出现时 native Browser surface 正确隐藏。
+- New Tab菜单、目录选择器和应用Modal出现前先显示Browser截图并隐藏live native surface，关闭后按相反顺序恢复。
+- Tab右键菜单和overflow菜单在截图准备期间保持不可见，截图就绪后显示；关闭后恢复live native surface。
 - Space tree、Dockview split、终端输入、选择、滚动和 IME 行为保持可用。
+- Space可拖入其他Folder或Unfiled；目标行显示accent drop outline，提交后树使用committed workspace snapshot更新。

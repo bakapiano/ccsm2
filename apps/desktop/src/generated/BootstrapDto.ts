@@ -3,9 +3,4 @@ import type { SpaceDto } from "./SpaceDto";
 import type { SpaceFolderDto } from "./SpaceFolderDto";
 import type { SpaceSnapshotDto } from "./SpaceSnapshotDto";
 
-export type BootstrapDto = {
-  spaces: Array<SpaceDto>;
-  folders: Array<SpaceFolderDto>;
-  activeSpaceId: string;
-  activeSnapshot: SpaceSnapshotDto;
-};
+export type BootstrapDto = { spaces: Array<SpaceDto>, folders: Array<SpaceFolderDto>, activeSpaceId: string, activeSnapshot: SpaceSnapshotDto, };

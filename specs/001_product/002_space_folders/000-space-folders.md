@@ -39,6 +39,8 @@ Spaces
 ## 侧边栏
 
 - 侧边栏按树状结构展示 folders 和 Space leaves。
+- 子树使用8px紧凑层级缩进和12px leaf spacer；Space名称和行空白区域使用Pointer Events拖放，超过4px阈值后显示跟随鼠标的名称ghost，命中Folder或Unfiled后强调目标并提交同一个Space move；普通点击保持Space切换语义。Folder拖动ghost保留Folder图标。
+- Folder与Unfiled保留资源图标；Space叶节点只显示名称，不显示前置workspace图标。
 - 每个 Space leaf 显示名称、状态和必要的 activity indicator。
 - active Space 在父级折叠时仍保持运行；展开祖先链后可重新定位。
 - 搜索结果保留 folder breadcrumb，选择结果时展开对应祖先链。
@@ -46,6 +48,7 @@ Spaces
 ## 身份与命名
 
 - Folder 使用稳定 UUID，rename 和 move 保持 ID。
+- Space与Folder名称trim后必须非空，最长64个Unicode字符；前端输入与持久层执行同一限制。
 - Tree path 用于展示；持久化引用使用 folder ID。
 - 同名 folder 通过 breadcrumb 区分。
 - Folder 和 Space 的删除使用独立确认流程。

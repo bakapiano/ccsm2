@@ -3,13 +3,4 @@ import type { DesiredState } from "./DesiredState";
 import type { NativeBindingState } from "./NativeBindingState";
 import type { ProviderKind } from "./ProviderKind";
 
-export type CliSessionDto = {
-  id: string;
-  spaceId: string;
-  provider: ProviderKind;
-  cwd: string;
-  nativeSessionId: string | null;
-  nativeBindingState: NativeBindingState;
-  desiredState: DesiredState;
-  lastExitSummary: string | null;
-};
+export type CliSessionDto = { id: string, spaceId: string, provider: ProviderKind, cwd: string, nativeSessionId: string | null, nativeBindingState: NativeBindingState, desiredState: DesiredState, lastExitSummary: string | null, };

@@ -5,8 +5,8 @@ use ccsm_core::{
         CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
         CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
         DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, MoveSpaceRequest,
-        NativeBindingState, ProviderKind, RenameFolderRequest, SaveLayoutRequest,
-        SetFolderCollapsedRequest,
+        NativeBindingState, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
+        SaveLayoutRequest, SetFolderCollapsedRequest,
     },
     ports::StateStore,
 };
@@ -26,6 +26,38 @@ fn bootstrap_persists_one_default_space() {
     assert_eq!(first.active_space_id, second.active_space_id);
     assert_eq!(first.active_snapshot.tabs.len(), 4);
     assert_eq!(first.active_snapshot.cli_sessions.len(), 1);
+}
+
+#[test]
+fn space_and_folder_names_cannot_exceed_64_characters() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStateStore::open(&directory.path().join("data.db")).unwrap();
+    let state = store.bootstrap(directory.path()).unwrap();
+    let too_long = "名".repeat(65);
+
+    let space_error = store
+        .rename_space(RenameSpaceRequest {
+            space_id: state.active_space_id,
+            name: too_long.clone(),
+        })
+        .unwrap_err();
+    assert!(
+        space_error
+            .to_string()
+            .contains("cannot exceed 64 characters")
+    );
+
+    let folder_error = store
+        .create_folder(CreateFolderRequest {
+            parent_id: None,
+            name: too_long,
+        })
+        .unwrap_err();
+    assert!(
+        folder_error
+            .to_string()
+            .contains("cannot exceed 64 characters")
+    );
 }
 
 #[test]

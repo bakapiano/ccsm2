@@ -2,9 +2,4 @@
 import type { NativeBindingState } from "./NativeBindingState";
 import type { ProviderKind } from "./ProviderKind";
 
-export type NativeBindingDto = {
-  cliSessionId: string;
-  provider: ProviderKind;
-  nativeSessionId: string | null;
-  nativeBindingState: NativeBindingState;
-};
+export type NativeBindingDto = { cliSessionId: string, provider: ProviderKind, nativeSessionId: string | null, nativeBindingState: NativeBindingState, };

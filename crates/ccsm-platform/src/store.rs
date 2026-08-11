@@ -21,6 +21,8 @@ use ccsm_core::{
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
+const MAX_SPACE_TREE_NAME_CHARACTERS: usize = 64;
+
 pub struct SqliteStateStore {
     connection: Mutex<Connection>,
 }
@@ -209,7 +211,7 @@ impl StateStore for SqliteStateStore {
     }
 
     fn create_space(&self, request: CreateSpaceRequest) -> BackendResult<BootstrapDto> {
-        let name = validated_name(&request.name, "Space")?;
+        let name = validated_name(&request.name, "Space", MAX_SPACE_TREE_NAME_CHARACTERS)?;
         let requested_root = Path::new(&request.root_path);
         if !requested_root.is_dir() {
             return Err(BackendError::Invalid(format!(
@@ -262,7 +264,7 @@ impl StateStore for SqliteStateStore {
     }
 
     fn rename_space(&self, request: RenameSpaceRequest) -> BackendResult<BootstrapDto> {
-        let name = validated_name(&request.name, "Space")?;
+        let name = validated_name(&request.name, "Space", MAX_SPACE_TREE_NAME_CHARACTERS)?;
         let connection = self.connection()?;
         let changed = connection
             .execute(
@@ -309,7 +311,7 @@ impl StateStore for SqliteStateStore {
     }
 
     fn create_folder(&self, request: CreateFolderRequest) -> BackendResult<BootstrapDto> {
-        let name = validated_name(&request.name, "Folder")?;
+        let name = validated_name(&request.name, "Folder", MAX_SPACE_TREE_NAME_CHARACTERS)?;
         let connection = self.connection()?;
         ensure_folder_exists(&connection, request.parent_id.as_deref())?;
         if let Some(parent_id) = request.parent_id.as_deref()
@@ -333,7 +335,7 @@ impl StateStore for SqliteStateStore {
     }
 
     fn rename_folder(&self, request: RenameFolderRequest) -> BackendResult<BootstrapDto> {
-        let name = validated_name(&request.name, "Folder")?;
+        let name = validated_name(&request.name, "Folder", MAX_SPACE_TREE_NAME_CHARACTERS)?;
         let connection = self.connection()?;
         let changed = connection
             .execute(
@@ -1176,16 +1178,16 @@ fn first_space(connection: &Connection, excluding: Option<&str>) -> BackendResul
         .map_err(storage_error)
 }
 
-fn validated_name(value: &str, kind: &str) -> BackendResult<String> {
+fn validated_name(value: &str, kind: &str, max_characters: usize) -> BackendResult<String> {
     let name = value.trim();
     if name.is_empty() {
         return Err(BackendError::Invalid(format!(
             "{kind} name cannot be empty"
         )));
     }
-    if name.chars().count() > 120 {
+    if name.chars().count() > max_characters {
         return Err(BackendError::Invalid(format!(
-            "{kind} name cannot exceed 120 characters"
+            "{kind} name cannot exceed {max_characters} characters"
         )));
     }
     Ok(name.to_string())

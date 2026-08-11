@@ -1,13 +1,41 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  DebouncedTask,
   LatestValue,
   runtimeStartCanCommit,
+  shouldAutoStartCliRuntime,
+  TailByteBuffer,
   takeByteBatch,
 } from "./terminal-flow";
 import { isDockGeometrySettled } from "./terminal-layout";
 
 describe("terminal flow control", () => {
+  test("debounces a fit burst to one trailing task", () => {
+    const callbacks = new Map<number, () => void>();
+    let nextHandle = 0;
+    const debounce = new DebouncedTask(
+      80,
+      (callback) => {
+        nextHandle += 1;
+        callbacks.set(nextHandle, callback);
+        return nextHandle as unknown as ReturnType<typeof setTimeout>;
+      },
+      (handle) => callbacks.delete(handle as unknown as number),
+    );
+    const calls: number[] = [];
+
+    debounce.schedule(() => calls.push(1));
+    debounce.schedule(() => calls.push(2));
+    debounce.schedule(() => calls.push(3));
+
+    expect(callbacks.size).toBe(1);
+    expect(debounce.pending).toBe(true);
+    callbacks.values().next().value?.();
+    expect(calls).toEqual([3]);
+    expect(debounce.pending).toBe(false);
+  });
+
   test("coalesces a resize burst to the latest dimensions", () => {
     const pending = new LatestValue<{ cols: number; rows: number }>();
     pending.set({ cols: 80, rows: 24 });
@@ -27,6 +55,20 @@ describe("terminal flow control", () => {
 
     expect(batch?.byteLength).toBe(200);
     expect(queue).toHaveLength(1);
+  });
+
+  test("keeps only the tail of oversized resume output", () => {
+    const buffer = new TailByteBuffer(5);
+    buffer.push(new TextEncoder().encode("abc"));
+    buffer.push(new TextEncoder().encode("defg"));
+
+    expect(new TextDecoder().decode(buffer.take())).toBe("cdefg");
+    expect(buffer.omittedBytes).toBe(2);
+    expect(buffer.length).toBe(0);
+
+    buffer.push(new TextEncoder().encode("123456789"));
+    expect(new TextDecoder().decode(buffer.take())).toBe("56789");
+    expect(buffer.omittedBytes).toBe(6);
   });
 
   test("rejects transient geometry from the previous Space layout", () => {
@@ -62,5 +104,50 @@ describe("terminal flow control", () => {
       false,
     );
     expect(runtimeStartCanCommit(new Set(), "runtime-1")).toBe(true);
+  });
+
+  test("auto-starts visible resumable CLI sessions", () => {
+    expect(
+      shouldAutoStartCliRuntime(
+        { desiredState: "running", nativeBindingState: "pending" },
+        true,
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoStartCliRuntime(
+        { desiredState: "running", nativeBindingState: "pending" },
+        false,
+        false,
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoStartCliRuntime(
+        { desiredState: "stopped", nativeBindingState: "bound" },
+        true,
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoStartCliRuntime(
+        { desiredState: "stopped", nativeBindingState: "bound" },
+        false,
+        false,
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoStartCliRuntime(
+        { desiredState: "stopped", nativeBindingState: "bound" },
+        true,
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoStartCliRuntime(
+        { desiredState: "stopped", nativeBindingState: "unavailable" },
+        true,
+        false,
+      ),
+    ).toBe(false);
   });
 });

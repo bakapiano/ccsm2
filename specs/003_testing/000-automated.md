@@ -48,7 +48,13 @@ Cache schema test验证仅存在`git_repositories_cache`和`git_status_cache`，
 
 Hook integration tests覆盖认证成功、malformed payload、错误token、旧runtime ID和缺失Hook。缺失Hook场景验证CLI继续运行、退出后binding进入unavailable、重启不自动创建新provider Session，并确认没有provider directory扫描行为。
 
-Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭CLI Tab时验证进程退出、Tab与Session删除且Agent条目消失。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
+Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭CLI Tab时先验证取消警告会保留Tab与Session，再确认进程退出、Tab与Session从`data.db`删除且Agent条目消失。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
+
+Browser occlusion tests验证capture、DOM截图解码、native hide、native show和截图释放的顺序；覆盖多个重叠浮层与capture期间快速关闭。Desktop scenario在Browser页面打开New Tab菜单、Tab右键菜单、overflow菜单和Modal，断言静态截图保持原画面且关闭后live页面继续运行。
+
+Application dialog tests覆盖自定义文本输入、必填校验、危险操作、焦点、`Escape`取消，并扫描生产TypeScript以拒绝浏览器原生`alert`、`confirm`和`prompt`调用。
+
+Space tree tests覆盖File Explorer风格的twistie、无前置图标的Space叶节点和22px行网格。Desktop scenario将Space拖入另一个Folder和Unfiled，验证drop target、committed `folder_id/folder_order`及重绘后的树位置。Sidebar layout tests覆盖Spaces/Agents separator的pointer、键盘、持久化与双侧最小高度。
 
 File Editor tests固定CodeMirror 6依赖边界，并验证Provider不重新引入自制textarea、高亮、搜索或history实现。Desktop scenario覆盖CodeMirror DOM挂载、Unicode编辑、保存、Dirty关闭确认和Space切换后的EditorState保留。
 

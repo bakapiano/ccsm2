@@ -7,6 +7,12 @@ import {
 import "dockview/dist/styles/dockview.css";
 
 import { AgentListView } from "./agent-list";
+import {
+  type AppDialogOptions,
+  type AppDialogResult,
+  showAppDialog,
+} from "./app-dialog";
+import { cliTabCloseDialogOptions } from "./cli-tab-close-dialog";
 import type { AgentSummaryDto } from "./generated/AgentSummaryDto";
 import type { BootstrapDto } from "./generated/BootstrapDto";
 import { DirectoryPickerDialog } from "./directory-picker";
@@ -30,7 +36,11 @@ import type { SpaceSnapshotDto } from "./generated/SpaceSnapshotDto";
 import type { TabDto } from "./generated/TabDto";
 import { NEW_TAB_ACTIONS, type NewTabAction } from "./new-tab-actions";
 import { SidebarLayoutController } from "./sidebar-layout";
-import { SpaceTreeView } from "./space-tree";
+import {
+  type SpaceTreeConfirmationRequest,
+  type SpaceTreeTextRequest,
+  SpaceTreeView,
+} from "./space-tree";
 import { SurfaceOcclusionController } from "./surface-occlusion";
 import { createTabContextMenuItems } from "./tab-context-menu";
 import { CcsmTabRenderer } from "./tab-header";
@@ -43,6 +53,9 @@ import { TerminalTabProvider } from "./tabs/terminal-provider";
 import { type ThemeController, updateThemeButton } from "./theme";
 import { describeError, desktopClient } from "./transport/desktop-client";
 import { bindWindowChrome } from "./window-chrome";
+
+const DOCKVIEW_POPOVER_SELECTOR =
+  ".dv-context-menu, .dv-tabs-overflow-container";
 
 export class CcsmApp {
   readonly #dockview: DockviewComponent;
@@ -67,11 +80,13 @@ export class CcsmApp {
   #saveTimer: number | null = null;
   #restoring = false;
   #dockDragActive = false;
-  #tabContextMenuObserver: MutationObserver | null = null;
-  #tabContextMenuToken = 0;
+  #dockviewPopoverObserver: MutationObserver | null = null;
+  #dockviewPopoverToken = 0;
+  #newTabMenuToken = 0;
   #eventUnlisten: (() => void) | null = null;
   #windowCloseUnlisten: (() => void) | null = null;
   #closingWindow = false;
+  #dialogSequence = 0;
   #tabDeletionQueue: Promise<void> = Promise.resolve();
   readonly #pendingTabDeletions = new Set<string>();
 
@@ -160,7 +175,7 @@ export class CcsmApp {
       defaultRenderer: "always",
       getTabContextMenuItems: (params) =>
         createTabContextMenuItems(params, () =>
-          this.#beginTabContextMenuOcclusion(),
+          this.#beginDockviewPopoverOcclusion(),
         ),
       keyboardNavigation: true,
       noPanelsOverlay: "emptyGroup",
@@ -177,6 +192,8 @@ export class CcsmApp {
     this.#dockview.onDidDrop(() => this.#finishDockDrag());
     this.#spaceTree = new SpaceTreeView(root, {
       pickSpaceRoot: (initialPath) => this.#pickSpaceRoot(initialPath),
+      requestText: (request) => this.#requestText(request),
+      requestConfirmation: (request) => this.#requestConfirmation(request),
       switchSpace: (spaceId) => this.switchSpace(spaceId),
       createSpace: (name, rootPath, folderId) =>
         this.createSpace(name, rootPath, folderId),
@@ -211,6 +228,19 @@ export class CcsmApp {
       if (this.#newTabAnchor?.contains(target)) return;
       void this.#setNewTabMenuOpen(false);
     });
+    document.addEventListener(
+      "click",
+      (event) => this.#prepareTabOverflowOcclusion(event),
+      true,
+    );
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Enter" || event.key === " ")
+          this.#prepareTabOverflowOcclusion(event);
+      },
+      true,
+    );
     window.addEventListener(
       "resize",
       () => void this.#setNewTabMenuOpen(false),
@@ -232,7 +262,7 @@ export class CcsmApp {
       })
       .then((unlisten) => (this.#windowCloseUnlisten = unlisten));
     window.addEventListener("beforeunload", () => {
-      this.#tabContextMenuObserver?.disconnect();
+      this.#dockviewPopoverObserver?.disconnect();
       this.#eventUnlisten?.();
       this.#eventUnlisten = null;
       this.#windowCloseUnlisten?.();
@@ -296,6 +326,65 @@ export class CcsmApp {
     }
   }
 
+  async #requestText(request: SpaceTreeTextRequest): Promise<string | null> {
+    const result = await this.#showDialog({
+      title: request.title,
+      message: request.message,
+      input: {
+        label: request.label,
+        value: request.value,
+        required: true,
+        maxLength: request.maxLength,
+        tooLongMessage:
+          request.maxLength === undefined
+            ? undefined
+            : `${request.label} cannot exceed ${request.maxLength} characters.`,
+        selectOnOpen: true,
+      },
+      actions: [
+        { id: "cancel", label: "Cancel" },
+        { id: "submit", label: request.confirmLabel, primary: true },
+      ] as const,
+      cancelAction: "cancel" as const,
+      submitAction: "submit" as const,
+    });
+    if (result.action !== "submit") return null;
+    return result.inputValue?.trim() || null;
+  }
+
+  async #requestConfirmation(
+    request: SpaceTreeConfirmationRequest,
+  ): Promise<boolean> {
+    const result = await this.#showDialog({
+      title: request.title,
+      message: request.message,
+      actions: [
+        { id: "cancel", label: "Cancel", autofocus: true },
+        {
+          id: "confirm",
+          label: request.confirmLabel,
+          danger: true,
+        },
+      ] as const,
+      cancelAction: "cancel" as const,
+      role: "alertdialog",
+      tone: "danger",
+    });
+    return result.action === "confirm";
+  }
+
+  async #showDialog<T extends string>(
+    options: AppDialogOptions<T>,
+  ): Promise<AppDialogResult<T>> {
+    const reason = `app-dialog-${++this.#dialogSequence}`;
+    await this.#surfaceOcclusion.set(reason, true);
+    try {
+      return await showAppDialog(options);
+    } finally {
+      await this.#surfaceOcclusion.set(reason, false);
+    }
+  }
+
   #toggleNewTabMenu(
     group: DockviewGroupPanel,
     anchor: HTMLButtonElement,
@@ -309,6 +398,7 @@ export class CcsmApp {
     group?: DockviewGroupPanel,
     anchor?: HTMLButtonElement,
   ): Promise<void> {
+    const token = ++this.#newTabMenuToken;
     this.#newTabAnchor?.setAttribute("aria-expanded", "false");
     if (open && group && anchor) {
       this.#dockview.doSetGroupActive(group);
@@ -322,48 +412,70 @@ export class CcsmApp {
       );
       this.#newTabMenu.style.left = `${position.left}px`;
       this.#newTabMenu.style.top = `${position.top}px`;
+      this.#newTabMenu.hidden = true;
+      await this.#surfaceOcclusion.set("new-tab-menu", true);
+      if (
+        token !== this.#newTabMenuToken ||
+        !this.#surfaceOcclusion.isActive("new-tab-menu")
+      )
+        return;
+      this.#newTabMenu.hidden = false;
     } else {
+      this.#newTabMenu.hidden = true;
       this.#newTabAnchor = null;
       this.#newTabTargetGroupId = null;
+      await this.#surfaceOcclusion.set("new-tab-menu", false);
     }
-    this.#newTabMenu.hidden = !open;
-    await this.#surfaceOcclusion.set("new-tab-menu", open);
   }
 
-  #beginTabContextMenuOcclusion(): void {
-    this.#tabContextMenuObserver?.disconnect();
-    this.#tabContextMenuObserver = null;
-    const token = ++this.#tabContextMenuToken;
-    void this.#surfaceOcclusion.set("tab-context-menu", true);
+  #prepareTabOverflowOcclusion(event: Event): void {
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(".dv-tabs-overflow-dropdown-default")
+    ) {
+      this.#beginDockviewPopoverOcclusion();
+    }
+  }
+
+  #beginDockviewPopoverOcclusion(): void {
+    this.#dockviewPopoverObserver?.disconnect();
+    this.#dockviewPopoverObserver = null;
+    const token = ++this.#dockviewPopoverToken;
+    const documentElement = this.root.ownerDocument.documentElement;
+    documentElement.dataset.browserOverlayPreparing = "true";
+    void this.#surfaceOcclusion.set("dockview-popover", true).finally(() => {
+      if (token === this.#dockviewPopoverToken)
+        delete documentElement.dataset.browserOverlayPreparing;
+    });
 
     queueMicrotask(() => {
-      if (token !== this.#tabContextMenuToken) return;
-      const menus =
-        this.root.ownerDocument.querySelectorAll<HTMLElement>(
-          ".dv-context-menu",
-        );
-      const menu = menus.item(menus.length - 1);
-      if (!menu) {
-        this.#finishTabContextMenuOcclusion(token);
+      if (token !== this.#dockviewPopoverToken) return;
+      const document = this.root.ownerDocument;
+      if (!document.querySelector(DOCKVIEW_POPOVER_SELECTOR)) {
+        this.#finishDockviewPopoverOcclusion(token);
         return;
       }
       const observer = new MutationObserver(() => {
-        if (!menu.isConnected) this.#finishTabContextMenuOcclusion(token);
+        if (!document.querySelector(DOCKVIEW_POPOVER_SELECTOR))
+          this.#finishDockviewPopoverOcclusion(token);
       });
-      observer.observe(this.root.ownerDocument.documentElement, {
+      observer.observe(document.documentElement, {
         childList: true,
         subtree: true,
       });
-      this.#tabContextMenuObserver = observer;
+      this.#dockviewPopoverObserver = observer;
     });
   }
 
-  #finishTabContextMenuOcclusion(token: number): void {
-    if (token !== this.#tabContextMenuToken) return;
-    this.#tabContextMenuToken += 1;
-    this.#tabContextMenuObserver?.disconnect();
-    this.#tabContextMenuObserver = null;
-    void this.#surfaceOcclusion.set("tab-context-menu", false);
+  #finishDockviewPopoverOcclusion(token: number): void {
+    if (token !== this.#dockviewPopoverToken) return;
+    this.#dockviewPopoverToken += 1;
+    this.#dockviewPopoverObserver?.disconnect();
+    this.#dockviewPopoverObserver = null;
+    delete this.root.ownerDocument.documentElement.dataset
+      .browserOverlayPreparing;
+    void this.#surfaceOcclusion.set("dockview-popover", false);
   }
 
   async renameSpace(spaceId: string, name: string): Promise<void> {
@@ -838,6 +950,11 @@ export class CcsmApp {
     if (this.#activeSnapshot?.space.id !== tab.spaceId) {
       throw new Error("Tab Space changed while closing");
     }
+    if (tab.kind === "cli-session" && !(await this.#requestCliTabClose(tab))) {
+      this.#focusTab(tab);
+      this.#setGlobalStatus("running", "ready");
+      return;
+    }
     if (
       tab.kind === "file-editor" &&
       !(await this.#fileEditorProvider.requestClose(tab))
@@ -870,6 +987,11 @@ export class CcsmApp {
     this.#refreshFileEditorTitles();
     await this.#refreshAgents();
     this.#setGlobalStatus("running", "ready");
+  }
+
+  async #requestCliTabClose(tab: TabDto): Promise<boolean> {
+    const result = await this.#showDialog(cliTabCloseDialogOptions(tab));
+    return result.action === "close";
   }
 
   #syncAgentForeground(): void {
