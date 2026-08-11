@@ -12,6 +12,8 @@ import {
 } from "./tab-context-menu";
 import { resolveTabIconKind } from "./tab-header";
 
+const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
+
 function tab(kind: TabDto["kind"], title: string, resourceId: string): TabDto {
   return {
     id: `${kind}-${resourceId}`,
@@ -62,6 +64,17 @@ function configuredItem(
 }
 
 describe("CCSM Tab chrome", () => {
+  test("keeps icon sizing on Dockview drag ghosts outside #dockview", () => {
+    expect(css).toMatch(
+      /\.ccsm-tab-icon\s*\{[^}]*width:\s*14px[^}]*height:\s*14px/s,
+    );
+    expect(css).toMatch(
+      /\.ccsm-tab-icon svg,\s*\.ccsm-tab-icon img\s*\{[^}]*width:\s*14px[^}]*height:\s*14px/s,
+    );
+    expect(css).not.toContain("#dockview .ccsm-tab-icon");
+    expect(css).not.toContain("#dockview .ccsm-tab-label");
+  });
+
   test("resolves stable provider and built-in Tab icons", () => {
     const sessions = [
       session("shell-1", "shell"),

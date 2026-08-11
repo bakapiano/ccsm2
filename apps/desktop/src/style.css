@@ -1001,7 +1001,7 @@ button.primary:hover {
   border-bottom-color: var(--term-surface);
 }
 
-#dockview .ccsm-tab {
+.ccsm-tab {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1011,7 +1011,7 @@ button.primary:hover {
   padding-left: 8px;
 }
 
-#dockview .ccsm-tab-icon {
+.ccsm-tab-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1021,14 +1021,14 @@ button.primary:hover {
   color: currentColor;
 }
 
-#dockview .ccsm-tab-icon svg,
-#dockview .ccsm-tab-icon img {
+.ccsm-tab-icon svg,
+.ccsm-tab-icon img {
   display: block;
   width: 14px;
   height: 14px;
 }
 
-#dockview .ccsm-tab-icon svg {
+.ccsm-tab-icon svg {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
@@ -1036,7 +1036,7 @@ button.primary:hover {
   stroke-linejoin: round;
 }
 
-#dockview .ccsm-tab-label {
+.ccsm-tab-label {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
@@ -1044,7 +1044,7 @@ button.primary:hover {
   white-space: nowrap;
 }
 
-#dockview .ccsm-tab-close {
+.ccsm-tab-close {
   width: 18px;
   height: 18px;
   margin-right: 5px;
@@ -1057,12 +1057,12 @@ button.primary:hover {
   box-shadow: none;
 }
 
-#dockview .ccsm-tab-close:hover {
+.ccsm-tab-close:hover {
   border: 0;
   background: var(--term-icon-hover);
 }
 
-#dockview .ccsm-tab-close svg {
+.ccsm-tab-close svg {
   width: 12px;
   height: 12px;
   fill: none;
