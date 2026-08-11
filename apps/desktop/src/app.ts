@@ -12,7 +12,7 @@ import {
   type AppDialogResult,
   showAppDialog,
 } from "./app-dialog";
-import { cliTabCloseDialogOptions } from "./cli-tab-close-dialog";
+import { agentCliTabCloseDialogOptions } from "./cli-tab-close-dialog";
 import type { AgentSummaryDto } from "./generated/AgentSummaryDto";
 import type { BootstrapDto } from "./generated/BootstrapDto";
 import { DirectoryPickerDialog } from "./directory-picker";
@@ -44,6 +44,7 @@ import {
 import { SurfaceOcclusionController } from "./surface-occlusion";
 import { createTabContextMenuItems } from "./tab-context-menu";
 import { CcsmTabRenderer } from "./tab-header";
+import { closeTabAfterApproval } from "./tab-close";
 import { BrowserTabProvider } from "./tabs/browser-provider";
 import { FileEditorTabProvider } from "./tabs/file-editor-provider";
 import { FileExplorerTabProvider } from "./tabs/file-explorer-provider";
@@ -87,8 +88,11 @@ export class CcsmApp {
   #windowCloseUnlisten: (() => void) | null = null;
   #closingWindow = false;
   #dialogSequence = 0;
+  #tabCloseRequestQueue: Promise<void> = Promise.resolve();
   #tabDeletionQueue: Promise<void> = Promise.resolve();
+  readonly #pendingTabCloseRequests = new Set<string>();
   readonly #pendingTabDeletions = new Set<string>();
+  readonly #approvedPanelRemovals = new Set<string>();
 
   constructor(
     private readonly root: HTMLElement,
@@ -163,6 +167,7 @@ export class CcsmApp {
         return new CcsmTabRenderer(
           tab,
           this.#activeSnapshot?.cliSessions ?? [],
+          (tabId) => this.#requestTabClose(tabId),
         );
       },
       defaultTabComponent: "ccsm-tab",
@@ -174,8 +179,10 @@ export class CcsmApp {
       dndStrategy: DOCKVIEW_DND_STRATEGY,
       defaultRenderer: "always",
       getTabContextMenuItems: (params) =>
-        createTabContextMenuItems(params, () =>
-          this.#beginDockviewPopoverOcclusion(),
+        createTabContextMenuItems(
+          params,
+          () => this.#beginDockviewPopoverOcclusion(),
+          (panel) => this.#requestTabClose(panel.id),
         ),
       keyboardNavigation: true,
       noPanelsOverlay: "emptyGroup",
@@ -269,6 +276,7 @@ export class CcsmApp {
       this.#windowCloseUnlisten = null;
       this.#terminalProvider.destroyAll();
       this.#fileEditorProvider.destroyAll();
+      this.#browserProvider.destroy();
       void this.flushLayout();
     });
   }
@@ -922,13 +930,69 @@ export class CcsmApp {
     this.#syncAgentForeground();
   }
 
+  #requestTabClose(tabId: string): void {
+    if (
+      this.#restoring ||
+      this.#pendingTabCloseRequests.has(tabId) ||
+      !this.#tabs.has(tabId)
+    ) {
+      return;
+    }
+    this.#pendingTabCloseRequests.add(tabId);
+    this.#tabCloseRequestQueue = this.#tabCloseRequestQueue
+      .then(() => this.#closeTabAfterApproval(tabId))
+      .catch((error) => {
+        this.#setGlobalStatus("error", `close Tab · ${describeError(error)}`);
+      })
+      .finally(() => this.#pendingTabCloseRequests.delete(tabId));
+  }
+
+  async #closeTabAfterApproval(tabId: string): Promise<void> {
+    const tab = this.#tabs.get(tabId);
+    const snapshot = this.#activeSnapshot;
+    if (!tab || !snapshot || snapshot.space.id !== tab.spaceId) return;
+    const panel = findDockPanelById(this.#dockview.panels, tab.id);
+    if (!panel) return;
+
+    await closeTabAfterApproval(tab, {
+      cliSessions: snapshot.cliSessions,
+      confirmAgentCli: (candidate) => this.#requestAgentCliTabClose(candidate),
+      confirmFileEditor: (candidate) =>
+        this.#fileEditorProvider.requestClose(candidate),
+      closePanel: () => {
+        const currentPanel = findDockPanelById(this.#dockview.panels, tab.id);
+        if (
+          this.#tabs.get(tab.id) !== tab ||
+          this.#activeSnapshot?.space.id !== tab.spaceId ||
+          !currentPanel
+        ) {
+          return false;
+        }
+        this.#approvedPanelRemovals.add(tab.id);
+        try {
+          currentPanel.api.close();
+        } finally {
+          if (findDockPanelById(this.#dockview.panels, tab.id))
+            this.#approvedPanelRemovals.delete(tab.id);
+        }
+        return true;
+      },
+    });
+  }
+
   #handleRemovedPanel(tabId: string): void {
     this.#syncAgentForeground();
     const tab = this.#tabs.get(tabId);
+    const approved = this.#approvedPanelRemovals.delete(tabId);
     if (
       this.#pendingTabDeletions.has(tabId) ||
       !shouldDeleteRemovedTab(this.#restoring, tab)
     ) {
+      return;
+    }
+    if (!approved) {
+      this.#focusTab(tab);
+      this.#requestTabClose(tabId);
       return;
     }
     this.#pendingTabDeletions.add(tabId);
@@ -949,19 +1013,6 @@ export class CcsmApp {
   async #deleteTabFromSpace(tab: TabDto): Promise<void> {
     if (this.#activeSnapshot?.space.id !== tab.spaceId) {
       throw new Error("Tab Space changed while closing");
-    }
-    if (tab.kind === "cli-session" && !(await this.#requestCliTabClose(tab))) {
-      this.#focusTab(tab);
-      this.#setGlobalStatus("running", "ready");
-      return;
-    }
-    if (
-      tab.kind === "file-editor" &&
-      !(await this.#fileEditorProvider.requestClose(tab))
-    ) {
-      this.#focusTab(tab);
-      this.#setGlobalStatus("running", "ready");
-      return;
     }
     this.#setGlobalStatus("starting", `deleting ${tab.title} Tab`);
     await this.flushLayout();
@@ -989,8 +1040,8 @@ export class CcsmApp {
     this.#setGlobalStatus("running", "ready");
   }
 
-  async #requestCliTabClose(tab: TabDto): Promise<boolean> {
-    const result = await this.#showDialog(cliTabCloseDialogOptions(tab));
+  async #requestAgentCliTabClose(tab: TabDto): Promise<boolean> {
+    const result = await this.#showDialog(agentCliTabCloseDialogOptions(tab));
     return result.action === "close";
   }
 

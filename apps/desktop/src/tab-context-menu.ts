@@ -10,6 +10,7 @@ export const TAB_CONTEXT_MENU_LABELS = [
 export function createTabContextMenuItems(
   { panel, group }: GetTabContextMenuItemsParams,
   onOpen: () => void,
+  requestClose: (panel: GetTabContextMenuItemsParams["panel"]) => void,
 ): ContextMenuItem[] {
   onOpen();
   const panels = [...group.panels];
@@ -18,14 +19,14 @@ export function createTabContextMenuItems(
   return [
     {
       label: TAB_CONTEXT_MENU_LABELS[0],
-      action: () => panel.api.close(),
+      action: () => requestClose(panel),
     },
     {
       label: TAB_CONTEXT_MENU_LABELS[1],
       disabled: panels.length <= 1,
       action: () => {
         for (const candidate of [...group.panels]) {
-          if (candidate !== panel) candidate.api.close();
+          if (candidate !== panel) requestClose(candidate);
         }
       },
     },
@@ -36,16 +37,15 @@ export function createTabContextMenuItems(
         const currentPanels = [...group.panels];
         const currentIndex = currentPanels.indexOf(panel);
         if (currentIndex < 0) return;
-        for (const candidate of currentPanels.slice(currentIndex + 1)) {
-          candidate.api.close();
-        }
+        for (const candidate of currentPanels.slice(currentIndex + 1))
+          requestClose(candidate);
       },
     },
     "separator",
     {
       label: TAB_CONTEXT_MENU_LABELS[3],
       action: () => {
-        for (const candidate of [...group.panels]) candidate.api.close();
+        for (const candidate of [...group.panels]) requestClose(candidate);
       },
     },
   ];

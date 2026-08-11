@@ -1,4 +1,7 @@
-import type { WindowChromeClient } from "./transport/desktop-client";
+import type {
+  WindowChromeClient,
+  WindowResizeDirection,
+} from "./transport/desktop-client";
 
 type WindowAction = "minimize" | "maximize" | "close";
 
@@ -14,6 +17,13 @@ export function runWindowAction(
     return Promise.resolve();
   }
   return client.close();
+}
+
+export function runWindowResize(
+  direction: WindowResizeDirection,
+  client: WindowChromeClient,
+): Promise<void> {
+  return client.startResizeDragging(direction);
 }
 
 export function bindWindowChrome(
@@ -34,4 +44,13 @@ export function bindWindowChrome(
     if ((event.target as Element | null)?.closest("button, input")) return;
     void client.toggleMaximize();
   });
+
+  root
+    .querySelector<HTMLElement>("#window-resize-north")
+    ?.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void runWindowResize("North", client);
+    });
 }

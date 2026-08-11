@@ -3,11 +3,11 @@ import type { TabDto } from "./generated/TabDto";
 
 export type CliTabCloseAction = "cancel" | "close";
 
-export function cliTabCloseDialogOptions(
+export function agentCliTabCloseDialogOptions(
   tab: Pick<TabDto, "title">,
 ): AppDialogOptions<CliTabCloseAction> {
   return {
-    title: `Close CLI Tab “${tab.title}”?`,
+    title: `Close Agent Tab “${tab.title}”?`,
     message:
       "Closing this Tab stops its process tree and permanently deletes the Tab and CLI Session records from data.db. Files on disk and provider transcripts are preserved.",
     actions: [

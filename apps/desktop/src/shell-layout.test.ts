@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
+const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
 
 describe("application shell layout", () => {
   test("uses VS Code-style full-width title and status bars", () => {
@@ -21,6 +22,14 @@ describe("application shell layout", () => {
     );
     expect(cssRule(".sidebar-resizer")).toContain("top: 35px");
     expect(cssRule(".sidebar-resizer")).toContain("bottom: 22px");
+  });
+
+  test("keeps a native resize hit target above the frameless titlebar", () => {
+    expect(html).toContain('id="window-resize-north"');
+    expect(cssRule(".window-resize-handle")).toContain("z-index: 10000");
+    expect(cssRule(".window-resize-north")).toContain("top: 0");
+    expect(cssRule(".window-resize-north")).toContain("height: 5px");
+    expect(cssRule(".window-resize-north")).toContain("cursor: n-resize");
   });
 });
 

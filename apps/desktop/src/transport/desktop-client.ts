@@ -8,6 +8,7 @@ import type { BootstrapDto } from "../generated/BootstrapDto";
 import type { BrowserBounds } from "../generated/BrowserBounds";
 import type { BrowserInfo } from "../generated/BrowserInfo";
 import type { BrowserOpenRequest } from "../generated/BrowserOpenRequest";
+import type { BrowserTitleChangedRequest } from "../generated/BrowserTitleChangedRequest";
 import type { BrowseHostDirectoryRequest } from "../generated/BrowseHostDirectoryRequest";
 import type { CliSessionDto } from "../generated/CliSessionDto";
 import type { CreateBrowserTabRequest } from "../generated/CreateBrowserTabRequest";
@@ -102,6 +103,9 @@ export interface BrowserSurfaceClient {
   subscribeNewWindow(
     listener: (request: BrowserOpenRequest) => void,
   ): Promise<UnlistenFn>;
+  subscribeTitleChanged(
+    listener: (request: BrowserTitleChangedRequest) => void,
+  ): Promise<UnlistenFn>;
 }
 
 export interface DirectoryBrowserClient {
@@ -109,9 +113,20 @@ export interface DirectoryBrowserClient {
   create(request: CreateHostDirectoryRequest): Promise<HostDirectoryEntryDto>;
 }
 
+export type WindowResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
+
 export interface WindowChromeClient {
   minimize(): Promise<void>;
   toggleMaximize(): Promise<void>;
+  startResizeDragging(direction: WindowResizeDirection): Promise<void>;
   setTheme(theme: ThemeMode): Promise<void>;
   close(): Promise<void>;
   subscribeCloseRequested(listener: () => void): Promise<UnlistenFn>;
@@ -312,6 +327,15 @@ class TauriBrowserSurfaceClient implements BrowserSurfaceClient {
       listener(event.payload),
     );
   }
+
+  subscribeTitleChanged(
+    listener: (request: BrowserTitleChangedRequest) => void,
+  ): Promise<UnlistenFn> {
+    return listen<BrowserTitleChangedRequest>(
+      "ccsm:browser-title-changed",
+      (event) => listener(event.payload),
+    );
+  }
 }
 
 class TauriDirectoryBrowserClient implements DirectoryBrowserClient {
@@ -335,6 +359,10 @@ class TauriWindowChromeClient implements WindowChromeClient {
 
   toggleMaximize(): Promise<void> {
     return getCurrentWindow().toggleMaximize();
+  }
+
+  startResizeDragging(direction: WindowResizeDirection): Promise<void> {
+    return getCurrentWindow().startResizeDragging(direction);
   }
 
   setTheme(theme: ThemeMode): Promise<void> {

@@ -9,7 +9,7 @@ import {
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 import { showAppDialog } from "./app-dialog";
-import { cliTabCloseDialogOptions } from "./cli-tab-close-dialog";
+import { agentCliTabCloseDialogOptions } from "./cli-tab-close-dialog";
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(() => document.body.replaceChildren());
@@ -99,8 +99,8 @@ describe("application dialogs", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  test("warns that closing a CLI Tab deletes its database records", () => {
-    const options = cliTabCloseDialogOptions({ title: "Codex" });
+  test("warns that closing an Agent CLI Tab deletes its database records", () => {
+    const options = agentCliTabCloseDialogOptions({ title: "Codex" });
 
     expect(options.title).toContain("Codex");
     expect(options.message).toContain("stops its process tree");

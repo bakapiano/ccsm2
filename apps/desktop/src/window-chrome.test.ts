@@ -1,13 +1,14 @@
 import { describe, expect, mock, test } from "bun:test";
 
 import type { WindowChromeClient } from "./transport/desktop-client";
-import { runWindowAction } from "./window-chrome";
+import { runWindowAction, runWindowResize } from "./window-chrome";
 
 describe("frameless window chrome", () => {
   test("routes controls to the window adapter", async () => {
     const client: WindowChromeClient = {
       minimize: mock(async () => {}),
       toggleMaximize: mock(async () => {}),
+      startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
       subscribeCloseRequested: mock(async () => () => {}),
@@ -22,10 +23,26 @@ describe("frameless window chrome", () => {
     expect(client.close).toHaveBeenCalledTimes(1);
   });
 
+  test("routes the top edge to native north resize dragging", async () => {
+    const client: WindowChromeClient = {
+      minimize: mock(async () => {}),
+      toggleMaximize: mock(async () => {}),
+      startResizeDragging: mock(async () => {}),
+      setTheme: mock(async () => {}),
+      close: mock(async () => {}),
+      subscribeCloseRequested: mock(async () => () => {}),
+    };
+
+    await runWindowResize("North", client);
+
+    expect(client.startResizeDragging).toHaveBeenCalledWith("North");
+  });
+
   test("forwards the selected application theme to the native window", async () => {
     const client: WindowChromeClient = {
       minimize: mock(async () => {}),
       toggleMaximize: mock(async () => {}),
+      startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
       subscribeCloseRequested: mock(async () => () => {}),
@@ -43,6 +60,7 @@ describe("frameless window chrome", () => {
     const client: WindowChromeClient = {
       minimize: mock(async () => {}),
       toggleMaximize: mock(async () => {}),
+      startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
       subscribeCloseRequested: mock(async () => () => {}),

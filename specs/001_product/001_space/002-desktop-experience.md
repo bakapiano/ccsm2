@@ -13,7 +13,7 @@
 - New Tab 菜单展示 Shell、Claude Code、Codex、Browser、File Explorer、Git 和其他内置 Providers。
 - 新CLI Tab默认在Space root启动；用户可从Git tree选择某个repository root。
 - Tab 支持 drag、split、move group、pin 和 rename；Duplicate由具体 Tab Provider声明。
-- 用户关闭Tab会把它从Space中删除。关闭CLI Tab前显示应用内警告并要求确认，确认后停止runtime并从`data.db`删除Tab与CliSession；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
+- 用户关闭Tab会把它从Space中删除。关闭Claude Code或Codex Tab前显示应用内警告并要求确认，确认后从布局移除Tab、停止runtime并从`data.db`删除Tab与CliSession；普通Shell Tab直接关闭；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
 - active Tab 获得 focus 和 input/resize ownership。
 
 ## Agents

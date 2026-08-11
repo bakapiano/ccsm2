@@ -15,7 +15,7 @@
 - Shell 使用平台默认 shell并拥有 runtime 生命周期；Claude/Codex额外拥有 Hook binding 和 native resume。
 - runtime 存活时直接 reattach；runtime 丢失时显示恢复进度或 Resume 操作。
 - Claude/Codex Hook尚未确认时显示binding pending；runtime结束仍未绑定时显示resume unavailable和Start New/Replace。
-- 关闭 CLI Tab先用应用内Modal警告用户该操作会停止runtime并从`data.db`删除Tab与CliSession，确认后再执行；Stop只停止当前runtime并保留Tab。
+- 关闭 Claude Code 或 Codex Tab先用应用内Modal警告用户该操作会停止runtime并从`data.db`删除Tab与CliSession，确认后再从布局移除Tab并执行删除。普通Shell Tab直接关闭。Stop停止当前runtime并保留Tab。
 - 一个 CliSession只对应一个 CLI Tab；再次打开时激活所属 Space并聚焦已有 Tab。
 - CLI Tab禁用 Duplicate。
 
@@ -24,6 +24,7 @@
 ## Browser
 
 - 保存 URL、title 和导航偏好。
+- Tab标题跟随网页`document.title`；页面标题为空时回退为当前域名或`Browser`。
 - 所有 Browser Tabs 使用同一个全局持久 Browser Profile，共享 cookies、账号登录、localStorage 和 cache。
 - 切换 Tab 时保留页面状态；删除 Tab 时关闭浏览器资源。
 - GUI重启后使用 global profile + last URL 创建新 WebView；navigation history、scroll、form runtime state重新开始。

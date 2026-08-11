@@ -80,9 +80,14 @@ export class CcsmTabRenderer implements ITabRenderer {
   readonly #label = document.createElement("span");
   readonly #close = document.createElement("button");
   readonly #tooltip: string | null;
+  readonly #requestClose: () => void;
   #titleSubscription: { dispose(): void } | null = null;
 
-  constructor(tab: TabDto, cliSessions: readonly CliSessionDto[]) {
+  constructor(
+    tab: TabDto,
+    cliSessions: readonly CliSessionDto[],
+    requestClose: (tabId: string) => void,
+  ) {
     this.element.className = "ccsm-tab";
     this.element.dataset.tabKind = tab.kind;
     this.#tooltip =
@@ -93,6 +98,7 @@ export class CcsmTabRenderer implements ITabRenderer {
       typeof (tab.state as { relativePath?: unknown }).relativePath === "string"
         ? (tab.state as { relativePath: string }).relativePath
         : null;
+    this.#requestClose = () => requestClose(tab.id);
 
     const iconKind = resolveTabIconKind(tab, cliSessions);
     const icon = document.createElement("span");
@@ -126,7 +132,7 @@ export class CcsmTabRenderer implements ITabRenderer {
     this.#close.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      parameters.api.close();
+      this.#requestClose();
     });
   }
 

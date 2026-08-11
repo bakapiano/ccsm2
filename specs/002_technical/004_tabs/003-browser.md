@@ -21,6 +21,8 @@ TypeScript Browser Provider通过`BrowserSurfaceClient`执行create、close、se
 
 Navigation、title和load failure通过`BrowserSurfaceEvent`进入统一DesktopEventStream。Provider将`lastUrl/title/zoom`作为普通Tab state提交给`AppBackendClient.tabs`；AppBackend不接收native surface handle、bounds或focus数据。
 
+native child WebView的`on_document_title_changed`发送`surface_id + document title + current URL`。Browser Provider按surface identity更新Dockview Panel title并串行持久化Tab title/state；空白title使用hostname或`Browser`，网页输入最多保留160个Unicode字符。
+
 `window.open`和`target="_blank"`由native WebView的new-window callback拦截。desktop host拒绝系统窗口并发送`source_surface_id + URL`；前端创建持久Browser Tab，并以`direction='within'`加入来源Browser Panel的Dockview group。
 
 ## Live lifecycle

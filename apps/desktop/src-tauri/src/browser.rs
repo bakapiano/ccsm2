@@ -63,6 +63,15 @@ pub struct BrowserOpenRequest {
     pub url: String,
 }
 
+#[derive(Clone, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
+pub struct BrowserTitleChangedRequest {
+    pub surface_id: String,
+    pub title: String,
+    pub url: String,
+}
+
 pub struct BrowserSurfaceManager {
     profile_dir: PathBuf,
     labels: Mutex<HashMap<String, String>>,
@@ -108,6 +117,8 @@ impl BrowserSurfaceManager {
 
         let app_handle = window.app_handle().clone();
         let source_surface_id = surface_id.to_string();
+        let title_app_handle = window.app_handle().clone();
+        let title_surface_id = surface_id.to_string();
         let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed_url.clone()))
             .on_navigation(|url| matches!(url.scheme(), "http" | "https" | "about"))
             .on_new_window(move |url, _features| {
@@ -121,6 +132,17 @@ impl BrowserSurfaceManager {
                     );
                 }
                 NewWindowResponse::Deny
+            })
+            .on_document_title_changed(move |webview, title| {
+                let url = webview.url().map(|url| url.to_string()).unwrap_or_default();
+                let _ = title_app_handle.emit(
+                    "ccsm:browser-title-changed",
+                    BrowserTitleChangedRequest {
+                        surface_id: title_surface_id.clone(),
+                        title,
+                        url,
+                    },
+                );
             })
             .enable_clipboard_access()
             .devtools(cfg!(debug_assertions))

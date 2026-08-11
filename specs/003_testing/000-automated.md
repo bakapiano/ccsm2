@@ -48,7 +48,7 @@ Cache schema test验证仅存在`git_repositories_cache`和`git_status_cache`，
 
 Hook integration tests覆盖认证成功、malformed payload、错误token、旧runtime ID和缺失Hook。缺失Hook场景验证CLI继续运行、退出后binding进入unavailable、重启不自动创建新provider Session，并确认没有provider directory扫描行为。
 
-Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭CLI Tab时先验证取消警告会保留Tab与Session，再确认进程退出、Tab与Session从`data.db`删除且Agent条目消失。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
+Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭Claude/Codex Tab时验证Panel在确认完成前保持挂载，取消后保留Tab与Session，确认后进程退出、Tab与Session从`data.db`删除且Agent条目消失；普通Shell Tab关闭不展示Agent警告。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
 
 Browser occlusion tests验证capture、DOM截图解码、native hide、native show和截图释放的顺序；覆盖多个重叠浮层与capture期间快速关闭。Desktop scenario在Browser页面打开New Tab菜单、Tab右键菜单、overflow菜单和Modal，断言静态截图保持原画面且关闭后live页面继续运行。
 

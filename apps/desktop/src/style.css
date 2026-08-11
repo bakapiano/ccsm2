@@ -250,6 +250,21 @@ button.primary:hover {
   background: var(--bg);
 }
 
+.window-resize-handle {
+  position: fixed;
+  z-index: 10000;
+  touch-action: none;
+  user-select: none;
+}
+
+.window-resize-north {
+  top: 0;
+  right: 5px;
+  left: 5px;
+  height: 5px;
+  cursor: n-resize;
+}
+
 .app-titlebar {
   display: grid;
   grid-area: titlebar;

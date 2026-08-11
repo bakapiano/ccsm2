@@ -1,12 +1,14 @@
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
 import type { BrowserBounds } from "../generated/BrowserBounds";
+import type { BrowserTitleChangedRequest } from "../generated/BrowserTitleChangedRequest";
 import type { TabDto } from "../generated/TabDto";
 import { planNativeVisibility } from "../browser-visibility";
 import {
   clearBrowserSnapshot,
   presentBrowserSnapshot,
 } from "../browser-snapshot";
+import { browserTabTitle } from "../browser-title";
 import { OrderedTaskQueue } from "../ordered-task-queue";
 import { observePanelVisibility } from "../panel-visibility";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
@@ -24,8 +26,19 @@ interface BrowserTabState {
 export class BrowserTabProvider implements TabProvider {
   readonly kind = "browser" as const;
   readonly #panels = new Set<BrowserPanel>();
+  #titleUnlisten: (() => void) | null = null;
+  #destroyed = false;
 
-  constructor(private readonly client: CcsmDesktopClient) {}
+  constructor(private readonly client: CcsmDesktopClient) {
+    void client.browser
+      .subscribeTitleChanged((event) => {
+        for (const panel of this.#panels) panel.handleTitleChanged(event);
+      })
+      .then((unlisten) => {
+        if (this.#destroyed) unlisten();
+        else this.#titleUnlisten = unlisten;
+      });
+  }
 
   createRenderer(tab: TabDto): IContentRenderer {
     const panel = new BrowserPanel(tab, this.client, () =>
@@ -44,6 +57,12 @@ export class BrowserTabProvider implements TabProvider {
       [...this.#panels].map((panel) => panel.setOverlaySuspended(suspended)),
     );
   }
+
+  destroy(): void {
+    this.#destroyed = true;
+    this.#titleUnlisten?.();
+    this.#titleUnlisten = null;
+  }
 }
 
 class BrowserPanel implements IContentRenderer {
@@ -57,6 +76,7 @@ class BrowserPanel implements IContentRenderer {
   #status: HTMLElement | null = null;
   #resizeObserver: ResizeObserver | null = null;
   #visibilitySubscription: { dispose(): void } | null = null;
+  #panelApi: GroupPanelPartInitParameters["api"] | null = null;
   #created = false;
   #creating = false;
   #desiredVisible = false;
@@ -68,6 +88,8 @@ class BrowserPanel implements IContentRenderer {
   readonly #visibilityQueue = new OrderedTaskQueue();
   #lastBounds: BrowserBounds | null = null;
   #currentUrl: string;
+  #zoom: number;
+  #statePersistQueue: Promise<void> = Promise.resolve();
   #engine = "system WebView";
   #raf = 0;
   #syncing = false;
@@ -81,7 +103,9 @@ class BrowserPanel implements IContentRenderer {
     this.#tab = tab;
     this.#client = client;
     this.#surfaceId = tab.resourceId ?? tab.id;
-    this.#currentUrl = parseState(tab.state).lastUrl;
+    const state = parseState(tab.state);
+    this.#currentUrl = state.lastUrl;
+    this.#zoom = state.zoom ?? 1;
     this.element.className = "browser-panel";
     this.element.dataset.nativeVisible = "false";
     this.element.innerHTML = `
@@ -98,6 +122,7 @@ class BrowserPanel implements IContentRenderer {
   }
 
   init(parameters: GroupPanelPartInitParameters): void {
+    this.#panelApi = parameters.api;
     this.#anchor = this.element.querySelector(".browser-anchor");
     this.#address = this.element.querySelector(".browser-address");
     this.#snapshot = this.element.querySelector(".browser-snapshot");
@@ -147,11 +172,24 @@ class BrowserPanel implements IContentRenderer {
     this.onDispose();
     this.#resizeObserver?.disconnect();
     this.#visibilitySubscription?.dispose();
+    this.#panelApi = null;
     document.removeEventListener("dragstart", this.#onDragStart, true);
     document.removeEventListener("dragend", this.#onDragEnd, true);
     if (this.#raf) cancelAnimationFrame(this.#raf);
     clearBrowserSnapshot(this.#anchor, this.#snapshot);
     void this.#queueVisibilitySync();
+  }
+
+  handleTitleChanged(event: BrowserTitleChangedRequest): void {
+    if (this.#disposed || event.surfaceId !== this.#surfaceId) return;
+    const previousUrl = this.#currentUrl;
+    if (/^(https?:|about:)/i.test(event.url)) this.#currentUrl = event.url;
+    const title = browserTabTitle(event.title, this.#currentUrl);
+    if (title === this.#tab.title && previousUrl === this.#currentUrl) return;
+    this.#tab.title = title;
+    this.#panelApi?.setTitle(title);
+    if (this.#address) this.#address.value = this.#currentUrl;
+    void this.#persistState();
   }
 
   readonly #onDragStart = (): void => {
@@ -345,13 +383,7 @@ class BrowserPanel implements IContentRenderer {
         this.#scheduleSync();
       }
       this.#address!.value = this.#currentUrl;
-      const state: BrowserTabState = { lastUrl: this.#currentUrl, zoom: 1 };
-      await this.#client.backend.updateTabState({
-        tabId: this.#tab.id,
-        title: this.#tab.title,
-        stateVersion: 1,
-        state,
-      });
+      await this.#persistState();
       await this.#client.browser.focus(this.#surfaceId);
     } catch (error) {
       this.#setStatus("error", `navigate · ${describeError(error)}`);
@@ -362,6 +394,30 @@ class BrowserPanel implements IContentRenderer {
     if (!this.#status) return;
     this.#status.dataset.state = state;
     this.#status.textContent = text;
+  }
+
+  #persistState(): Promise<void> {
+    const title = this.#tab.title;
+    const state: BrowserTabState = {
+      lastUrl: this.#currentUrl,
+      title,
+      zoom: this.#zoom,
+    };
+    this.#tab.state = state;
+    this.#statePersistQueue = this.#statePersistQueue
+      .then(async () => {
+        await this.#client.backend.updateTabState({
+          tabId: this.#tab.id,
+          title,
+          stateVersion: 1,
+          state,
+        });
+      })
+      .catch((error) => {
+        if (!this.#disposed)
+          this.#setStatus("error", `title · ${describeError(error)}`);
+      });
+    return this.#statePersistQueue;
   }
 }
 

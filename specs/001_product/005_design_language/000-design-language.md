@@ -169,7 +169,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - 1440×900 下侧栏默认宽度为232px，顶栏实测高度为40px；resize与折叠状态在本地恢复。
 - 应用启动后不显示操作系统原生标题栏。
-- 顶栏空白区域可拖动窗口，双击可切换最大化。
+- 顶栏空白区域可拖动窗口，双击可切换最大化；frameless窗口顶边保留独立的native resize命中区。
 - 最小化、最大化和关闭按钮可以通过键盘与指针操作。
 - 右上角主题按钮可往返切换 Light/Dark，重启后恢复上次选择。
 - Terminal、Dockview Tab strip、Tab overflow scrollbar 与 Terminal scrollbar 同步切换。
