@@ -8,9 +8,9 @@ import { RetainedRendererCache } from "../retained-renderer-cache";
 import {
   DebouncedTask,
   LatestValue,
+  OscSequenceStripper,
   runtimeStartCanCommit,
   shouldAutoStartCliRuntime,
-  TailByteBuffer,
   takeByteBatch,
 } from "../terminal-flow";
 import { isDockGeometrySettled } from "../terminal-layout";
@@ -31,12 +31,9 @@ import {
 } from "../terminal-typography";
 import type { TabProvider } from "./registry";
 
-const SCROLLBACK_BYTES = 64 * 1024 * 1024;
-const OUTPUT_BUDGET_PER_FRAME = 64 * 1024;
+const SCROLLBACK_LINES = 800;
+const OUTPUT_BUDGET_PER_FRAME = 8 * 1024;
 const FIT_DEBOUNCE_MS = 80;
-const CODEX_RESUME_TAIL_BYTES = 192 * 1024;
-const CODEX_RESUME_HISTORY_QUIET_MS = 250;
-const CODEX_RESUME_HISTORY_MAX_MS = 1800;
 
 function loadIsolatedGhostty(): Promise<Ghostty> {
   // Each retained renderer owns its WASM allocator and RenderState arena.
@@ -113,10 +110,10 @@ class TerminalPanel implements IContentRenderer {
   #resizeInFlight = false;
   readonly #pendingResize = new LatestValue<{ cols: number; rows: number }>();
   readonly #outputQueue: Uint8Array[] = [];
-  #resumeHistoryBuffer: TailByteBuffer | null = null;
-  #resumeHistoryQuietTimer: number | null = null;
-  #resumeHistoryMaxTimer: number | null = null;
+  readonly #oscStripper = new OscSequenceStripper();
   #outputRaf = 0;
+  #outputWriteInFlight = false;
+  #renderFailureCount = 0;
   #pendingExitCode: number | null = null;
   readonly #exitedRuntimeIds = new Set<string>();
   #inputQueue: Promise<void> = Promise.resolve();
@@ -228,8 +225,7 @@ class TerminalPanel implements IContentRenderer {
     this.dispose();
     if (this.#outputRaf) cancelAnimationFrame(this.#outputRaf);
     this.#outputRaf = 0;
-    this.#clearResumeHistoryTimers();
-    this.#resumeHistoryBuffer = null;
+    this.#outputWriteInFlight = false;
     this.#outputQueue.length = 0;
     this.#unlisten?.();
     this.#unlisten = null;
@@ -293,7 +289,7 @@ class TerminalPanel implements IContentRenderer {
         fontCellWidth: TERMINAL_FONT_CELL_WIDTH,
         fontCellHeight: TERMINAL_FONT_CELL_HEIGHT,
         disableStdin: true,
-        scrollback: SCROLLBACK_BYTES,
+        scrollback: SCROLLBACK_LINES,
         theme: { ...TERMINAL_THEMES[this.theme] },
       });
       this.#terminal.loadAddon(this.#fitAddon);
@@ -340,7 +336,6 @@ class TerminalPanel implements IContentRenderer {
     this.#starting = true;
     this.#syncAction();
     this.#setStatus("starting", `starting ${this.#tab.title}`);
-    this.#beginResumeHistoryLimit();
     try {
       const started = await this.#client.backend.startRuntime(
         {
@@ -375,7 +370,6 @@ class TerminalPanel implements IContentRenderer {
         focusWhenPanelActive(this.#panelApi, () => this.#terminal?.focus());
       }
     } catch (error) {
-      this.#flushResumeHistory();
       this.#setStatus("error", `start failed · ${describeError(error)}`);
       this.#terminal.writeln(
         `\r\n\x1b[31m[start failed: ${describeError(error)}]\x1b[0m`,
@@ -391,8 +385,7 @@ class TerminalPanel implements IContentRenderer {
     if (event.type === "output") {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
       this.#runtimeId ??= event.runtimeId;
-      const output = this.#limitResumeHistory(new Uint8Array(event.data));
-      if (!output) return;
+      const output = this.#sanitizeTerminalOutput(new Uint8Array(event.data));
       this.#outputQueue.push(output);
       this.#scheduleOutputFlush();
       return;
@@ -404,7 +397,6 @@ class TerminalPanel implements IContentRenderer {
       return;
     }
     this.#exitedRuntimeIds.add(event.runtimeId);
-    this.#flushResumeHistory();
     if (this.#runtimeId === event.runtimeId) this.#runtimeId = null;
     this.#pendingExitCode = event.code;
     this.#setStatus("stopped", `exit ${event.code}`);
@@ -483,11 +475,31 @@ class TerminalPanel implements IContentRenderer {
   }
 
   #scheduleOutputFlush(): void {
-    if (this.#outputRaf || this.#destroyed) return;
+    if (this.#outputRaf || this.#outputWriteInFlight || this.#destroyed) return;
     this.#outputRaf = requestAnimationFrame(() => {
       this.#outputRaf = 0;
       const batch = takeByteBatch(this.#outputQueue, OUTPUT_BUDGET_PER_FRAME);
-      if (batch) this.#terminal?.write(batch);
+      if (batch && this.#terminal) {
+        this.#outputWriteInFlight = true;
+        try {
+          this.#terminal.write(batch, () => {
+            this.#renderFailureCount = 0;
+            this.#outputWriteInFlight = false;
+            this.#scheduleOutputFlush();
+          });
+        } catch (error) {
+          this.#outputWriteInFlight = false;
+          this.#renderFailureCount += 1;
+          this.#outputQueue.length = 0;
+          if (this.#renderFailureCount >= 3)
+            this.#setStatus(
+              "error",
+              `render degraded · ${describeError(error)}`,
+            );
+          else this.#renderRuntimeStatus();
+        }
+        return;
+      }
       if (this.#outputQueue.length > 0) {
         this.#scheduleOutputFlush();
       } else if (this.#pendingExitCode !== null) {
@@ -500,63 +512,9 @@ class TerminalPanel implements IContentRenderer {
     });
   }
 
-  #beginResumeHistoryLimit(): void {
-    const session = this.#session;
-    if (
-      session?.provider !== "codex" ||
-      session.nativeBindingState !== "bound" ||
-      !session.nativeSessionId
-    ) {
-      this.#resumeHistoryBuffer = null;
-      return;
-    }
-    this.#clearResumeHistoryTimers();
-    this.#resumeHistoryBuffer = new TailByteBuffer(CODEX_RESUME_TAIL_BYTES);
-    this.#resumeHistoryMaxTimer = window.setTimeout(
-      () => this.#flushResumeHistory(),
-      CODEX_RESUME_HISTORY_MAX_MS,
-    );
-  }
-
-  #limitResumeHistory(output: Uint8Array): Uint8Array | null {
-    const buffer = this.#resumeHistoryBuffer;
-    if (!buffer) return output;
-    buffer.push(output);
-    if (this.#resumeHistoryQuietTimer !== null)
-      window.clearTimeout(this.#resumeHistoryQuietTimer);
-    this.#resumeHistoryQuietTimer = window.setTimeout(
-      () => this.#flushResumeHistory(),
-      CODEX_RESUME_HISTORY_QUIET_MS,
-    );
-    return null;
-  }
-
-  #flushResumeHistory(): void {
-    const buffer = this.#resumeHistoryBuffer;
-    if (!buffer) return;
-    this.#resumeHistoryBuffer = null;
-    this.#clearResumeHistoryTimers();
-    const output = buffer.take();
-    if (buffer.omittedBytes > 0) {
-      this.#terminal?.writeln(
-        `\r\n\x1b[2m[resume history truncated · skipped ${formatBytes(buffer.omittedBytes)}]\x1b[0m`,
-      );
-    }
-    if (output) {
-      this.#outputQueue.push(output);
-      this.#scheduleOutputFlush();
-    }
-  }
-
-  #clearResumeHistoryTimers(): void {
-    if (this.#resumeHistoryQuietTimer !== null) {
-      window.clearTimeout(this.#resumeHistoryQuietTimer);
-      this.#resumeHistoryQuietTimer = null;
-    }
-    if (this.#resumeHistoryMaxTimer !== null) {
-      window.clearTimeout(this.#resumeHistoryMaxTimer);
-      this.#resumeHistoryMaxTimer = null;
-    }
+  #sanitizeTerminalOutput(output: Uint8Array): Uint8Array {
+    if (this.#session?.provider !== "codex") return output;
+    return this.#oscStripper.push(output);
   }
 
   #scheduleFit(immediate = false): void {
@@ -728,10 +686,3 @@ class TerminalPanel implements IContentRenderer {
 type TerminalDebugElement = HTMLElement & {
   __CCSM_TERMINAL_DEBUG__?: () => object;
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${Math.round(kib)} KiB`;
-  return `${(kib / 1024).toFixed(1)} MiB`;
-}

@@ -50,52 +50,109 @@ export class DebouncedTask {
   }
 }
 
-export class TailByteBuffer {
-  #chunks: Uint8Array[] = [];
-  #length = 0;
-  #omitted = 0;
+export function stripOscSequences(buffer: Uint8Array): Uint8Array {
+  return new OscSequenceStripper().push(buffer);
+}
 
-  constructor(readonly limitBytes: number) {}
+export class OscSequenceStripper {
+  #inOsc = false;
+  #inCsi = false;
+  #pendingEsc = false;
+  #csiBytes: number[] = [];
 
-  push(chunk: Uint8Array): void {
-    if (chunk.byteLength >= this.limitBytes) {
-      this.#omitted += this.#length + chunk.byteLength - this.limitBytes;
-      this.#chunks = [chunk.slice(chunk.byteLength - this.limitBytes)];
-      this.#length = this.limitBytes;
-      return;
-    }
-    this.#chunks.push(chunk);
-    this.#length += chunk.byteLength;
-    while (this.#length > this.limitBytes) {
-      const first = this.#chunks[0];
-      const overflow = this.#length - this.limitBytes;
-      if (!first) break;
-      if (first.byteLength <= overflow) {
-        this.#chunks.shift();
-        this.#length -= first.byteLength;
-        this.#omitted += first.byteLength;
-      } else {
-        this.#chunks[0] = first.slice(overflow);
-        this.#length -= overflow;
-        this.#omitted += overflow;
+  push(buffer: Uint8Array): Uint8Array {
+    const output: number[] = [];
+    for (let index = 0; index < buffer.length; index += 1) {
+      const byte = buffer[index];
+      if (this.#inCsi) {
+        this.#csiBytes.push(byte);
+        if (byte >= 0x40 && byte <= 0x7e) {
+          const shouldDrop = shouldDropCsi(this.#csiBytes);
+          if (!shouldDrop) output.push(0x1b, 0x5b, ...this.#csiBytes);
+          this.#csiBytes = [];
+          this.#inCsi = false;
+        }
+        continue;
       }
+      if (this.#inOsc) {
+        if (this.#pendingEsc) {
+          this.#pendingEsc = false;
+          if (byte === 0x5c) {
+            this.#inOsc = false;
+            continue;
+          }
+        }
+        if (byte === 0x07) {
+          this.#inOsc = false;
+          continue;
+        }
+        if (byte === 0x1b) {
+          this.#pendingEsc = true;
+          continue;
+        }
+        continue;
+      }
+      if (this.#pendingEsc) {
+        this.#pendingEsc = false;
+        if (byte === 0x5d) {
+          this.#inOsc = true;
+          continue;
+        }
+        if (byte === 0x5b) {
+          this.#inCsi = true;
+          this.#csiBytes = [];
+          continue;
+        }
+        output.push(0x1b, byte);
+        continue;
+      }
+      if (byte === 0x1b) {
+        this.#pendingEsc = true;
+        continue;
+      }
+      output.push(byte);
     }
+    return new Uint8Array(output);
   }
 
-  take(): Uint8Array | undefined {
-    const output = mergeChunks(this.#chunks, this.#length);
-    this.#chunks = [];
-    this.#length = 0;
-    return output;
+  flush(): Uint8Array {
+    if (this.#inCsi) {
+      const output = new Uint8Array([0x1b, 0x5b, ...this.#csiBytes]);
+      this.#inCsi = false;
+      this.#csiBytes = [];
+      return output;
+    }
+    if (!this.#pendingEsc || this.#inOsc) return new Uint8Array();
+    this.#pendingEsc = false;
+    return new Uint8Array([0x1b]);
   }
+}
 
-  get omittedBytes(): number {
-    return this.#omitted;
-  }
+function shouldDropCsi(bytes: readonly number[]): boolean {
+  const final = bytes.at(-1);
+  if (final === 0x74) return true;
+  const body = String.fromCharCode(...bytes);
+  return body.includes("9001");
+}
 
-  get length(): number {
-    return this.#length;
+export function stripOscSequencesStateless(buffer: Uint8Array): Uint8Array {
+  const output: number[] = [];
+  for (let index = 0; index < buffer.length; index += 1) {
+    if (buffer[index] === 0x1b && buffer[index + 1] === 0x5d) {
+      index += 2;
+      while (index < buffer.length) {
+        if (buffer[index] === 0x07) break;
+        if (buffer[index] === 0x1b && buffer[index + 1] === 0x5c) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+    output.push(buffer[index]);
   }
+  return new Uint8Array(output);
 }
 
 export function takeByteBatch(

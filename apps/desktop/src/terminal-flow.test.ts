@@ -3,9 +3,10 @@ import { describe, expect, test } from "bun:test";
 import {
   DebouncedTask,
   LatestValue,
+  OscSequenceStripper,
   runtimeStartCanCommit,
   shouldAutoStartCliRuntime,
-  TailByteBuffer,
+  stripOscSequences,
   takeByteBatch,
 } from "./terminal-flow";
 import { isDockGeometrySettled } from "./terminal-layout";
@@ -57,18 +58,41 @@ describe("terminal flow control", () => {
     expect(queue).toHaveLength(1);
   });
 
-  test("keeps only the tail of oversized resume output", () => {
-    const buffer = new TailByteBuffer(5);
-    buffer.push(new TextEncoder().encode("abc"));
-    buffer.push(new TextEncoder().encode("defg"));
+  test("strips OSC sequences from resumed terminal history", () => {
+    const bytes = new TextEncoder().encode(
+      "a\x1b]8;;https://example.test\x07linked\x1b]8;;\x07b\x1b]10;?\x1b\\c",
+    );
 
-    expect(new TextDecoder().decode(buffer.take())).toBe("cdefg");
-    expect(buffer.omittedBytes).toBe(2);
-    expect(buffer.length).toBe(0);
+    expect(new TextDecoder().decode(stripOscSequences(bytes))).toBe(
+      "alinkedbc",
+    );
+  });
 
-    buffer.push(new TextEncoder().encode("123456789"));
-    expect(new TextDecoder().decode(buffer.take())).toBe("56789");
-    expect(buffer.omittedBytes).toBe(6);
+  test("strips OSC sequences split across PTY chunks", () => {
+    const stripper = new OscSequenceStripper();
+    const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+    expect(
+      decode(stripper.push(new TextEncoder().encode("a\x1b]8;;http"))),
+    ).toBe("a");
+    expect(decode(stripper.push(new TextEncoder().encode("s://x\x07b")))).toBe(
+      "b",
+    );
+  });
+
+  test("strips Codex CSI sequences that ghostty-vt does not support", () => {
+    const stripper = new OscSequenceStripper();
+    const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+    expect(decode(stripper.push(new TextEncoder().encode("a\x1b[1t")))).toBe(
+      "a",
+    );
+    expect(
+      decode(stripper.push(new TextEncoder().encode("b\x1b[?9001h"))),
+    ).toBe("b");
+    expect(decode(stripper.push(new TextEncoder().encode("c\x1b[31m")))).toBe(
+      "c\x1b[31m",
+    );
   });
 
   test("rejects transient geometry from the previous Space layout", () => {

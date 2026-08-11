@@ -188,9 +188,14 @@ export class FitAddon implements ITerminalAddon {
       return undefined;
     }
 
+    const scrollbarWidth =
+      Number.parseInt(
+        elementStyle.getPropertyValue("--terminal-fit-scrollbar-width"),
+      ) || DEFAULT_SCROLLBAR_WIDTH;
+
     // Calculate available space (subtract padding since clientWidth includes padding)
     const availableWidth =
-      containerWidth - paddingLeft - paddingRight - DEFAULT_SCROLLBAR_WIDTH;
+      containerWidth - paddingLeft - paddingRight - scrollbarWidth;
     const availableHeight = containerHeight - paddingTop - paddingBottom;
 
     // Calculate dimensions (enforce minimums)

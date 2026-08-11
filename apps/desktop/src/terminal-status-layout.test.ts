@@ -16,9 +16,15 @@ describe("Terminal status layout", () => {
     expect(cssRule(".terminal-panel-toolbar")).toContain(
       "border-top: 1px solid var(--term-rule)",
     );
+    expect(cssRule(".terminal-host")).toContain(
+      "--terminal-fit-scrollbar-width: 0px",
+    );
+    expect(cssRule(".terminal-host")).toContain("padding: 7px 0 4px");
   });
 
   test("guards long-scrollback resize bursts with trailing fit debounce", () => {
+    expect(provider).toContain("const SCROLLBACK_LINES = 800");
+    expect(provider).toContain("scrollback: SCROLLBACK_LINES");
     expect(provider).toContain("const FIT_DEBOUNCE_MS = 80");
     expect(provider).toContain("new DebouncedTask(FIT_DEBOUNCE_MS)");
     expect(provider).toContain(
