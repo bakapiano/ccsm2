@@ -31,6 +31,7 @@ import {
   extractClaudeFullRepaint,
   extractClaudeSynchronizedRepaint,
   shouldRunClaudeHistoryRepaint,
+  shouldSettleResizePresentation,
 } from "../terminal-repaint";
 import { TERMINAL_THEMES, type ThemeMode } from "../theme";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
@@ -54,8 +55,8 @@ const OUTPUT_BUDGET_PER_FRAME = 8 * 1024;
 const FIT_DEBOUNCE_MS = 80;
 const CLAUDE_REPAINT_QUIET_MS = 400;
 const CLAUDE_REPAINT_TIMEOUT_MS = 12_000;
-const CODEX_REPAINT_QUIET_MS = 200;
-const CODEX_REPAINT_TIMEOUT_MS = 1_000;
+const TUI_REPAINT_QUIET_MS = 200;
+const TUI_REPAINT_TIMEOUT_MS = 1_000;
 const OUTPUT_DRAIN_TIMEOUT_MS = 8_000;
 
 function loadIsolatedGhostty(): Promise<Ghostty> {
@@ -144,9 +145,9 @@ class TerminalPanel implements IContentRenderer {
   #lastRepaintCompletion: ClaudeRepaintCaptureResult["completion"] | null =
     null;
   #lastRepaintSynchronizedEnds = 0;
-  #codexResizeSettler: ResizeOutputSettler | null = null;
-  #codexResizePresentationCount = 0;
-  #lastCodexResizeCompletion: string | null = null;
+  #resizeOutputSettler: ResizeOutputSettler | null = null;
+  #resizePresentationCount = 0;
+  #lastResizePresentationCompletion: string | null = null;
   readonly #outputQueue: Uint8Array[] = [];
   readonly #oscStripper = new OscSequenceStripper();
   #outputRaf = 0;
@@ -260,8 +261,8 @@ class TerminalPanel implements IContentRenderer {
     this.#pendingResize.clear();
     this.#repaintCapture?.cancel();
     this.#repaintCapture = null;
-    this.#codexResizeSettler?.cancel();
-    this.#codexResizeSettler = null;
+    this.#resizeOutputSettler?.cancel();
+    this.#resizeOutputSettler = null;
     this.#releaseFitWaiters();
   }
 
@@ -473,7 +474,7 @@ class TerminalPanel implements IContentRenderer {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
       this.#runtimeId ??= event.runtimeId;
       const rawOutput = new Uint8Array(event.data);
-      this.#codexResizeSettler?.push(event.runtimeId, rawOutput);
+      this.#resizeOutputSettler?.push(event.runtimeId, rawOutput);
       if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) return;
       const output = this.#sanitizeTerminalOutput(rawOutput);
       this.#outputQueue.push(output);
@@ -491,9 +492,9 @@ class TerminalPanel implements IContentRenderer {
       this.#repaintCapture.cancel();
       this.#repaintCapture = null;
     }
-    if (this.#codexResizeSettler?.runtimeId === event.runtimeId) {
-      this.#codexResizeSettler.cancel();
-      this.#codexResizeSettler = null;
+    if (this.#resizeOutputSettler?.runtimeId === event.runtimeId) {
+      this.#resizeOutputSettler.cancel();
+      this.#resizeOutputSettler = null;
     }
     this.#frameSwap.release();
     if (this.#runtimeId === event.runtimeId) {
@@ -576,15 +577,16 @@ class TerminalPanel implements IContentRenderer {
     runtimeId: string,
     size: { cols: number; rows: number },
   ): Promise<void> {
-    const codexSettler =
-      this.#session?.provider === "codex" && this.#frameSwap.matches(size)
+    const outputSettler =
+      shouldSettleResizePresentation(this.#session?.provider ?? null) &&
+      this.#frameSwap.matches(size)
         ? new ResizeOutputSettler(
             runtimeId,
-            CODEX_REPAINT_QUIET_MS,
-            CODEX_REPAINT_TIMEOUT_MS,
+            TUI_REPAINT_QUIET_MS,
+            TUI_REPAINT_TIMEOUT_MS,
           )
         : null;
-    if (codexSettler) this.#codexResizeSettler = codexSettler;
+    if (outputSettler) this.#resizeOutputSettler = outputSettler;
     try {
       if (this.#shouldRepaintClaudeHistory(runtimeId, size)) {
         await this.#repaintClaudeHistory(runtimeId, size);
@@ -592,21 +594,21 @@ class TerminalPanel implements IContentRenderer {
       }
       await this.#client.backend.resizeRuntime(runtimeId, size.cols, size.rows);
       if (runtimeId === this.#runtimeId) this.#backendSize = { ...size };
-      if (codexSettler) {
-        codexSettler.startGracePeriod();
-        const settled = await codexSettler.result;
-        this.#lastCodexResizeCompletion = settled.completion;
+      if (outputSettler) {
+        outputSettler.startGracePeriod();
+        const settled = await outputSettler.result;
+        this.#lastResizePresentationCompletion = settled.completion;
         await this.#waitForOutputDrain();
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
         );
-        this.#codexResizePresentationCount += 1;
+        this.#resizePresentationCount += 1;
       }
     } finally {
-      if (this.#codexResizeSettler === codexSettler) {
-        this.#codexResizeSettler = null;
+      if (this.#resizeOutputSettler === outputSettler) {
+        this.#resizeOutputSettler = null;
       }
-      codexSettler?.cancel();
+      outputSettler?.cancel();
       if (this.#frameSwap.matches(size)) {
         if (
           this.#session?.provider === "claude" &&
@@ -626,7 +628,7 @@ class TerminalPanel implements IContentRenderer {
     const terminal = this.#terminal;
     const previous = this.#backendSize;
     if (!terminal) return false;
-    // Claude-only fix: Shell and Codex retain their normal resize path.
+    // Claude-only history repair: Shell, Codex, and Copilot keep normal VT reflow.
     return shouldRunClaudeHistoryRepaint({
       provider: this.#session?.provider ?? null,
       nativeBindingState: this.#session?.nativeBindingState ?? null,
@@ -971,9 +973,9 @@ class TerminalPanel implements IContentRenderer {
       historyRepaintFailureCount: this.#historyRepaintFailureCount,
       lastRepaintCompletion: this.#lastRepaintCompletion,
       lastRepaintSynchronizedEnds: this.#lastRepaintSynchronizedEnds,
-      codexResizeWaitActive: Boolean(this.#codexResizeSettler),
-      codexResizePresentationCount: this.#codexResizePresentationCount,
-      lastCodexResizeCompletion: this.#lastCodexResizeCompletion,
+      resizeOutputWaitActive: Boolean(this.#resizeOutputSettler),
+      resizePresentationCount: this.#resizePresentationCount,
+      lastResizePresentationCompletion: this.#lastResizePresentationCompletion,
       repaintCaptureActive: Boolean(this.#repaintCapture),
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,

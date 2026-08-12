@@ -11,11 +11,19 @@ import {
   extractClaudeFullRepaint,
   extractClaudeSynchronizedRepaint,
   shouldRunClaudeHistoryRepaint,
+  shouldSettleResizePresentation,
 } from "./terminal-repaint";
 
 const encoder = new TextEncoder();
 
 describe("Claude terminal full repaint", () => {
+  test("settles post-resize presentation for Codex and Copilot", () => {
+    expect(shouldSettleResizePresentation("codex")).toBe(true);
+    expect(shouldSettleResizePresentation("copilot")).toBe(true);
+    expect(shouldSettleResizePresentation("claude")).toBe(false);
+    expect(shouldSettleResizePresentation("shell")).toBe(false);
+  });
+
   test("is strictly limited to bound Claude sessions", () => {
     const eligible = {
       provider: "claude",

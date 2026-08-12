@@ -36,6 +36,12 @@ export interface ClaudeHistoryRepaintEligibility {
   captureActive: boolean;
 }
 
+export function shouldSettleResizePresentation(
+  provider: string | null,
+): boolean {
+  return provider === "codex" || provider === "copilot";
+}
+
 export function shouldRunClaudeHistoryRepaint(
   state: ClaudeHistoryRepaintEligibility,
 ): boolean {

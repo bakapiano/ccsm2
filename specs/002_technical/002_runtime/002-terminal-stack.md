@@ -46,7 +46,7 @@ portable-pty platform backend
 - 原生窗口最小化产生的WebView临时小viewport不参与terminal fit或PTY resize；恢复到可渲染viewport后强制完整Canvas redraw，并仅在稳定几何变化时执行一次最终fit/repaint。
 - 前端同一runtime同时只有一个resize command在途；resize burst只保留最新rows/cols。
 - bound Claude发生列宽变化时，先仅临时扩展PTY行数以触发Claude按新列宽完整重绘；前端只有在验证Claude清除了完整临时viewport、返回了从welcome开始的完整repaint且terminal仍为目标尺寸后，才原子替换ghostty VT/scrollback、按比例恢复历史滚动位置并恢复真实行数。验证后的repaint收到synchronized-output结束序列`CSI ?2026l`，或以Claude最终水平/垂直cursor定位对结束时立即提交；缺少明确结束边界时使用400ms output quiet fallback。超时、超限、过期尺寸或不完整repaint不得清除既有历史，退回普通resize/reflow。
-- Codex发生最终PTY resize时保留frame覆盖层；synchronized-output结束序列作为batch候选边界，其后的PTY output继续合并，直到最后一个batch后连续200ms没有新output且ghostty output queue已经排空；连续输出最多等待1s，随后揭开当前live Canvas。中间reflow和未排空chunks不得直接呈现。
+- Codex与Copilot发生最终PTY resize时保留frame覆盖层；synchronized-output结束序列作为batch候选边界，其后的PTY output继续合并，直到最后一个batch后连续200ms没有新output且ghostty output queue已经排空；连续输出最多等待1s，随后揭开当前live Canvas。中间reflow和未排空chunks不得直接呈现。
 - PTY input writer、resize worker和process waiter相互独立；底层resize停顿不阻塞input。短命进程退出时，reader先排空stdout/stderr；750ms上限保证孤立pipe无法阻塞Exit。
 - 大段resume历史按动画帧限额批量写入ghostty-web，避免每个PTY chunk触发一次同步render。
 - Runtime进入Exit后忽略同一runtime ID的迟到output，状态不能回退为live。

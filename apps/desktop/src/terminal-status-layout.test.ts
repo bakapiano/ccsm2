@@ -38,7 +38,8 @@ describe("Terminal status layout", () => {
     expect(provider).toContain("extractClaudeSynchronizedRepaint(");
     expect(provider).toContain("extractClaudeCursorPositionedRepaint(");
     expect(provider).toContain("new ResizeOutputSettler(");
-    expect(provider).toContain("CODEX_REPAINT_QUIET_MS = 200");
+    expect(provider).toContain("shouldSettleResizePresentation(");
+    expect(provider).toContain("TUI_REPAINT_QUIET_MS = 200");
     expect(provider).toContain("await this.#waitForOutputDrain()");
     expect(
       cssRule(
@@ -55,7 +56,6 @@ describe("Terminal status layout", () => {
   });
 
   test("commits only a validated full Claude repaint on width changes", () => {
-    expect(provider).toContain("// Claude-only fix:");
     expect(provider).toContain("shouldRunClaudeHistoryRepaint({");
     expect(provider).toContain("terminal.cols === size.cols");
     expect(provider).toContain("extractClaudeFullRepaint(");
