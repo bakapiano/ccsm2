@@ -17,6 +17,7 @@ use ccsm_core::{
     ports::{PtyBackend, PtyEvent, PtyEventSink, PtyProcess, PtySpawnSpec},
 };
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use serde_json::{Value, json};
 
 use crate::containment::ProcessContainment;
 
@@ -250,7 +251,7 @@ impl PtyBackend for PortablePtyBackend {
                 let label = shell.display().to_string();
                 (shell, args, label, None)
             }
-            ProviderKind::Claude | ProviderKind::Codex => {
+            ProviderKind::Claude | ProviderKind::Codex | ProviderKind::Copilot => {
                 let hook = spec.hook.as_ref().ok_or_else(|| {
                     BackendError::Platform("agent CLI launch has no Hook context".into())
                 })?;
@@ -288,6 +289,9 @@ impl PtyBackend for PortablePtyBackend {
             command.env("CCSM_HOOK_PIPE", &hook.endpoint);
             command.env("CCSM_HOOK_TOKEN", &hook.token);
             command.env("CCSM_HOOK_REPORTER", &hook.reporter_path);
+            if let Some(plugin_dir) = runtime_shim.copilot_plugin_dir() {
+                command.env("CCSM_COPILOT_PLUGIN_DIR", plugin_dir);
+            }
             if spec.provider == ProviderKind::Claude {
                 if let Some(model) = self.claude_model.as_ref() {
                     command.env("CCSM_CLAUDE_MODEL", model);
@@ -403,6 +407,7 @@ struct RuntimeShim {
     directory: PathBuf,
     provider_executable: PathBuf,
     hook_executable: PathBuf,
+    copilot_plugin_directory: Option<PathBuf>,
 }
 
 impl RuntimeShim {
@@ -427,20 +432,37 @@ impl RuntimeShim {
         })?;
         let provider_executable = create_provider_shim(&directory, source, provider)?;
         let hook_executable = create_hook_shim(&directory, source)?;
+        let copilot_plugin_directory = if provider == ProviderKind::Copilot {
+            Some(create_copilot_plugin(
+                &directory,
+                &hook_executable,
+                runtime_id,
+            )?)
+        } else {
+            None
+        };
         Ok(Self {
             directory,
             provider_executable,
             hook_executable,
+            copilot_plugin_directory,
         })
     }
 
     fn provider_command(&self) -> (PathBuf, Vec<String>) {
         (self.provider_executable.clone(), Vec::new())
     }
+
+    fn copilot_plugin_dir(&self) -> Option<&Path> {
+        self.copilot_plugin_directory.as_deref()
+    }
 }
 
 impl Drop for RuntimeShim {
     fn drop(&mut self) {
+        if let Some(plugin_directory) = self.copilot_plugin_directory.as_ref() {
+            let _ = std::fs::remove_dir_all(plugin_directory);
+        }
         let _ = std::fs::remove_file(&self.provider_executable);
         let _ = std::fs::remove_file(&self.hook_executable);
         let _ = std::fs::remove_dir(&self.directory);
@@ -487,6 +509,72 @@ fn create_hook_shim(directory: &Path, source: &Path) -> BackendResult<PathBuf> {
     Ok(path)
 }
 
+fn create_copilot_plugin(
+    runtime_directory: &Path,
+    hook_executable: &Path,
+    runtime_id: &str,
+) -> BackendResult<PathBuf> {
+    let plugin_directory = runtime_directory.join("copilot-hook-plugin");
+    std::fs::create_dir(&plugin_directory).map_err(|error| {
+        BackendError::Platform(format!("create Copilot Hook plugin directory: {error}"))
+    })?;
+    let hook = copilot_hook_entry(hook_executable);
+    let mut notification = hook.clone();
+    notification
+        .as_object_mut()
+        .expect("Copilot Hook entry is an object")
+        .insert(
+            "matcher".into(),
+            Value::String("permission_prompt|elicitation_dialog".into()),
+        );
+    let manifest = json!({
+        "name": format!("ccsm-runtime-{runtime_id}"),
+        "version": "1.0.0",
+        "hooks": "hooks.json"
+    });
+    let hooks = json!({
+        "version": 1,
+        "hooks": {
+            "SessionStart": [hook.clone()],
+            "UserPromptSubmit": [hook.clone()],
+            "PreToolUse": [hook.clone()],
+            "Stop": [hook.clone()],
+            "SessionEnd": [hook],
+            "notification": [notification]
+        }
+    });
+    write_json_file(&plugin_directory.join("plugin.json"), &manifest)?;
+    write_json_file(&plugin_directory.join("hooks.json"), &hooks)?;
+    Ok(plugin_directory)
+}
+
+fn write_json_file(path: &Path, value: &Value) -> BackendResult<()> {
+    let bytes = serde_json::to_vec_pretty(value)
+        .map_err(|error| BackendError::Platform(format!("encode {}: {error}", path.display())))?;
+    std::fs::write(path, bytes)
+        .map_err(|error| BackendError::Platform(format!("write {}: {error}", path.display())))
+}
+
+#[cfg(windows)]
+fn copilot_hook_entry(hook_executable: &Path) -> Value {
+    let path = hook_executable.to_string_lossy().replace('\'', "''");
+    json!({
+        "type": "command",
+        "powershell": format!("& '{path}' hook report"),
+        "timeoutSec": 10
+    })
+}
+
+#[cfg(not(windows))]
+fn copilot_hook_entry(hook_executable: &Path) -> Value {
+    let path = hook_executable.to_string_lossy().replace('\'', "'\\''");
+    json!({
+        "type": "command",
+        "bash": format!("'{path}' hook report"),
+        "timeoutSec": 10
+    })
+}
+
 #[cfg(not(windows))]
 fn create_hook_shim(directory: &Path, source: &Path) -> BackendResult<PathBuf> {
     let path = directory.join("ccsm-hook");
@@ -500,6 +588,7 @@ fn provider_text(provider: ProviderKind) -> &'static str {
         ProviderKind::Shell => "shell",
         ProviderKind::Claude => "claude",
         ProviderKind::Codex => "codex",
+        ProviderKind::Copilot => "copilot",
     }
 }
 
@@ -508,6 +597,7 @@ fn provider_label(provider: ProviderKind) -> &'static str {
         ProviderKind::Shell => "Shell",
         ProviderKind::Claude => "Claude Code",
         ProviderKind::Codex => "Codex",
+        ProviderKind::Copilot => "GitHub Copilot",
     }
 }
 
@@ -664,6 +754,47 @@ mod tests {
         );
         assert!(!shim.directory.join(shim_name_for_test("codex")).exists());
         assert!(shim.hook_executable.exists());
+    }
+
+    #[test]
+    fn copilot_runtime_shim_contains_an_isolated_hook_plugin() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("ccsm-desktop.exe");
+        std::fs::write(&source, b"shim").unwrap();
+        let root = directory.path().join("runtime");
+        std::fs::create_dir_all(&root).unwrap();
+        let shim = RuntimeShim::create(
+            &root,
+            &source,
+            "4d753e91-dc8b-4b38-96a5-3770dc558acc",
+            ProviderKind::Copilot,
+        )
+        .unwrap();
+
+        let plugin = shim.copilot_plugin_dir().unwrap();
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(plugin.join("plugin.json")).unwrap()).unwrap();
+        let hooks: Value =
+            serde_json::from_slice(&std::fs::read(plugin.join("hooks.json")).unwrap()).unwrap();
+        assert_eq!(manifest["hooks"], "hooks.json");
+        assert_eq!(
+            manifest["name"],
+            "ccsm-runtime-4d753e91-dc8b-4b38-96a5-3770dc558acc"
+        );
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "Stop",
+            "SessionEnd",
+            "notification",
+        ] {
+            assert!(hooks["hooks"][event].is_array(), "missing {event}");
+        }
+        assert_eq!(
+            hooks["hooks"]["notification"][0]["matcher"],
+            "permission_prompt|elicitation_dialog"
+        );
     }
 
     #[cfg(windows)]

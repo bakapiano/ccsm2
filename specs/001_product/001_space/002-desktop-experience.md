@@ -10,15 +10,15 @@
 
 ## Tab 操作
 
-- New Tab 菜单展示 Shell、Claude Code、Codex、Browser、File Explorer、Git 和其他内置 Providers。
+- New Tab 菜单展示 Shell、Claude Code、Codex、GitHub Copilot、Browser、File Explorer、Git 和其他内置 Providers。
 - 新CLI Tab默认在Space root启动；用户可从Git tree选择某个repository root。
 - Tab 支持 drag、split、move group、pin 和 rename；Duplicate由具体 Tab Provider声明。
-- 用户关闭Tab会把它从Space中删除。关闭Claude Code或Codex Tab前显示应用内警告并要求确认，确认后从布局移除Tab、停止runtime并从`data.db`删除Tab与CliSession；普通Shell Tab直接关闭；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
+- 用户关闭Tab会把它从Space中删除。关闭Agent CLI Tab前显示应用内警告并要求确认，确认后从布局移除Tab、停止runtime并从`data.db`删除Tab与CliSession；普通Shell Tab直接关闭；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
 - active Tab 获得 focus 和 input/resize ownership。
 
 ## Agents
 
-- 左侧栏底部列出全部Space中的Claude Code和Codex Tabs。
+- 左侧栏底部列出全部Space中的Claude Code、Codex和GitHub Copilot Tabs。
 - 每项显示provider图标、Tab名称、Space名称及`starting/idle/working/blocked/stopped`状态。
 - 点击Agent先切换所属Space，再激活所属Tab并把终端输入焦点带到前台。
 - 当前Space中每个可见Dockview group的Agent使用选中背景；切换、分屏和关闭Tab时即时同步。
@@ -37,5 +37,5 @@
 ## 退出体验
 
 - Close Main Window和Quit触发完整资源释放并退出应用。
-- spawned Shell/Claude/Codex进程树、PTY、native WebViews和watchers在退出流程中关闭。
+- spawned Shell/Claude/Codex/Copilot进程树、PTY、native WebViews和watchers在退出流程中关闭。
 - 下次启动根据Session desired state恢复当前Space。

@@ -54,6 +54,6 @@ macOS/Linux 分别生成自己的签名、安装和更新 artifact；三平台�
 - 使用 `PathBuf`/URL 和 `PlatformPaths` 生成路径。
 - `runtime_id`关联Hook、PTY和exit事件；platform adapter持有真实process handle、Job Object或process group。PID仅作为平台实现数据。
 - 数据 schema、Tab state 和 protocol bytes 在三平台一致。
-- 首版 Shell/Claude/Codex 命令来自 built-in provider definitions 和 platform resolver；自定义 CLI配置后置。
+- 首版 Shell/Claude/Codex/Copilot 命令来自 built-in provider definitions 和 platform resolver；自定义 CLI配置后置。
 - 后端OS条件编译集中在ccsm-platform；native browser条件编译集中在ccsm-desktop/browser。Session/Tab业务逻辑使用共享接口。
 - 平台通过真实 PTY、Hook、WebView、IME 和 packaging smoke 后标为 supported；其余阶段标为 planned/experimental。

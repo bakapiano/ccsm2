@@ -9,6 +9,12 @@ export const NEW_TAB_ACTIONS: readonly NewTabAction[] = [
   { id: "shell", label: "Shell", type: "cli", provider: "shell" },
   { id: "claude", label: "Claude Code", type: "cli", provider: "claude" },
   { id: "codex", label: "Codex", type: "cli", provider: "codex" },
+  {
+    id: "copilot",
+    label: "GitHub Copilot",
+    type: "cli",
+    provider: "copilot",
+  },
   { id: "browser", label: "Browser", type: "tab", tabKind: "browser" },
   {
     id: "files",

@@ -21,7 +21,7 @@
 
 - `data.db` is the only SQLite database. Runtime handles, PID, PTY, mutexes, watch scopes, and native WebViews stay in memory.
 - `runtime_id` is the sole identity for one PTY/process-tree lifetime.
-- Claude/Codex native Session IDs only come from authenticated HookReports. Never scan provider directories or transcripts to infer identity.
+- Claude/Codex/Copilot native Session IDs only come from authenticated HookReports. Never scan provider directories or transcripts to infer identity.
 - Normal and abnormal application exits must clean spawned process trees and native surfaces.
 
 ## Development

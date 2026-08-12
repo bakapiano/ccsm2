@@ -25,6 +25,7 @@ portable-pty platform backend
 ## 所有权与约束
 
 - ghostty-web 是唯一 VT、cursor、mode、viewport、selection 和 scrollback 所有者。
+- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。应用mouse mode优先于链接、选择和scrollbar交互。
 - Rust 管理 PTY/process、byte transport、resize 和 shutdown。
 - PTY output 有序且只写入 ghostty-web 一次；input/query reply 原样回传。
 - ghostty-web 是终端实现；ANSI 解析和兼容修复集中在其 WASM/TypeScript 层。
@@ -61,7 +62,7 @@ ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `Windows
 
 - `ccsm-desktop.exe`使用Windows Console subsystem，使同一构建可作为ConPTY provider与Hook reporter运行。
 - 桌面模式在启动后通过`FreeConsole`解除仅属于自身的console；从现有Windows Terminal启动时保留父console。
-- 每个agent runtime创建中性`ccsm-provider.exe`与`ccsm-hook.exe`硬链接。`CCSM_PROVIDER`选择Claude或Codex。
+- 每个agent runtime创建中性`ccsm-provider.exe`与`ccsm-hook.exe`硬链接。`CCSM_PROVIDER`选择Claude、Codex或Copilot。
 - 中性shim目录加入PATH。真实`codex`/`claude`名称保持可解析到`cxp`/`ccp`及其底层CLI。
 - Provider、wrapper和真实CLI继承同一个ConPTY，所有stdin/stdout/stderr保持在CCSM Tab内。
 

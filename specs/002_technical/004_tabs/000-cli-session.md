@@ -9,6 +9,7 @@ CLI Session Tab 通过稳定 `cli_session_id` 引用 Session，并在 mount 时 
 | Shell       | platform default shell  | —                 | 创建新 runtime         |
 | Claude Code | 优先`ccp`，回落`claude` | Hook `session_id` | `claude --resume <id>` |
 | Codex       | 优先`cxp`，回落`codex`  | Hook `session_id` | `codex resume <id>`    |
+| GitHub Copilot | `copilot`             | Hook `session_id` | `copilot --resume=<id>` |
 
 Provider resolver先遍历完整PATH寻找本地launcher，再遍历完整PATH寻找raw CLI。launcher内部再次调用同名CLI时，per-runtime shim通过depth guard只解析raw CLI，避免`ccp/cxp → shim → ccp/cxp`递归。用户自定义 command/args/env/resume template进入后续版本。
 
@@ -18,7 +19,7 @@ Windows resolver将进程继承的PATH与当前HKCU/HKLM环境PATH合并，并�
 
 ## 目标
 
-Claude/Codex 自己上报 native Session ID。Hook 配置通过本次进程参数注入，用户的 `~/.claude/settings.json` 和 `~/.codex/hooks.json` 保持原样。
+Claude/Codex/Copilot 自己上报 native Session ID。Hook 配置通过本次进程参数注入，用户的 `~/.claude/settings.json`、`~/.codex/hooks.json`和`~/.copilot`保持原样。
 
 ## 启动链路
 
@@ -67,6 +68,15 @@ codex --enable hooks \
 
 inline hook definitions必须位于`--dangerously-bypass-hook-trust`之前；Codex 0.144按CLI config加载顺序计算本次invocation trust，顺序反转会让`SessionStart`进入review pending并被跳过。
 
+GitHub Copilot：
+
+```text
+copilot --plugin-dir <per-runtime-plugin>
+copilot --plugin-dir <per-runtime-plugin> --resume=<id>
+```
+
+per-runtime plugin包含`plugin.json`和`hooks.json`，通过Copilot的VS Code兼容PascalCase事件注入`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`Stop`与`SessionEnd`。`notification`以`permission_prompt|elicitation_dialog` matcher报告真实用户阻塞状态。Hook command分别使用PowerShell与POSIX shell保真引用per-runtime `ccsm-hook`绝对路径。plugin随runtime释放，不修改用户或repository hook配置。
+
 Hook command使用本次desktop executable的绝对`CCSM_HOOK_REPORTER`路径并保真引用；不得依赖Codex为command hook重建的shell PATH仍包含per-runtime shim目录。
 
 ## 上下文与校验
@@ -80,7 +90,7 @@ CCSM_HOOK_PIPE
 CCSM_HOOK_TOKEN
 ```
 
-AppBackend校验token、provider、session、runtime ID和payload ID。Hook命令读取stdin、异步转发并立即返回。认证HookReport是Claude/Codex native Session ID的唯一来源；Shell跳过native binding。
+AppBackend校验token、provider、session、runtime ID和payload ID。Hook命令读取stdin、异步转发并立即返回。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
 
 ## Agent activity
 
@@ -91,6 +101,7 @@ Codex runtime spawn → idle（native binding可以保持pending）
 SessionStart       → idle
 UserPromptSubmit   → working，开启turn
 PermissionRequest → blocked
+Copilot permission/elicitation notification → blocked
 PreToolUse         → working
 Stop               → idle，关闭turn
 StopFailure        → idle，关闭turn（Claude）
@@ -99,7 +110,7 @@ SessionEnd         → stopped
 
 关闭turn后到达的`PreToolUse`和`PermissionRequest`保持当前状态，下一次`UserPromptSubmit`开启新turn。PTY exit始终发布`stopped`。activity通过`agent.activityChanged`进入DesktopEventStream，并由`list_agents` snapshot完成启动和重连恢复。activity、turn和runtime ID保持在内存中。
 
-Codex TUI在空提示符阶段尚未创建native session，首次prompt前不会发送`SessionStart`。因此Codex成功spawn后仅将activity置为`idle`；native Session ID仍只接受后续认证HookReport。Claude继续由启动期`SessionStart`完成`starting → idle`。
+Codex与Copilot TUI在空提示符阶段尚未创建native session，首次prompt前不会发送`SessionStart`。因此两者成功spawn后仅将activity置为`idle`；native Session ID仍只接受后续认证HookReport。Claude由启动期`SessionStart`完成`starting → idle`。
 
 `CCSM_HOOK_TOKEN`按runtime随机生成，由RuntimeManager保存在内存中，通过子进程环境传递，并在runtime结束时失效。Token不写入`data.db`或logs。
 

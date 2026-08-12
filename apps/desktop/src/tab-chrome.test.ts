@@ -97,6 +97,7 @@ describe("CCSM Tab chrome", () => {
       session("shell-1", "shell"),
       session("claude-1", "claude"),
       session("codex-1", "codex"),
+      session("copilot-1", "copilot"),
     ];
 
     expect(
@@ -108,6 +109,9 @@ describe("CCSM Tab chrome", () => {
     expect(
       resolveTabIconKind(tab("cli-session", "Renamed", "codex-1"), sessions),
     ).toBe("codex");
+    expect(
+      resolveTabIconKind(tab("cli-session", "Renamed", "copilot-1"), sessions),
+    ).toBe("copilot");
     expect(
       resolveTabIconKind(tab("browser", "Browser", "browser-1"), sessions),
     ).toBe("browser");
@@ -188,11 +192,12 @@ describe("CCSM Tab chrome", () => {
     renderer.dispose();
   });
 
-  test("warns only for Claude and Codex CLI Tabs", () => {
+  test("warns for every Agent CLI Tab", () => {
     const sessions = [
       session("shell-1", "shell"),
       session("claude-1", "claude"),
       session("codex-1", "codex"),
+      session("copilot-1", "copilot"),
     ];
 
     expect(
@@ -210,6 +215,12 @@ describe("CCSM Tab chrome", () => {
     expect(
       requiresAgentCliCloseConfirmation(
         tab("cli-session", "Codex", "codex-1"),
+        sessions,
+      ),
+    ).toBe(true);
+    expect(
+      requiresAgentCliCloseConfirmation(
+        tab("cli-session", "GitHub Copilot", "copilot-1"),
         sessions,
       ),
     ).toBe(true);

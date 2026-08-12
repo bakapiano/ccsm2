@@ -43,6 +43,8 @@
 
 ## 所有权表述
 
+- 非必要不使用“不做什么”“不是什么”“不要X而要Y”等反向表述。规格直接描述需要的对象、职责、行为、流程、不变量和验收结果。
+- 安全边界、兼容约束以及缺少排除项会产生实质歧义时，可以使用反向表述。
 - 使用正向所有权句式：`X 管理 A。Y 管理 B。`
 - 避免反向划界句式：`X 负责 A，但不负责 B。`
 - 避免同类变体：`X 只负责 A，不处理 B。`、`X 管理 A，不创建或销毁 B。`
@@ -61,4 +63,4 @@
 - 用户mutation通过command response返回committed DTO或snapshot；`AppEvent`承载AppBackend异步变化，`BrowserSurfaceEvent`承载native browser变化；PTY bytes使用binary Channel。
 - Provider的watch scope通过commands声明，Rust异步通知统一进入`DesktopEventStream`。
 - Desktop crates不实现HTTP/WebSocket server或transport；未来`ccsm-web-server`作为独立composition root复用core DTOs和services。
-- Claude/Codex native Session ID仅接受认证HookReport；代码不得扫描provider data directory、transcript或mtime猜测身份。
+- Claude/Codex/Copilot native Session ID仅接受认证HookReport；代码不得扫描provider data directory、transcript或mtime猜测身份。

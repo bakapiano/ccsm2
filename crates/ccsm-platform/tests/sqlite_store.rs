@@ -390,13 +390,19 @@ fn agents_list_resolves_every_cli_session_to_its_space_and_tab() {
         .unwrap();
     let codex = store
         .create_cli_tab(CreateCliTabRequest {
-            space_id: second.active_space_id,
+            space_id: second.active_space_id.clone(),
             provider: ProviderKind::Codex,
+        })
+        .unwrap();
+    let copilot = store
+        .create_cli_tab(CreateCliTabRequest {
+            space_id: second.active_space_id,
+            provider: ProviderKind::Copilot,
         })
         .unwrap();
 
     let agents = store.list_agents().unwrap();
-    assert_eq!(agents.len(), 2);
+    assert_eq!(agents.len(), 3);
     assert!(agents.iter().any(|agent| {
         agent.cli_session_id == claude.cli_session.id
             && agent.tab_id == claude.tab.id
@@ -407,6 +413,12 @@ fn agents_list_resolves_every_cli_session_to_its_space_and_tab() {
             && agent.tab_id == codex.tab.id
             && agent.space_name == "Second"
             && agent.provider == ProviderKind::Codex
+    }));
+    assert!(agents.iter().any(|agent| {
+        agent.cli_session_id == copilot.cli_session.id
+            && agent.tab_id == copilot.tab.id
+            && agent.space_name == "Second"
+            && agent.provider == ProviderKind::Copilot
     }));
 }
 

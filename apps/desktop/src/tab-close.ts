@@ -16,7 +16,7 @@ export function requiresAgentCliCloseConfirmation(
   const provider = cliSessions.find(
     (session) => session.id === tab.resourceId,
   )?.provider;
-  return provider === "claude" || provider === "codex";
+  return provider !== undefined && provider !== "shell";
 }
 
 export async function closeTabAfterApproval(

@@ -34,6 +34,7 @@ export_ts! {
         Shell,
         Claude,
         Codex,
+        Copilot,
     }
 }
 

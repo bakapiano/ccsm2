@@ -5,7 +5,7 @@ fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     if arguments.as_slice() == ["provider"] {
         let Some(provider) = ccsm_platform::provider_from_environment() else {
-            eprintln!("ccsm provider mode requires CCSM_PROVIDER=claude|codex");
+            eprintln!("ccsm provider mode requires CCSM_PROVIDER=claude|codex|copilot");
             std::process::exit(2);
         };
         std::process::exit(ccsm_platform::run_cli_shim(provider));

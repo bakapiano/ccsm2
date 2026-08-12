@@ -18,14 +18,14 @@ CCSM v2 使用独立代码路径和新数据目录。开发采用纵向切片，
 - 从终端原型纳入 ghostty-web、portable-pty patches、Windows ConPTY bundle 和测试。
 - 在Tauri Rust主进程构造AppBackend，实现storage、create/attach/input/resize/stop和持续PTY drain。
 - 实现幂等shutdown、process-tree cleanup和平台process containment。
-- CLI Tab 接入真实 platform shell、Claude Code 和 Codex runtime。
+- CLI Tab 接入真实 platform shell、Claude Code、Codex 和 GitHub Copilot runtime。
 
 完成条件：真实CLI输入、resize和退出cleanup通过，下一次启动按desired state恢复Session。
 
 ## Phase 2：CLI Session + Hook
 
 - 实现持久Session/native ID与进程内runtime分层。
-- 实现Claude/Codex per-launch wrapper、Hook-only native binding、missing-Hook状态、opaque runtime ID与keyed resume mutex。
+- 实现Claude/Codex/Copilot per-launch wrapper、Hook-only native binding、missing-Hook状态、opaque runtime ID与keyed resume mutex。
 - 将 CLI Tab 的恢复接入 attach-or-resume 流程。
 
 完成条件：新建、resume、fork/ID rotation 绑定正确 ID，重复 resume 合并为一次启动。

@@ -14,7 +14,7 @@ Space
 ├─ discovered Git tree
 ├─ Dockview layout
 ├─ Tabs
-│  ├─ Shell/Claude/Codex CLI Session
+│  ├─ Shell/Claude/Codex/Copilot CLI Session
 │  ├─ Browser
 │  ├─ File Explorer
 │  └─ Git
@@ -24,7 +24,7 @@ Space
 
 选择 `Space` 这个名称，是为了区分：
 
-- `CliSession`：Shell、Claude 或 Codex 的稳定 CCSM 记录；Claude/Codex额外绑定 provider native Session。
+- `CliSession`：Shell、Claude、Codex 或 Copilot 的稳定 CCSM 记录；Agent CLI额外绑定 provider native Session。
 - `GitRepository`：Space root或直属子目录中发现的repository。
 - `Window`：操作系统窗口。
 - `Tab`：Space 内的一个视图。

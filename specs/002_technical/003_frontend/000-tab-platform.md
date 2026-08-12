@@ -49,7 +49,7 @@ interface TabView {
 - 创建 Tab 时先创建/选择底层 resource，再写入 TabRecord。
 - Dockview mount/unmount 驱动 TabView 生命周期；resource 生命周期由对应 provider 管理。
 - Tab inactive 时调用 `setActive(false)`；native browser 必须隐藏，终端停止 resize ownership。
-- Tab header和右键菜单将用户关闭请求交给Desktop预检流程。预检通过`CliSession.provider`为Claude/Codex展示警告，并为dirty File Editor展示保存确认。预检通过后调用Dockview Panel close；`onDidRemovePanel`提交不含目标Panel的布局并调用`deleteTab`。CLI删除停止runtime并删除CliSession；Browser删除关闭native surface。布局恢复和Space切换期间的Panel移除跳过该流程。
+- Tab header和右键菜单将用户关闭请求交给Desktop预检流程。预检通过`CliSession.provider`为全部非Shell Agent CLI展示警告，并为dirty File Editor展示保存确认。预检通过后调用Dockview Panel close；`onDidRemovePanel`提交不含目标Panel的布局并调用`deleteTab`。CLI删除停止runtime并删除CliSession；Browser删除关闭native surface。布局恢复和Space切换期间的Panel移除跳过该流程。
 - Dockview使用right header action渲染每个group的New Tab加号。`noPanelsOverlay=emptyGroup`保留最后一个空group，使零Tab状态仍有创建入口。
 - Provider定义resource cardinality和Duplicate语义。
 - Space layout snapshot 与 TabRecord 分开持久化，恢复时先加载 records，再重建 Dockview。

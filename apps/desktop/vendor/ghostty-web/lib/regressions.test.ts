@@ -9,6 +9,7 @@ import {
 import { crossedDragThreshold, resolveDragRow } from "./selection-hit-test";
 import { SelectionManager } from "./selection-manager";
 import { calculateScrollbarGeometry } from "./scrollbar-geometry";
+import { encodeLegacyMouse, encodeSgrMouse } from "./terminal";
 
 function cell(codepoint: number, width: number = 1) {
   return { codepoint, width, grapheme_len: 0 } as any;
@@ -39,6 +40,36 @@ describe("local ghostty-web regressions", () => {
   test("an explicit zero scrollbar reservation uses the full terminal width", () => {
     expect(resolveScrollbarWidth("0px")).toBe(0);
     expect(resolveScrollbarWidth("")).toBe(15);
+  });
+
+  test("encodes SGR mouse clicks, releases, motion, and wheel input", () => {
+    expect(encodeSgrMouse({ button: 0, col: 4, row: 2 })).toBe(
+      "\x1b[<0;5;3M",
+    );
+    expect(
+      encodeSgrMouse({
+        button: 0,
+        col: 4,
+        row: 2,
+        release: true,
+        ctrl: true,
+      }),
+    ).toBe("\x1b[<16;5;3m");
+    expect(
+      encodeSgrMouse({ button: 3, col: 0, row: 0, motion: true }),
+    ).toBe("\x1b[<35;1;1M");
+    expect(encodeSgrMouse({ button: 64, col: 7, row: 9 })).toBe(
+      "\x1b[<64;8;10M",
+    );
+  });
+
+  test("encodes legacy mouse input with bounded one-byte coordinates", () => {
+    expect(encodeLegacyMouse({ button: 0, col: 4, row: 2 })).toBe(
+      `\x1b[M${String.fromCharCode(32, 37, 35)}`,
+    );
+    expect(
+      encodeLegacyMouse({ button: 0, col: 500, row: 500, release: true }),
+    ).toBe(`\x1b[M${String.fromCharCode(35, 255, 255)}`);
   });
 
   test("scrollbar thumb reaches both vertical track boundaries", () => {

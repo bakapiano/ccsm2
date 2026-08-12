@@ -2,7 +2,7 @@
 
 ## 通用交互
 
-- Tab header 显示类型图标；Claude Code 与 Codex 使用原版 CCSM 的彩色品牌图标。
+- Tab header 显示类型图标；Claude Code、Codex 与 GitHub Copilot 使用彩色品牌图标。
 - Tab header 提供独立关闭按钮。
 - 每个Dockview group的Tab header最右侧提供纯加号New Tab操作；最后一个Tab关闭后保留空group header，使New Tab仍可用。
 - 右键菜单依次提供 Close、Close Others、Close to the Right 和 Close All。
@@ -11,11 +11,11 @@
 
 ## CLI Session
 
-- 首版提供 Shell、Claude Code 和 Codex 三个内置 Provider。
-- Shell 使用平台默认 shell并拥有 runtime 生命周期；Claude/Codex额外拥有 Hook binding 和 native resume。
+- 首版提供 Shell、Claude Code、Codex 和 GitHub Copilot 四个内置 Provider。
+- Shell 使用平台默认 shell并拥有 runtime 生命周期；Claude/Codex/Copilot额外拥有 Hook binding 和 native resume。
 - runtime 存活时直接 reattach；runtime 丢失时显示恢复进度或 Resume 操作。
-- Claude/Codex Hook尚未确认时显示binding pending；runtime结束仍未绑定时显示resume unavailable和Start New/Replace。
-- 关闭 Claude Code 或 Codex Tab先用应用内Modal警告用户该操作会停止runtime并从`data.db`删除Tab与CliSession，确认后再从布局移除Tab并执行删除。普通Shell Tab直接关闭。Stop停止当前runtime并保留Tab。
+- Agent CLI Hook尚未确认时显示binding pending；runtime结束仍未绑定时显示resume unavailable和Start New/Replace。
+- 关闭 Claude Code、Codex 或 GitHub Copilot Tab先用应用内Modal警告用户该操作会停止runtime并从`data.db`删除Tab与CliSession，确认后再从布局移除Tab并执行删除。普通Shell Tab直接关闭。Stop停止当前runtime并保留Tab。
 - 一个 CliSession只对应一个 CLI Tab；再次打开时激活所属 Space并聚焦已有 Tab。
 - CLI Tab禁用 Duplicate。
 - CLI Tab保留带修饰键的输入语义：Codex中`Shift+Enter`输入换行而不提交，并兼容`Ctrl+Enter`；Claude Code中`Shift+Enter`输入换行而不提交；Windows上的Claude Code中`Alt+V`交给CLI读取系统剪贴板并粘贴图片。

@@ -103,8 +103,21 @@ fn collect_hook_report() -> BackendResult<HookReport> {
     }
     let payload: Value = serde_json::from_slice(&input)
         .map_err(|error| BackendError::Invalid(format!("parse Hook payload: {error}")))?;
+    let (native_session_id, hook_event_name) = hook_payload_identity(&payload)?;
+    Ok(HookReport {
+        provider: parse_provider(&required_env("CCSM_PROVIDER")?)?,
+        cli_session_id: required_env("CCSM_SESSION_ID")?,
+        runtime_id: required_env("CCSM_RUNTIME_ID")?,
+        token: required_env("CCSM_HOOK_TOKEN")?,
+        native_session_id,
+        hook_event_name,
+    })
+}
+
+fn hook_payload_identity(payload: &Value) -> BackendResult<(String, String)> {
     let native_session_id = payload
         .get("session_id")
+        .or_else(|| payload.get("sessionId"))
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| BackendError::Invalid("Hook payload has no session_id".into()))?;
@@ -112,14 +125,7 @@ fn collect_hook_report() -> BackendResult<HookReport> {
         .get("hook_event_name")
         .and_then(Value::as_str)
         .unwrap_or("SessionStart");
-    Ok(HookReport {
-        provider: parse_provider(&required_env("CCSM_PROVIDER")?)?,
-        cli_session_id: required_env("CCSM_SESSION_ID")?,
-        runtime_id: required_env("CCSM_RUNTIME_ID")?,
-        token: required_env("CCSM_HOOK_TOKEN")?,
-        native_session_id: native_session_id.to_string(),
-        hook_event_name: hook_event_name.to_string(),
-    })
+    Ok((native_session_id.to_string(), hook_event_name.to_string()))
 }
 
 fn required_env(name: &str) -> BackendResult<String> {
@@ -133,6 +139,7 @@ fn parse_provider(value: &str) -> BackendResult<ProviderKind> {
     match value {
         "claude" => Ok(ProviderKind::Claude),
         "codex" => Ok(ProviderKind::Codex),
+        "copilot" => Ok(ProviderKind::Copilot),
         _ => Err(BackendError::Invalid(format!(
             "unsupported Hook provider {value}"
         ))),
@@ -320,6 +327,18 @@ mod tests {
     use std::sync::mpsc;
 
     use super::*;
+
+    #[test]
+    fn hook_payload_accepts_copilot_camel_case_session_identity() {
+        let (session_id, event) = hook_payload_identity(&serde_json::json!({
+            "sessionId": "copilot-session",
+            "hook_event_name": "Notification",
+            "notification_type": "permission_prompt"
+        }))
+        .unwrap();
+        assert_eq!(session_id, "copilot-session");
+        assert_eq!(event, "Notification");
+    }
 
     #[test]
     fn endpoint_delivers_a_complete_report() {

@@ -5,7 +5,7 @@
 - Tauri 2 本地桌面应用。
 - TypeScript/Dockview Tab UI。
 - Tauri Rust主进程内的AppBackend。
-- Space、Shell/Claude/Codex CLI Session、Browser、File Explorer、Git 和内置 Tab Providers。
+- Space、Shell/Claude/Codex/Copilot CLI Session、Browser、File Explorer、Git 和内置 Tab Providers。
 - Windows 首发，同时保持 macOS/Linux platform adapters。
 
 ## 独立后续产品

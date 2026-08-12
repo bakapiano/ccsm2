@@ -38,7 +38,7 @@ pnpm dev
 - UI geometry、focus、selection、IME、native child WebView 等视觉或交互问题。
 - AppBackend/PTY/Hook/Git watcher 的竞态复现。
 - GitHub Actions 失败后的本地诊断。
-- 真实 Claude/Codex 长 Session 的探索性 smoke。
+- 真实 Claude/Codex/Copilot 长 Session 的探索性 smoke。
 - 特定操作系统、显示器、输入法和用户配置组合。
 - Release 前的人工视觉、真实输入法候选窗、硬件和系统集成 sign-off。
 

@@ -568,7 +568,7 @@ impl StateStore for SqliteStateStore {
         let tab_id = Uuid::new_v4().to_string();
         let binding_state = match request.provider {
             ProviderKind::Shell => "not_applicable",
-            ProviderKind::Claude | ProviderKind::Codex => "pending",
+            ProviderKind::Claude | ProviderKind::Codex | ProviderKind::Copilot => "pending",
         };
         let now = now_timestamp();
         transaction
@@ -846,7 +846,7 @@ impl StateStore for SqliteStateStore {
         let session = load_cli_session(&connection, session_id)?;
         let binding_state = match session.provider {
             ProviderKind::Shell => "not_applicable",
-            ProviderKind::Claude | ProviderKind::Codex => "pending",
+            ProviderKind::Claude | ProviderKind::Codex | ProviderKind::Copilot => "pending",
         };
         connection
             .execute(
@@ -1473,7 +1473,7 @@ fn list_agents(connection: &Connection) -> BackendResult<Vec<AgentSummaryDto>> {
              FROM cli_sessions cs
              JOIN spaces s ON s.id = cs.space_id
              JOIN tabs t ON t.resource_id = cs.id AND t.kind = 'cli-session'
-             WHERE cs.provider IN ('claude', 'codex')
+             WHERE cs.provider IN ('claude', 'codex', 'copilot')
              ORDER BY s.folder_order, s.created_at, cs.created_at",
         )
         .map_err(storage_error)?;
@@ -1588,6 +1588,7 @@ fn parse_provider(value: &str) -> BackendResult<ProviderKind> {
         "shell" => Ok(ProviderKind::Shell),
         "claude" => Ok(ProviderKind::Claude),
         "codex" => Ok(ProviderKind::Codex),
+        "copilot" => Ok(ProviderKind::Copilot),
         _ => Err(BackendError::Storage(format!("unknown provider {value}"))),
     }
 }
@@ -1597,6 +1598,7 @@ fn provider_text(value: ProviderKind) -> &'static str {
         ProviderKind::Shell => "shell",
         ProviderKind::Claude => "claude",
         ProviderKind::Codex => "codex",
+        ProviderKind::Copilot => "copilot",
     }
 }
 
@@ -1605,6 +1607,7 @@ fn provider_title(value: ProviderKind) -> &'static str {
         ProviderKind::Shell => "Shell",
         ProviderKind::Claude => "Claude Code",
         ProviderKind::Codex => "Codex",
+        ProviderKind::Copilot => "GitHub Copilot",
     }
 }
 

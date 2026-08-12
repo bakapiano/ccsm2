@@ -48,7 +48,7 @@ Cache schema test验证仅存在`git_repositories_cache`和`git_status_cache`，
 
 Hook integration tests覆盖认证成功、malformed payload、错误token、旧runtime ID和缺失Hook。缺失Hook场景验证CLI继续运行、退出后binding进入unavailable、重启不自动创建新provider Session，并确认没有provider directory扫描行为。
 
-Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭Claude/Codex Tab时验证Panel在确认完成前保持挂载，取消后保留Tab与Session，确认后进程退出、Tab与Session从`data.db`删除且Agent条目消失；普通Shell Tab关闭不展示Agent警告。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
+Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭Agent CLI Tab时验证Panel在确认完成前保持挂载，取消后保留Tab与Session，确认后进程退出、Tab与Session从`data.db`删除且Agent条目消失；普通Shell Tab关闭不展示Agent警告。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
 
 Browser occlusion tests验证capture、DOM截图解码、native hide、native show和截图释放的顺序；覆盖多个重叠浮层与capture期间快速关闭。Desktop scenario在Browser页面打开New Tab菜单、Tab右键菜单、overflow菜单和Modal，断言静态截图保持原画面且关闭后live页面继续运行。
 
@@ -157,7 +157,7 @@ ProtocolFixture      requests、events、binary bytes、golden schemas
 
 `data.db`为每个已发布Schema版本保留golden fixture。Data contract tests验证最新AppBackend能够打开、增量migration并读取所有旧fixture；Schema lint检查durable table/column语义、migration幂等性和`_cache` table重建。
 
-确定性provider fixture用于PR回归。真实Claude/Codex使用独立Credentialed Smoke workflow。
+确定性provider fixture用于PR回归。真实Claude/Codex/Copilot使用独立Credentialed Smoke workflow。
 
 ## Desktop自动化
 
@@ -192,7 +192,7 @@ self-hosted      signing、IME、受保护provider或硬件场景
 ```text
 Packaging Smoke      build/install/start/stop/uninstall artifact
 Platform Smoke       PTY、WebView runtime、filesystem、process integration
-Credentialed Smoke   非交互认证的真实Claude/Codex启动与resume
+Credentialed Smoke   非交互认证的真实Claude/Codex/Copilot启动与resume
 ```
 
 Packaging和Platform Smoke可在GitHub-hosted或self-hosted runner无人值守执行。Credentialed Smoke使用受保护secrets、额度和runner，并与确定性测试结果分开显示。

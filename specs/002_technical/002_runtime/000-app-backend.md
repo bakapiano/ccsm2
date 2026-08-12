@@ -60,7 +60,7 @@ deserialize generated DTO
 
 ## HookEndpoint
 
-Claude/Codex Hook运行在外部子进程中，通过受限HookEndpoint上报：
+Claude/Codex/Copilot Hook运行在外部子进程中，通过受限HookEndpoint上报：
 
 ```text
 ccsm hook report

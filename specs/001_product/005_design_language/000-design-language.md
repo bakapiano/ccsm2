@@ -117,7 +117,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - Light 的 Tab strip、非活动 Tab、活动 Tab 分别使用 `#f0f0f0`、`#e4e4e4`、`#ffffff`。
 - Dark 的 Tab strip、非活动 Tab、活动 Tab 分别使用 `#252526`、`#2d2d2d`、`#1e1e1e`。
 - Tab 文本为 12px，最小宽度 88px，最大宽度 200px。
-- Tab 图标与关闭按钮分别使用 14px 和 18px 网格；Claude Code 与 Codex 保留品牌色。
+- Tab 图标与关闭按钮分别使用 14px 和 18px 网格；Claude Code、Codex 与 GitHub Copilot 保留品牌色。
 - Tab 右键菜单复用原版 CCSM 的 210px 宽度、条目顺序、禁用态和分隔线。
 - split sash 保持4px视觉线并提供约16px透明pointer命中区，交互时使用 accent 色提示。
 - Tab overflow scrollbar 跟随当前主题。

@@ -977,6 +977,9 @@ class TerminalPanel implements IContentRenderer {
       repaintCaptureActive: Boolean(this.#repaintCapture),
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,
+      mouseTracking: terminal?.hasMouseTracking() ?? false,
+      mouseSgr: terminal?.getMode(1006) ?? false,
+      lastMouseReport: terminal?.getLastMouseReport() ?? null,
       theme: this.theme,
       text: lines.join("\n"),
     };

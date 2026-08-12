@@ -32,7 +32,7 @@ Terminal VT和scrollback属于当前应用生命周期。应用退出释放CLI r
 - 当前 Space 中用户期望运行的 Session 自动 resume。
 - 未打开 Space 在用户打开时恢复。
 - 用户明确 Stop 的 Session 保持 stopped。
-- Claude/Codex缺少native Session ID且binding为unavailable时不自动创建新会话，Tab进入degraded并提供Start New/Replace。
+- Agent CLI缺少native Session ID且binding为unavailable时不自动创建新会话，Tab进入degraded并提供Start New/Replace。
 - 同时最多启动两个 cold resume；失败 Tab 进入 degraded并显示 Retry。
 
 ## 失败处理

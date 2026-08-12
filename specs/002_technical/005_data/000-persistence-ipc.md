@@ -66,7 +66,7 @@ Space lifecycle写入规则：
 - Switch提交旧Space layout，并更新`settings.last_active_space_id`。
 - Delete完成scoped resource cleanup后，在一个transaction内删除Space-owned durable records和对应cache rows，并同步清理Space-owned filesystem artifacts。
 - 可重建cache的清理失败写入日志；不可达数据在普通cache重建时移除，不创建durable cleanup queue。
-- Space Delete移除当前`root_id`引用；删除active Space时先关闭其ActiveRootContext。最后一个引用消失后删除SpaceRoot record并cascade清理可重建cache。磁盘root folder和Claude/Codex provider transcripts保留在原位置。
+- Space Delete移除当前`root_id`引用；删除active Space时先关闭其ActiveRootContext。最后一个引用消失后删除SpaceRoot record并cascade清理可重建cache。磁盘root folder和Agent CLI provider transcripts保留在原位置。
 
 ## Rebuildable cache
 
@@ -87,8 +87,8 @@ git_status_cache
 
 - `browser-profile/` 是全局持久 WebView profile，保存共享 cookies、账号登录、storage 和 HTTP cache。
 - `logs/` 保存AppBackend、desktop adapter、renderer和测试可观测日志。
-- Claude/Codex provider transcripts保持在provider data directory；CCSM不读取或扫描这些目录来推断native Session ID。
-- Claude/Codex登录由provider CLI管理；Git认证由Git工具链管理；Browser认证由platform WebView profile管理。
+- Agent CLI provider transcripts保持在provider data directory；CCSM不读取或扫描这些目录来推断native Session ID。
+- Agent CLI登录由provider CLI管理；Git认证由Git工具链管理；Browser认证由platform WebView profile管理。
 - Hook token属于单次runtime，保存在RuntimeManager和子进程环境中，并在runtime结束时丢弃。
 
 ## Global Browser Profile

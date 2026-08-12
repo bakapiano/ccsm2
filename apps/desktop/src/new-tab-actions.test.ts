@@ -8,6 +8,7 @@ describe("New Tab menu", () => {
       "shell",
       "claude",
       "codex",
+      "copilot",
       "browser",
       "files",
       "git",
@@ -16,7 +17,7 @@ describe("New Tab menu", () => {
       NEW_TAB_ACTIONS.filter((action) => action.type === "cli").map(
         (action) => action.provider,
       ),
-    ).toEqual(["shell", "claude", "codex"]);
+    ).toEqual(["shell", "claude", "codex", "copilot"]);
     expect(
       NEW_TAB_ACTIONS.filter((action) => action.type === "tab").map(
         (action) => action.tabKind,

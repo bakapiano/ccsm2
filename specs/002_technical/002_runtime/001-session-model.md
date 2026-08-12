@@ -8,7 +8,7 @@ Space ID
 ├─ Tab ID → Resource ID          # 完整布局中的视图引用
 └─ CCSM Session ID               # 长期业务身份
    ├─ cwd / GitRepository ID?
-   ├─ Native Session ID          # Claude/Codex 身份
+   ├─ Native Session ID          # Claude/Codex/Copilot 身份
    └─ Runtime ID                 # 一次 PTY/进程树生命
 ```
 
@@ -34,7 +34,7 @@ TerminalRuntime {
 
 `desired_state = running | stopped` 表示跨启动保留的用户意图。`actual_state = starting | live | exited | lost` 表示当前应用进程观察到的runtime事实。
 
-`native_binding_state = not_applicable | pending | bound | unavailable`保存在CliSession。Shell使用`not_applicable`；Claude/Codex创建时为`pending`，认证HookReport将其更新为`bound`。Runtime结束或应用重启时仍为`pending`的Session进入`unavailable`。
+`native_binding_state = not_applicable | pending | bound | unavailable`保存在CliSession。Shell使用`not_applicable`；Claude/Codex/Copilot创建时为`pending`，认证HookReport将其更新为`bound`。Runtime结束或应用重启时仍为`pending`的Session进入`unavailable`。
 
 同一`runtime_id`的前端状态仅沿`starting → live → exited/lost`前进。Start command response和异步runtime event到达顺序可以交错；已经进入后续状态时忽略迟到的`starting`。
 
@@ -77,8 +77,8 @@ derive ResumeKey and acquire mutex
 runtime注册完成、超时或spawn失败后释放mutex。恢复策略：
 
 - live runtime 存在时自动 attach。
-- 当前打开Space中`desired_state=running`、runtime缺失且binding为`bound`的Claude/Codex Session自动cold resume。
-- Shell Session在runtime缺失时创建新runtime；`native_binding_state=unavailable`的Claude/Codex Session进入degraded并等待Start New/Replace。
+- 当前打开Space中`desired_state=running`、runtime缺失且binding为`bound`的Agent CLI Session自动cold resume。
+- Shell Session在runtime缺失时创建新runtime；`native_binding_state=unavailable`的Agent CLI Session进入degraded并等待Start New/Replace。
 - 未打开 Space 在用户打开时执行相同恢复判断。
 - `desired_state=stopped` 保持 stopped。
 - cold resume 并发上限为 2；失败进入 degraded并等待显式 Retry。

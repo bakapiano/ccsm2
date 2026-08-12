@@ -7,12 +7,16 @@ export type TabIconKind =
   | "browser"
   | "claude"
   | "codex"
+  | "copilot"
   | "document"
   | "files"
   | "git"
   | "shell";
 
-const ICONS: Record<Exclude<TabIconKind, "claude" | "codex">, string> = {
+const ICONS: Record<
+  Exclude<TabIconKind, "claude" | "codex" | "copilot">,
+  string
+> = {
   browser: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="9"></circle>
@@ -70,6 +74,7 @@ export function resolveTabIconKind(
       const title = tab.title.toLowerCase();
       if (title.includes("claude")) return "claude";
       if (title.includes("codex")) return "codex";
+      if (title.includes("copilot")) return "copilot";
       return "shell";
     }
   }
@@ -105,7 +110,11 @@ export class CcsmTabRenderer implements ITabRenderer {
     icon.className = "ccsm-tab-icon";
     icon.dataset.icon = iconKind;
     icon.setAttribute("aria-hidden", "true");
-    if (iconKind === "claude" || iconKind === "codex") {
+    if (
+      iconKind === "claude" ||
+      iconKind === "codex" ||
+      iconKind === "copilot"
+    ) {
       const image = document.createElement("img");
       image.alt = "";
       image.draggable = false;

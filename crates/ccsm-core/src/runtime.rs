@@ -158,10 +158,13 @@ impl RuntimeManager {
             }
         };
 
-        // Codex TUI creates its native session lazily on the first prompt, so
+        // Codex and Copilot create their native sessions lazily on the first prompt, so
         // SessionStart cannot mark an untouched prompt as ready. Process spawn
         // is sufficient for activity only; native binding remains Hook-only.
-        if session.provider == ProviderKind::Codex {
+        if matches!(
+            session.provider,
+            ProviderKind::Codex | ProviderKind::Copilot
+        ) {
             let mut state = self.lock_state()?;
             if let Some(registration) = state.hook_registrations.get_mut(&runtime_id)
                 && registration.activity == AgentActivity::Starting
@@ -242,6 +245,7 @@ impl RuntimeManager {
                 | "UserPromptSubmit"
                 | "PermissionRequest"
                 | "PreToolUse"
+                | "Notification"
                 | "Stop"
                 | "StopFailure"
                 | "SessionEnd"
@@ -407,8 +411,9 @@ fn reduce_agent_activity(
         "SessionStart" => (current, turn_active),
         "UserPromptSubmit" => (AgentActivity::Working, true),
         "PermissionRequest" if turn_active => (AgentActivity::Blocked, true),
+        "Notification" if turn_active => (AgentActivity::Blocked, true),
         "PreToolUse" if turn_active => (AgentActivity::Working, true),
-        "PermissionRequest" | "PreToolUse" => (current, turn_active),
+        "PermissionRequest" | "PreToolUse" | "Notification" => (current, turn_active),
         "Stop" | "StopFailure" => (AgentActivity::Idle, false),
         "SessionEnd" => (AgentActivity::Stopped, false),
         _ => (current, turn_active),
@@ -668,6 +673,30 @@ mod tests {
             AgentActivity::Working
         );
 
+        let mut notification_report = report.clone();
+        notification_report.hook_event_name = "Notification".into();
+        assert_eq!(
+            manager
+                .apply_hook_report(&notification_report)
+                .unwrap()
+                .activity_changed
+                .unwrap()
+                .activity,
+            AgentActivity::Blocked
+        );
+
+        let mut resumed_tool_report = report.clone();
+        resumed_tool_report.hook_event_name = "PreToolUse".into();
+        assert_eq!(
+            manager
+                .apply_hook_report(&resumed_tool_report)
+                .unwrap()
+                .activity_changed
+                .unwrap()
+                .activity,
+            AgentActivity::Working
+        );
+
         let mut failure_report = report.clone();
         failure_report.hook_event_name = "StopFailure".into();
         assert_eq!(
@@ -686,6 +715,38 @@ mod tests {
 
         manager.remove_if_current(&report.cli_session_id, &report.runtime_id);
         assert!(manager.apply_hook_report(&report).is_err());
+    }
+
+    #[test]
+    fn copilot_prompt_is_idle_before_its_lazy_session_start() {
+        let manager = RuntimeManager::new(Arc::new(FakePtyBackend));
+        let session = CliSessionDto {
+            id: "copilot-session".into(),
+            space_id: "space-1".into(),
+            provider: ProviderKind::Copilot,
+            cwd: ".".into(),
+            native_session_id: None,
+            native_binding_state: NativeBindingState::Pending,
+            desired_state: DesiredState::Running,
+            last_exit_summary: None,
+        };
+        let started = manager
+            .start_session(
+                session,
+                80,
+                24,
+                Some(HookTransportDescriptor {
+                    endpoint: "test-endpoint".into(),
+                    reporter_path: "ccsm".into(),
+                }),
+                Arc::new(|_| {}),
+            )
+            .unwrap();
+
+        assert_eq!(
+            manager.agent_activity(&started.cli_session_id).unwrap(),
+            Some((started.runtime_id, AgentActivity::Idle))
+        );
     }
 
     #[test]

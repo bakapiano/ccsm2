@@ -46,7 +46,39 @@ import {
   TERMINAL_SCROLLBAR_WIDTH,
   calculateScrollbarGeometry,
 } from "./scrollbar-geometry";
-import type { ILink, ILinkProvider } from "./types";
+import { TerminalMode, type ILink, type ILinkProvider } from "./types";
+
+export interface TerminalMouseInput {
+  button: number;
+  col: number;
+  row: number;
+  release?: boolean;
+  motion?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  ctrl?: boolean;
+}
+
+export function encodeSgrMouse(input: TerminalMouseInput): string {
+  const modifiers =
+    (input.shift ? 4 : 0) + (input.alt ? 8 : 0) + (input.ctrl ? 16 : 0);
+  const button = input.button + modifiers + (input.motion ? 32 : 0);
+  const col = Math.max(0, Math.floor(input.col)) + 1;
+  const row = Math.max(0, Math.floor(input.row)) + 1;
+  return `\x1b[<${button};${col};${row}${input.release ? "m" : "M"}`;
+}
+
+export function encodeLegacyMouse(input: TerminalMouseInput): string {
+  const modifiers =
+    (input.shift ? 4 : 0) + (input.alt ? 8 : 0) + (input.ctrl ? 16 : 0);
+  const button =
+    (input.release ? 3 : input.button) +
+    modifiers +
+    (input.motion ? 32 : 0);
+  const col = Math.min(222, Math.max(0, Math.floor(input.col)));
+  const row = Math.min(222, Math.max(0, Math.floor(input.row)));
+  return `\x1b[M${String.fromCharCode(32 + button, 33 + col, 33 + row)}`;
+}
 
 // ============================================================================
 // Terminal Class
@@ -91,6 +123,9 @@ export class Terminal implements ITerminalCore {
   private currentHoveredLink?: ILink;
   private mouseMoveThrottleTimeout?: number;
   private pendingMouseMove?: MouseEvent;
+  private pressedMouseButton: number | null = null;
+  private lastMouseCell: { col: number; row: number } | null = null;
+  private lastMouseReport: string | null = null;
 
   // Event emitters
   private dataEmitter = new EventEmitter<string>();
@@ -602,12 +637,19 @@ export class Terminal implements ITerminalCore {
       parent.addEventListener("mousedown", this.handleMouseDown, {
         capture: true,
       });
-      parent.addEventListener("mousemove", this.handleMouseMove);
+      parent.addEventListener("mousemove", this.handleMouseMove, {
+        capture: true,
+      });
       parent.addEventListener("mouseleave", this.handleMouseLeave);
       parent.addEventListener("click", this.handleClick);
+      parent.addEventListener("contextmenu", this.handleContextMenu, {
+        capture: true,
+      });
 
       // Setup document-level mouseup for scrollbar drag (so drag works even outside canvas)
-      document.addEventListener("mouseup", this.handleMouseUp);
+      document.addEventListener("mouseup", this.handleMouseUp, {
+        capture: true,
+      });
 
       // Setup wheel event handling for scrolling (Phase 2)
       // Use capture phase to ensure we get the event before browser scrolling
@@ -1571,9 +1613,14 @@ export class Terminal implements ITerminalCore {
       this.element.removeEventListener("mousedown", this.handleMouseDown, {
         capture: true,
       });
-      this.element.removeEventListener("mousemove", this.handleMouseMove);
+      this.element.removeEventListener("mousemove", this.handleMouseMove, {
+        capture: true,
+      });
       this.element.removeEventListener("mouseleave", this.handleMouseLeave);
       this.element.removeEventListener("click", this.handleClick);
+      this.element.removeEventListener("contextmenu", this.handleContextMenu, {
+        capture: true,
+      });
 
       // Remove contenteditable and accessibility attributes added in open()
       this.element.removeAttribute("contenteditable");
@@ -1584,7 +1631,9 @@ export class Terminal implements ITerminalCore {
 
     // Remove document-level listeners (only if opened)
     if (this.isOpen && typeof document !== "undefined") {
-      document.removeEventListener("mouseup", this.handleMouseUp);
+      document.removeEventListener("mouseup", this.handleMouseUp, {
+        capture: true,
+      });
     }
 
     // Clean up scrollbar timers
@@ -1632,6 +1681,18 @@ export class Terminal implements ITerminalCore {
    */
   private handleMouseMove = (e: MouseEvent): void => {
     if (!this.canvas || !this.renderer || !this.wasmTerm) return;
+
+    if (this.shouldReportMouseMotion(e)) {
+      const cell = this.mouseCell(e);
+      if (cell) {
+        const button = this.pressedMouseButton ?? 3;
+        this.reportMouse(e, button, cell, false, true);
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+      return;
+    }
 
     // If dragging scrollbar, handle immediately without throttling
     if (this.isDraggingScrollbar) {
@@ -1838,6 +1899,11 @@ export class Terminal implements ITerminalCore {
     // rather than relying on cached hover state (avoids async races)
     if (!this.canvas || !this.renderer || !this.linkDetector || !this.wasmTerm)
       return;
+    if (this.wasmTerm.hasMouseTracking()) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     // Get click position
     const rect = this.canvas.getBoundingClientRect();
@@ -1888,6 +1954,14 @@ export class Terminal implements ITerminalCore {
 
     // Allow custom handler to override
     if (this.customWheelEventHandler && this.customWheelEventHandler(e)) {
+      return;
+    }
+
+    if (this.wasmTerm?.hasMouseTracking()) {
+      const cell = this.mouseCell(e);
+      if (cell) {
+        this.reportMouse(e, e.deltaY < 0 ? 64 : 65, cell);
+      }
       return;
     }
 
@@ -1946,6 +2020,20 @@ export class Terminal implements ITerminalCore {
   private handleMouseDown = (e: MouseEvent): void => {
     if (!this.scrollbarView || !this.wasmTerm) return;
 
+    if (this.wasmTerm.hasMouseTracking()) {
+      const cell = this.mouseCell(e);
+      const button = mouseButtonCode(e.button);
+      if (cell && button !== null) {
+        this.pressedMouseButton = button;
+        this.reportMouse(e, button, cell);
+        this.focus();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+      return;
+    }
+
     const scrollbackLength = this.wasmTerm.getScrollbackLength();
     if (scrollbackLength === 0) return; // No scrollbar if no scrollback
 
@@ -1996,7 +2084,18 @@ export class Terminal implements ITerminalCore {
   /**
    * Handle mouse up for scrollbar drag
    */
-  private handleMouseUp = (): void => {
+  private handleMouseUp = (e: MouseEvent): void => {
+    if (this.wasmTerm?.hasMouseTracking() && this.pressedMouseButton !== null) {
+      const cell = this.mouseCell(e) ?? this.lastMouseCell;
+      if (cell) {
+        this.reportMouse(e, this.pressedMouseButton, cell, true);
+      }
+      this.pressedMouseButton = null;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
     if (this.isDraggingScrollbar) {
       this.isDraggingScrollbar = false;
       this.scrollbarDragStart = null;
@@ -2013,6 +2112,64 @@ export class Terminal implements ITerminalCore {
       }
     }
   };
+
+  private handleContextMenu = (e: MouseEvent): void => {
+    if (!this.wasmTerm?.hasMouseTracking()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  };
+
+  private shouldReportMouseMotion(e: MouseEvent): boolean {
+    if (!this.wasmTerm?.hasMouseTracking()) return false;
+    if (this.wasmTerm.getMode(TerminalMode.MOUSE_TRACKING_ANY, false)) {
+      return true;
+    }
+    return (
+      this.wasmTerm.getMode(TerminalMode.MOUSE_TRACKING_BUTTON, false) &&
+      e.buttons !== 0
+    );
+  }
+
+  private mouseCell(e: MouseEvent): { col: number; row: number } | null {
+    if (!this.canvas || !this.renderer) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < 0 || y < 0 || x >= rect.width || y >= rect.height) return null;
+    const cell = {
+      col: Math.min(this.cols - 1, Math.floor(x / this.renderer.charWidth)),
+      row: Math.min(this.rows - 1, Math.floor(y / this.renderer.charHeight)),
+    };
+    this.lastMouseCell = cell;
+    return cell;
+  }
+
+  private reportMouse(
+    e: MouseEvent,
+    button: number,
+    cell: { col: number; row: number },
+    release = false,
+    motion = false,
+  ): void {
+    if (!this.wasmTerm) return;
+    const input: TerminalMouseInput = {
+      button,
+      col: cell.col,
+      row: cell.row,
+      release,
+      motion,
+      shift: e.shiftKey,
+      alt: e.altKey,
+      ctrl: e.ctrlKey,
+    };
+    const report =
+      this.wasmTerm.getMode(TerminalMode.MOUSE_FORMAT_SGR, false)
+        ? encodeSgrMouse(input)
+        : encodeLegacyMouse(input);
+    this.lastMouseReport = report;
+    this.dataEmitter.fire(report);
+  }
 
   /**
    * Process scrollbar drag movement
@@ -2273,5 +2430,22 @@ export class Terminal implements ITerminalCore {
   public hasMouseTracking(): boolean {
     this.assertOpen();
     return this.wasmTerm!.hasMouseTracking();
+  }
+
+  public getLastMouseReport(): string | null {
+    return this.lastMouseReport;
+  }
+}
+
+function mouseButtonCode(button: number): number | null {
+  switch (button) {
+    case 0:
+      return 0;
+    case 1:
+      return 1;
+    case 2:
+      return 2;
+    default:
+      return null;
   }
 }

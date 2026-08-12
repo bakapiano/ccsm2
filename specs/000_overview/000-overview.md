@@ -29,7 +29,7 @@ Tauri 2 desktop app
 - OS 能力通过 platform adapters 提供；业务层使用平台中立的 path、命令、IPC 和进程接口。
 - Tab、CLI Session 和 PTY runtime 各自拥有独立身份。
 - Space 保存一整套 Tab、Dockview layout 和可恢复资源引用。
-- Claude/Codex原生Session ID仅接受启动时注入的认证HookReport。
+- Claude/Codex/Copilot原生Session ID仅接受启动时注入的认证HookReport。
 - 终端直接继承现有 ghostty-web stateful 原型，VT 状态由 ghostty-web 持有。
 - 浏览器使用 Tauri native child WebView。
 - 关闭 Tab 执行视图 detach；停止和删除底层 Session 使用独立命令。
@@ -42,7 +42,7 @@ Tauri 2 desktop app
 - File Explorer 首版提供只读导航、路径操作和从目录启动 CLI；文件 mutation 与编辑器后置。
 - Tab平台通过编译期Provider Registry支持新增内置Tab类型；第三方运行时插件体系后置。
 - 首版 Space 操作包含 New、Switch、Rename、Move 和 Delete；Duplicate Space 后置。
-- 首版 CLI Providers 固定为 Shell、Claude Code 和 Codex；用户自定义 CLI后置。
+- 首版 CLI Providers 固定为 Shell、Claude Code、Codex 和 GitHub Copilot；用户自定义 CLI后置。
 - 多个Spaces可以共享同一个canonical root和Git cache；AppBackend仅为active Space维护一个`ActiveRootContext`。
 - SpaceRoot 创建后不可变；路径缺失时等待原路径恢复，其他目录使用 New Space。
 - 一个 CliSession只对应一个 CLI Tab；CLI/Git禁用 Duplicate，Browser/File Explorer按 Provider规则复制。

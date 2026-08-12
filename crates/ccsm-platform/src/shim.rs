@@ -41,6 +41,7 @@ pub fn provider_from_environment() -> Option<ProviderKind> {
     match env::var("CCSM_PROVIDER").ok()?.as_str() {
         "claude" => Some(ProviderKind::Claude),
         "codex" => Some(ProviderKind::Codex),
+        "copilot" => Some(ProviderKind::Copilot),
         _ => None,
     }
 }
@@ -49,9 +50,11 @@ fn provider_from_identity(name: &str, requested: Option<&str>) -> Option<Provide
     match name {
         "claude" => Some(ProviderKind::Claude),
         "codex" => Some(ProviderKind::Codex),
+        "copilot" => Some(ProviderKind::Copilot),
         "ccsm-provider" => match requested {
             Some("claude") => Some(ProviderKind::Claude),
             Some("codex") => Some(ProviderKind::Codex),
+            Some("copilot") => Some(ProviderKind::Copilot),
             _ => None,
         },
         _ => None,
@@ -79,6 +82,13 @@ pub fn run_cli_shim(provider: ProviderKind) -> i32 {
         match provider {
             ProviderKind::Claude => build_claude_args(user_args, &hook_command, native_session_id),
             ProviderKind::Codex => build_codex_args(user_args, &hook_command, native_session_id),
+            ProviderKind::Copilot => {
+                let Some(plugin_dir) = env::var_os("CCSM_COPILOT_PLUGIN_DIR") else {
+                    eprintln!("ccsm: Copilot launch has no runtime Hook plugin");
+                    return 2;
+                };
+                build_copilot_args(user_args, plugin_dir, native_session_id)
+            }
             ProviderKind::Shell => user_args,
         }
     };
@@ -312,6 +322,33 @@ fn build_codex_args(
     args
 }
 
+fn build_copilot_args(
+    user_args: Vec<OsString>,
+    plugin_dir: OsString,
+    native_session_id: Option<String>,
+) -> Vec<OsString> {
+    let mut args = vec!["--plugin-dir".into(), plugin_dir];
+    if !has_explicit_copilot_session_flag(&user_args)
+        && let Some(native_session_id) = native_session_id
+    {
+        args.push(format!("--resume={native_session_id}").into());
+    }
+    args.extend(user_args);
+    args
+}
+
+fn has_explicit_copilot_session_flag(args: &[OsString]) -> bool {
+    args.iter().any(|argument| {
+        let argument = argument.to_string_lossy();
+        matches!(
+            argument.as_ref(),
+            "--resume" | "-r" | "--session-id" | "--continue" | "--connect"
+        ) || argument.starts_with("--resume=")
+            || argument.starts_with("--session-id=")
+            || argument.starts_with("--connect=")
+    })
+}
+
 fn resolve_real_cli(
     provider: ProviderKind,
     prefer_local_launcher: bool,
@@ -321,6 +358,7 @@ fn resolve_real_cli(
     let custom_key = match provider {
         ProviderKind::Claude => "CCSM_REAL_CLAUDE_PATH",
         ProviderKind::Codex => "CCSM_REAL_CODEX_PATH",
+        ProviderKind::Copilot => "CCSM_REAL_COPILOT_PATH",
         ProviderKind::Shell => unreachable!(),
     };
     if !prefer_local_launcher {
@@ -334,12 +372,64 @@ fn resolve_real_cli(
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
     if let Some(program) = find_cli_in_directories(&commands, directories, self_dir.as_deref()) {
-        return Ok(program);
+        return Ok(preferred_provider_executable(provider, program));
     }
     Err(format!(
         "{} was not found outside the CCSM shim directory",
         commands.join(" or ")
     ))
+}
+
+fn preferred_provider_executable(provider: ProviderKind, program: PathBuf) -> PathBuf {
+    if provider != ProviderKind::Copilot || !is_windows_batch(&program) {
+        return program;
+    }
+    copilot_native_candidates(&program)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .unwrap_or(program)
+}
+
+#[cfg(windows)]
+fn is_windows_batch(program: &Path) -> bool {
+    program
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+        })
+}
+
+#[cfg(not(windows))]
+fn is_windows_batch(_program: &Path) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn copilot_native_candidates(launcher: &Path) -> Vec<PathBuf> {
+    let Some(bin_directory) = launcher.parent() else {
+        return Vec::new();
+    };
+    let platform_package = match std::env::consts::ARCH {
+        "x86_64" => "copilot-win32-x64",
+        "aarch64" => "copilot-win32-arm64",
+        _ => return Vec::new(),
+    };
+    let packages = bin_directory.join("node_modules").join("@github");
+    vec![
+        packages
+            .join("copilot")
+            .join("node_modules")
+            .join("@github")
+            .join(platform_package)
+            .join("copilot.exe"),
+        packages.join(platform_package).join("copilot.exe"),
+    ]
+}
+
+#[cfg(not(windows))]
+fn copilot_native_candidates(_launcher: &Path) -> Vec<PathBuf> {
+    Vec::new()
 }
 
 struct ProviderSearchPath {
@@ -472,6 +562,7 @@ fn launcher_names(provider: ProviderKind, prefer_local_launcher: bool) -> Vec<&'
     match (provider, prefer_local_launcher) {
         (ProviderKind::Claude, true) => vec!["ccp", "claude"],
         (ProviderKind::Codex, true) => vec!["cxp", "codex"],
+        (ProviderKind::Copilot, _) => vec!["copilot"],
         (ProviderKind::Claude, false) => vec!["claude"],
         (ProviderKind::Codex, false) => vec!["codex"],
         (ProviderKind::Shell, _) => Vec::new(),
@@ -513,14 +604,14 @@ fn launch_real_cli(
     search_path: Option<&OsString>,
 ) -> i32 {
     let mut command = platform_command(program, args);
+    if let Some(search_path) = search_path {
+        set_command_path(&mut command, search_path);
+    }
     command
         .env(WRAPPER_ACTIVE, "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-    if let Some(search_path) = search_path {
-        command.env("PATH", search_path);
-    }
     if provider == ProviderKind::Claude
         && let Some(base_url) =
             env::var_os("CCSM_CLAUDE_BASE_URL").filter(|value| !value.is_empty())
@@ -545,6 +636,24 @@ fn launch_real_cli(
             }
         }
     }
+}
+
+#[cfg(windows)]
+fn set_command_path(command: &mut Command, search_path: &OsString) {
+    // Rebuild the inherited block without any differently-cased Path entry.
+    // cmd.exe otherwise can select the stale duplicate when an npm .cmd
+    // launcher expands its Node runtime from PATH.
+    let inherited = env::vars_os()
+        .filter(|(key, _)| !key.to_string_lossy().eq_ignore_ascii_case("PATH"))
+        .collect::<Vec<_>>();
+    command.env_clear();
+    command.envs(inherited);
+    command.env("PATH", search_path);
+}
+
+#[cfg(not(windows))]
+fn set_command_path(command: &mut Command, search_path: &OsString) {
+    command.env("PATH", search_path);
 }
 
 #[cfg(not(windows))]
@@ -695,6 +804,33 @@ mod tests {
     }
 
     #[test]
+    fn copilot_loads_the_runtime_plugin_and_resumes_exactly() {
+        let args = build_copilot_args(
+            Vec::new(),
+            OsString::from(r"C:\runtime\copilot-hook-plugin"),
+            Some("native-session".into()),
+        );
+        assert_eq!(
+            args,
+            [
+                "--plugin-dir",
+                r"C:\runtime\copilot-hook-plugin",
+                "--resume=native-session"
+            ]
+        );
+    }
+
+    #[test]
+    fn copilot_explicit_session_selection_wins() {
+        let args = build_copilot_args(
+            vec!["--session-id".into(), "explicit".into()],
+            OsString::from("plugin"),
+            Some("bound".into()),
+        );
+        assert_eq!(args, ["--plugin-dir", "plugin", "--session-id", "explicit"]);
+    }
+
+    #[test]
     fn local_provider_launchers_are_used_only_for_the_outer_shim() {
         assert_eq!(launcher_names(ProviderKind::Codex, true), ["cxp", "codex"]);
         assert_eq!(launcher_names(ProviderKind::Codex, false), ["codex"]);
@@ -703,6 +839,8 @@ mod tests {
             ["ccp", "claude"]
         );
         assert_eq!(launcher_names(ProviderKind::Claude, false), ["claude"]);
+        assert_eq!(launcher_names(ProviderKind::Copilot, true), ["copilot"]);
+        assert_eq!(launcher_names(ProviderKind::Copilot, false), ["copilot"]);
     }
 
     #[test]
@@ -726,6 +864,10 @@ mod tests {
         assert_eq!(
             provider_from_identity("ccsm-provider", Some("claude")),
             Some(ProviderKind::Claude)
+        );
+        assert_eq!(
+            provider_from_identity("ccsm-provider", Some("copilot")),
+            Some(ProviderKind::Copilot)
         );
         assert_eq!(provider_from_identity("ccsm-provider", None), None);
     }
@@ -754,6 +896,24 @@ mod tests {
         let directories = [raw_dir, launcher_dir.clone()];
         let resolved = find_cli_in_directories(&commands, &directories, None);
         assert_eq!(resolved, Some(launcher_dir.join("ccp.cmd")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn npm_copilot_launcher_prefers_its_packaged_native_binary() {
+        let directory = tempfile::tempdir().unwrap();
+        let launcher = directory.path().join("copilot.cmd");
+        let native = directory.path().join(
+            "node_modules/@github/copilot/node_modules/@github/copilot-win32-x64/copilot.exe",
+        );
+        std::fs::create_dir_all(native.parent().unwrap()).unwrap();
+        std::fs::write(&launcher, []).unwrap();
+        std::fs::write(&native, []).unwrap();
+
+        assert_eq!(
+            preferred_provider_executable(ProviderKind::Copilot, launcher),
+            native
+        );
     }
 
     #[cfg(windows)]
@@ -796,5 +956,27 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installed_copilot_batch_launcher_can_find_its_node_runtime() {
+        let search_path = provider_search_path();
+        let Ok(program) = resolve_real_cli(ProviderKind::Copilot, true, &search_path.directories)
+        else {
+            return;
+        };
+        let mut command = platform_command(&program, &[OsString::from("--version")]);
+        if let Some(path) = search_path.value.as_ref() {
+            set_command_path(&mut command, path);
+        }
+        command.env("COPILOT_AUTO_UPDATE", "false");
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("GitHub Copilot CLI"));
     }
 }
