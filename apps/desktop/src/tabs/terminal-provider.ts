@@ -6,14 +6,32 @@ import type { TabDto } from "../generated/TabDto";
 import { focusWhenPanelActive } from "../panel-visibility";
 import { RetainedRendererCache } from "../retained-renderer-cache";
 import {
-  DebouncedTask,
   LatestValue,
   OscSequenceStripper,
   runtimeStartCanCommit,
   shouldAutoStartCliRuntime,
   takeByteBatch,
 } from "../terminal-flow";
-import { isDockGeometrySettled } from "../terminal-layout";
+import { cliShortcutInput, installCliInputFollow } from "../terminal-keyboard";
+import {
+  isDockGeometrySettled,
+  isRenderableTerminalViewport,
+  isTerminalResizeHandle,
+  TerminalFitSettler,
+  TerminalFrameSwap,
+} from "../terminal-layout";
+import {
+  ChunkedByteSequenceMatcher,
+  MAX_CLAUDE_REPAINT_BYTES,
+  ResizeOutputSettler,
+  SYNCHRONIZED_UPDATE_END,
+  calculateClaudeRepaintRows,
+  calculateRepaintViewportY,
+  extractClaudeCursorPositionedRepaint,
+  extractClaudeFullRepaint,
+  extractClaudeSynchronizedRepaint,
+  shouldRunClaudeHistoryRepaint,
+} from "../terminal-repaint";
 import { TERMINAL_THEMES, type ThemeMode } from "../theme";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
@@ -31,9 +49,14 @@ import {
 } from "../terminal-typography";
 import type { TabProvider } from "./registry";
 
-const SCROLLBACK_LINES = 800;
+const SCROLLBACK_BYTES = 64 * 1024 * 1024;
 const OUTPUT_BUDGET_PER_FRAME = 8 * 1024;
 const FIT_DEBOUNCE_MS = 80;
+const CLAUDE_REPAINT_QUIET_MS = 400;
+const CLAUDE_REPAINT_TIMEOUT_MS = 12_000;
+const CODEX_REPAINT_QUIET_MS = 200;
+const CODEX_REPAINT_TIMEOUT_MS = 1_000;
+const OUTPUT_DRAIN_TIMEOUT_MS = 8_000;
 
 function loadIsolatedGhostty(): Promise<Ghostty> {
   // Each retained renderer owns its WASM allocator and RenderState arena.
@@ -103,12 +126,27 @@ class TerminalPanel implements IContentRenderer {
   #activeSubscription: { dispose(): void } | null = null;
   #resizeRaf = 0;
   #fitRaf = 0;
-  readonly #fitDebounce = new DebouncedTask(FIT_DEBOUNCE_MS);
+  readonly #fitSettler = new TerminalFitSettler(FIT_DEBOUNCE_MS, () =>
+    this.#requestFitFrame(),
+  );
   #fitCount = 0;
   #hasValidFit = false;
+  #fitSuppressedForTransientViewport = false;
+  readonly #frameSwap = new TerminalFrameSwap(this.element);
   readonly #fitWaiters = new Set<() => void>();
   #resizeInFlight = false;
   readonly #pendingResize = new LatestValue<{ cols: number; rows: number }>();
+  #backendSize: { cols: number; rows: number } | null = null;
+  #repaintCapture: ClaudeRepaintCapture | null = null;
+  #historyRepaintCount = 0;
+  #historyRepaintFastCount = 0;
+  #historyRepaintFailureCount = 0;
+  #lastRepaintCompletion: ClaudeRepaintCaptureResult["completion"] | null =
+    null;
+  #lastRepaintSynchronizedEnds = 0;
+  #codexResizeSettler: ResizeOutputSettler | null = null;
+  #codexResizePresentationCount = 0;
+  #lastCodexResizeCompletion: string | null = null;
   readonly #outputQueue: Uint8Array[] = [];
   readonly #oscStripper = new OscSequenceStripper();
   #outputRaf = 0;
@@ -117,6 +155,8 @@ class TerminalPanel implements IContentRenderer {
   #pendingExitCode: number | null = null;
   readonly #exitedRuntimeIds = new Set<string>();
   #inputQueue: Promise<void> = Promise.resolve();
+  #inputFollowDispose: (() => void) | null = null;
+  #resizeGestureDispose: (() => void) | null = null;
   #unlisten: (() => void) | null = null;
 
   constructor(
@@ -149,6 +189,7 @@ class TerminalPanel implements IContentRenderer {
     this.#meta = this.element.querySelector(".terminal-meta");
     this.#action = this.element.querySelector(".terminal-action");
     this.#syncInputState();
+    this.#installResizeGestureGuard();
     this.#observeSize();
     this.#scheduleFit();
     if (this.#initialized) return;
@@ -212,10 +253,15 @@ class TerminalPanel implements IContentRenderer {
     this.#panelApi = null;
     if (this.#resizeRaf) cancelAnimationFrame(this.#resizeRaf);
     if (this.#fitRaf) cancelAnimationFrame(this.#fitRaf);
-    this.#fitDebounce.cancel();
+    this.#fitSettler.cancel();
     this.#resizeRaf = 0;
     this.#fitRaf = 0;
+    this.#frameSwap.release();
     this.#pendingResize.clear();
+    this.#repaintCapture?.cancel();
+    this.#repaintCapture = null;
+    this.#codexResizeSettler?.cancel();
+    this.#codexResizeSettler = null;
     this.#releaseFitWaiters();
   }
 
@@ -229,6 +275,10 @@ class TerminalPanel implements IContentRenderer {
     this.#outputQueue.length = 0;
     this.#unlisten?.();
     this.#unlisten = null;
+    this.#inputFollowDispose?.();
+    this.#inputFollowDispose = null;
+    this.#resizeGestureDispose?.();
+    this.#resizeGestureDispose = null;
     this.#terminal?.dispose();
     this.#terminal = null;
     delete (this.element as TerminalDebugElement).__CCSM_TERMINAL_DEBUG__;
@@ -239,6 +289,28 @@ class TerminalPanel implements IContentRenderer {
     if (!this.#host) return;
     this.#resizeObserver = new ResizeObserver(() => this.#scheduleFit());
     this.#resizeObserver.observe(this.#host);
+  }
+
+  #installResizeGestureGuard(): void {
+    if (this.#resizeGestureDispose) return;
+    const document = this.element.ownerDocument;
+    const window = document.defaultView;
+    if (!window) return;
+    const begin = (event: Event) => {
+      if (!isTerminalResizeHandle(event.target)) return;
+      this.#fitSettler.beginResizeGesture();
+    };
+    const finish = () => this.#fitSettler.endResizeGesture();
+    document.addEventListener("pointerdown", begin, true);
+    window.addEventListener("pointerup", finish, true);
+    window.addEventListener("pointercancel", finish, true);
+    window.addEventListener("blur", finish);
+    this.#resizeGestureDispose = () => {
+      document.removeEventListener("pointerdown", begin, true);
+      window.removeEventListener("pointerup", finish, true);
+      window.removeEventListener("pointercancel", finish, true);
+      window.removeEventListener("blur", finish);
+    };
   }
 
   #bindPanelEvents(api: GroupPanelPartInitParameters["api"]): void {
@@ -289,13 +361,24 @@ class TerminalPanel implements IContentRenderer {
         fontCellWidth: TERMINAL_FONT_CELL_WIDTH,
         fontCellHeight: TERMINAL_FONT_CELL_HEIGHT,
         disableStdin: true,
-        scrollback: SCROLLBACK_LINES,
+        scrollback: SCROLLBACK_BYTES,
         theme: { ...TERMINAL_THEMES[this.theme] },
       });
       this.#terminal.loadAddon(this.#fitAddon);
       this.#terminal.open(this.#host);
       this.#syncInputState();
+      this.#inputFollowDispose = installCliInputFollow(
+        this.#terminal,
+        this.#host,
+        () => this.#session?.provider ?? null,
+      );
       this.#terminal.onData((data) => this.#enqueueInput(data));
+      this.#terminal.attachCustomKeyEventHandler((event) => {
+        const data = cliShortcutInput(this.#session?.provider ?? null, event);
+        if (data === null) return false;
+        this.#terminal?.input(data, true);
+        return true;
+      });
       this.#terminal.onResize(({ cols, rows }) =>
         this.#scheduleResize(cols, rows),
       );
@@ -349,6 +432,10 @@ class TerminalPanel implements IContentRenderer {
         return;
       }
       this.#runtimeId = started.runtimeId;
+      this.#backendSize = {
+        cols: this.#terminal.cols,
+        rows: this.#terminal.rows,
+      };
       try {
         await this.#client.backend.resizeRuntime(
           started.runtimeId,
@@ -385,7 +472,10 @@ class TerminalPanel implements IContentRenderer {
     if (event.type === "output") {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
       this.#runtimeId ??= event.runtimeId;
-      const output = this.#sanitizeTerminalOutput(new Uint8Array(event.data));
+      const rawOutput = new Uint8Array(event.data);
+      this.#codexResizeSettler?.push(event.runtimeId, rawOutput);
+      if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) return;
+      const output = this.#sanitizeTerminalOutput(rawOutput);
       this.#outputQueue.push(output);
       this.#scheduleOutputFlush();
       return;
@@ -397,7 +487,19 @@ class TerminalPanel implements IContentRenderer {
       return;
     }
     this.#exitedRuntimeIds.add(event.runtimeId);
-    if (this.#runtimeId === event.runtimeId) this.#runtimeId = null;
+    if (this.#repaintCapture?.runtimeId === event.runtimeId) {
+      this.#repaintCapture.cancel();
+      this.#repaintCapture = null;
+    }
+    if (this.#codexResizeSettler?.runtimeId === event.runtimeId) {
+      this.#codexResizeSettler.cancel();
+      this.#codexResizeSettler = null;
+    }
+    this.#frameSwap.release();
+    if (this.#runtimeId === event.runtimeId) {
+      this.#runtimeId = null;
+      this.#backendSize = null;
+    }
     this.#pendingExitCode = event.code;
     this.#setStatus("stopped", `exit ${event.code}`);
     this.#syncAction();
@@ -453,11 +555,7 @@ class TerminalPanel implements IContentRenderer {
         if (!size) break;
         const runtimeId = this.#runtimeId;
         try {
-          await this.#client.backend.resizeRuntime(
-            runtimeId,
-            size.cols,
-            size.rows,
-          );
+          await this.#applyRuntimeResize(runtimeId, size);
         } catch (error) {
           this.#setStatus("error", `resize failed · ${describeError(error)}`);
           break;
@@ -472,6 +570,181 @@ class TerminalPanel implements IContentRenderer {
         void this.#pumpResize();
       }
     }
+  }
+
+  async #applyRuntimeResize(
+    runtimeId: string,
+    size: { cols: number; rows: number },
+  ): Promise<void> {
+    const codexSettler =
+      this.#session?.provider === "codex" && this.#frameSwap.matches(size)
+        ? new ResizeOutputSettler(
+            runtimeId,
+            CODEX_REPAINT_QUIET_MS,
+            CODEX_REPAINT_TIMEOUT_MS,
+          )
+        : null;
+    if (codexSettler) this.#codexResizeSettler = codexSettler;
+    try {
+      if (this.#shouldRepaintClaudeHistory(runtimeId, size)) {
+        await this.#repaintClaudeHistory(runtimeId, size);
+        return;
+      }
+      await this.#client.backend.resizeRuntime(runtimeId, size.cols, size.rows);
+      if (runtimeId === this.#runtimeId) this.#backendSize = { ...size };
+      if (codexSettler) {
+        codexSettler.startGracePeriod();
+        const settled = await codexSettler.result;
+        this.#lastCodexResizeCompletion = settled.completion;
+        await this.#waitForOutputDrain();
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+        this.#codexResizePresentationCount += 1;
+      }
+    } finally {
+      if (this.#codexResizeSettler === codexSettler) {
+        this.#codexResizeSettler = null;
+      }
+      codexSettler?.cancel();
+      if (this.#frameSwap.matches(size)) {
+        if (
+          this.#session?.provider === "claude" &&
+          (this.#outputQueue.length > 0 || this.#outputWriteInFlight)
+        ) {
+          await this.#waitForOutputDrain();
+        }
+        this.#frameSwap.release();
+      }
+    }
+  }
+
+  #shouldRepaintClaudeHistory(
+    runtimeId: string,
+    size: { cols: number; rows: number },
+  ): boolean {
+    const terminal = this.#terminal;
+    const previous = this.#backendSize;
+    if (!terminal) return false;
+    // Claude-only fix: Shell and Codex retain their normal resize path.
+    return shouldRunClaudeHistoryRepaint({
+      provider: this.#session?.provider ?? null,
+      nativeBindingState: this.#session?.nativeBindingState ?? null,
+      hasNativeSessionId: Boolean(this.#session?.nativeSessionId),
+      runtimeMatches: runtimeId === this.#runtimeId,
+      previousCols: previous?.cols ?? null,
+      nextCols: size.cols,
+      scrollbackLength: terminal.getScrollbackLength(),
+      alternateScreen: Boolean(terminal.wasmTerm?.isAlternateScreen()),
+      captureActive: Boolean(this.#repaintCapture),
+    });
+  }
+
+  async #repaintClaudeHistory(
+    runtimeId: string,
+    size: { cols: number; rows: number },
+  ): Promise<void> {
+    const terminal = this.#terminal;
+    if (!terminal) return;
+    const expandedRows = calculateClaudeRepaintRows(
+      terminal.getScrollbackLength(),
+      size.rows,
+    );
+    if (!expandedRows || expandedRows <= size.rows) {
+      await this.#client.backend.resizeRuntime(runtimeId, size.cols, size.rows);
+      if (runtimeId === this.#runtimeId) this.#backendSize = { ...size };
+      return;
+    }
+
+    const previousViewportY = terminal.getViewportY();
+    const previousScrollbackLength = terminal.getScrollbackLength();
+    const capture = new ClaudeRepaintCapture(runtimeId, expandedRows);
+    this.#repaintCapture = capture;
+    terminal.options.disableStdin = true;
+    let expandedApplied = false;
+    let restored = false;
+    try {
+      await this.#client.backend.resizeRuntime(
+        runtimeId,
+        size.cols,
+        expandedRows,
+      );
+      expandedApplied = true;
+      const captured = await capture.result;
+      this.#lastRepaintCompletion = captured.completion;
+      this.#lastRepaintSynchronizedEnds = captured.synchronizedEnds;
+      const repaint =
+        captured.repaint ??
+        (captured.complete
+          ? extractClaudeFullRepaint(captured.chunks, expandedRows)
+          : null);
+      if (
+        repaint &&
+        runtimeId === this.#runtimeId &&
+        terminal.cols === size.cols &&
+        terminal.rows === size.rows &&
+        (await this.#waitForOutputDrain())
+      ) {
+        terminal.replaceBufferWithRepaint(repaint);
+        terminal.scrollToLine(
+          calculateRepaintViewportY(
+            previousViewportY,
+            previousScrollbackLength,
+            terminal.getScrollbackLength(),
+          ),
+        );
+        this.#historyRepaintCount += 1;
+        if (
+          captured.completion === "synchronized" ||
+          captured.completion === "cursor"
+        ) {
+          this.#historyRepaintFastCount += 1;
+        }
+      } else {
+        for (const chunk of captured.chunks) this.#outputQueue.push(chunk);
+        this.#scheduleOutputFlush();
+        this.#historyRepaintFailureCount += 1;
+      }
+
+      if (runtimeId === this.#runtimeId) {
+        await this.#client.backend.resizeRuntime(
+          runtimeId,
+          size.cols,
+          size.rows,
+        );
+        restored = true;
+        this.#backendSize = { ...size };
+      }
+    } finally {
+      capture.cancel();
+      if (this.#repaintCapture === capture) this.#repaintCapture = null;
+      if (expandedApplied && !restored && runtimeId === this.#runtimeId) {
+        try {
+          await this.#client.backend.resizeRuntime(
+            runtimeId,
+            size.cols,
+            size.rows,
+          );
+          this.#backendSize = { ...size };
+        } catch {
+          // The outer resize pump reports the original failure.
+        }
+      }
+      this.#syncInputState();
+    }
+  }
+
+  async #waitForOutputDrain(): Promise<boolean> {
+    const deadline = performance.now() + OUTPUT_DRAIN_TIMEOUT_MS;
+    while (
+      (this.#outputQueue.length > 0 || this.#outputWriteInFlight) &&
+      performance.now() < deadline
+    ) {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+    }
+    return this.#outputQueue.length === 0 && !this.#outputWriteInFlight;
   }
 
   #scheduleOutputFlush(): void {
@@ -521,12 +794,8 @@ class TerminalPanel implements IContentRenderer {
     if (!this.#attached || this.#destroyed || !this.#panelApi?.isVisible) {
       return;
     }
-    if (immediate) {
-      this.#fitDebounce.cancel();
-      this.#requestFitFrame();
-      return;
-    }
-    this.#fitDebounce.schedule(() => this.#requestFitFrame());
+    this.element.dataset.resizePending = "true";
+    this.#fitSettler.request(immediate);
   }
 
   #requestFitFrame(): void {
@@ -548,26 +817,45 @@ class TerminalPanel implements IContentRenderer {
     const api = this.#panelApi;
     if (!this.#terminal || !this.#host?.isConnected || !api?.isVisible)
       return false;
+    if (this.#fitSettler.gestureActive) return false;
+    if (!isRenderableTerminalViewport(window.innerWidth, window.innerHeight)) {
+      this.#fitSuppressedForTransientViewport = true;
+      return false;
+    }
     const groupRect = api.group.element.getBoundingClientRect();
     const panelRect = this.element.getBoundingClientRect();
+    const dimensions = this.#fitAddon.proposeDimensions();
     if (
       !isDockGeometrySettled(
         { width: api.width, height: api.height },
         groupRect,
         panelRect,
       ) ||
-      !this.#fitAddon.proposeDimensions()
+      !dimensions
     ) {
       return false;
     }
     try {
+      const redrawAfterSuppressedFit = this.#fitSuppressedForTransientViewport;
+      const dimensionsChanged =
+        dimensions.cols !== this.#terminal.cols ||
+        dimensions.rows !== this.#terminal.rows;
+      if (dimensionsChanged && this.#runtimeId && this.#host) {
+        this.#frameSwap.capture(this.#terminal, this.#host, dimensions);
+      }
       this.#fitAddon.fit();
+      if (redrawAfterSuppressedFit) this.#terminal.redraw();
+      this.#fitSuppressedForTransientViewport = false;
       this.#fitCount += 1;
       this.#hasValidFit = true;
+      if (!dimensionsChanged || !this.#runtimeId) {
+        this.#frameSwap.release();
+      }
       this.#releaseFitWaiters();
       return true;
     } catch {
       // Dockview can briefly report zero geometry while moving a panel.
+      this.#frameSwap.release();
       return false;
     }
   }
@@ -674,7 +962,19 @@ class TerminalPanel implements IContentRenderer {
       viewportY: terminal?.getViewportY() ?? null,
       queuedOutputChunks: this.#outputQueue.length,
       fitCount: this.#fitCount,
-      fitDebouncePending: this.#fitDebounce.pending,
+      fitDebouncePending: this.#fitSettler.pending,
+      resizeGestureActive: this.#fitSettler.gestureActive,
+      resizePending: this.element.dataset.resizePending === "true",
+      resizeSnapshotActive: this.#frameSwap.active,
+      historyRepaintCount: this.#historyRepaintCount,
+      historyRepaintFastCount: this.#historyRepaintFastCount,
+      historyRepaintFailureCount: this.#historyRepaintFailureCount,
+      lastRepaintCompletion: this.#lastRepaintCompletion,
+      lastRepaintSynchronizedEnds: this.#lastRepaintSynchronizedEnds,
+      codexResizeWaitActive: Boolean(this.#codexResizeSettler),
+      codexResizePresentationCount: this.#codexResizePresentationCount,
+      lastCodexResizeCompletion: this.#lastCodexResizeCompletion,
+      repaintCaptureActive: Boolean(this.#repaintCapture),
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,
       theme: this.theme,
@@ -686,3 +986,100 @@ class TerminalPanel implements IContentRenderer {
 type TerminalDebugElement = HTMLElement & {
   __CCSM_TERMINAL_DEBUG__?: () => object;
 };
+
+interface ClaudeRepaintCaptureResult {
+  complete: boolean;
+  completion: "synchronized" | "cursor" | "quiet" | "failed";
+  chunks: Uint8Array[];
+  repaint: Uint8Array | null;
+  synchronizedEnds: number;
+}
+
+class ClaudeRepaintCapture {
+  readonly chunks: Uint8Array[] = [];
+  readonly result: Promise<ClaudeRepaintCaptureResult>;
+  #resolve!: (result: ClaudeRepaintCaptureResult) => void;
+  #quietTimer: number | null = null;
+  #timeoutTimer: number | null = null;
+  #byteLength = 0;
+  #settled = false;
+  #synchronizedEnds = 0;
+  readonly #synchronizedEnd = new ChunkedByteSequenceMatcher(
+    SYNCHRONIZED_UPDATE_END,
+  );
+
+  constructor(
+    readonly runtimeId: string,
+    private readonly expandedRows: number,
+  ) {
+    this.result = new Promise((resolve) => {
+      this.#resolve = resolve;
+    });
+    this.#timeoutTimer = window.setTimeout(
+      () => this.#finish(false, "failed"),
+      CLAUDE_REPAINT_TIMEOUT_MS,
+    );
+  }
+
+  push(runtimeId: string, data: Uint8Array): boolean {
+    if (this.#settled || runtimeId !== this.runtimeId) return false;
+    this.#byteLength += data.byteLength;
+    if (this.#byteLength > MAX_CLAUDE_REPAINT_BYTES) {
+      this.chunks.push(data.slice());
+      this.#finish(false, "failed");
+      return true;
+    }
+    this.chunks.push(data.slice());
+    if (this.#synchronizedEnd.push(data)) {
+      this.#synchronizedEnds += 1;
+      const repaint = extractClaudeSynchronizedRepaint(
+        this.chunks,
+        this.expandedRows,
+      );
+      if (repaint) {
+        this.#finish(true, "synchronized", repaint);
+        return true;
+      }
+    }
+    if (data.at(-1) === 0x41) {
+      const repaint = extractClaudeCursorPositionedRepaint(
+        this.chunks,
+        this.expandedRows,
+      );
+      if (repaint) {
+        this.#finish(true, "cursor", repaint);
+        return true;
+      }
+    }
+    if (this.#quietTimer !== null) window.clearTimeout(this.#quietTimer);
+    this.#quietTimer = window.setTimeout(
+      () => this.#finish(true, "quiet"),
+      CLAUDE_REPAINT_QUIET_MS,
+    );
+    return true;
+  }
+
+  cancel(): void {
+    this.#finish(false, "failed");
+  }
+
+  #finish(
+    complete: boolean,
+    completion: ClaudeRepaintCaptureResult["completion"],
+    repaint: Uint8Array | null = null,
+  ): void {
+    if (this.#settled) return;
+    this.#settled = true;
+    if (this.#quietTimer !== null) window.clearTimeout(this.#quietTimer);
+    if (this.#timeoutTimer !== null) window.clearTimeout(this.#timeoutTimer);
+    this.#quietTimer = null;
+    this.#timeoutTimer = null;
+    this.#resolve({
+      complete,
+      completion,
+      chunks: this.chunks,
+      repaint,
+      synchronizedEnds: this.#synchronizedEnds,
+    });
+  }
+}

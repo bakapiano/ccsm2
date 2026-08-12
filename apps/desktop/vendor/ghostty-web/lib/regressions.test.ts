@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveScrollbarWidth } from "./addons/fit";
 import { calculateInputAnchor } from "./input-anchor";
 import {
   applyFontCellOverrides,
@@ -35,6 +36,11 @@ function selectionManagerForLine(
 }
 
 describe("local ghostty-web regressions", () => {
+  test("an explicit zero scrollbar reservation uses the full terminal width", () => {
+    expect(resolveScrollbarWidth("0px")).toBe(0);
+    expect(resolveScrollbarWidth("")).toBe(15);
+  });
+
   test("scrollbar thumb reaches both vertical track boundaries", () => {
     const bottom = calculateScrollbarGeometry(600, 100, 30, 0);
     const top = calculateScrollbarGeometry(600, 100, 30, 100);

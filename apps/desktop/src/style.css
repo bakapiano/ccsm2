@@ -1254,6 +1254,13 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   transition: background 0.12s ease;
 }
 
+#dockview .dv-sash-container > .dv-sash::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  pointer-events: auto;
+}
+
 .terminal-panel,
 .browser-panel,
 .file-explorer-panel,
@@ -1573,6 +1580,24 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   display: block;
   max-width: 100%;
   max-height: 100%;
+}
+
+.terminal-panel[data-resize-pending="true"] .terminal-host canvas {
+  max-width: none;
+  max-height: none;
+}
+
+.terminal-resize-snapshot {
+  z-index: 3;
+  max-width: none !important;
+  max-height: none !important;
+  pointer-events: none;
+}
+
+.terminal-panel[data-resize-snapshot="true"]
+  .terminal-host
+  canvas:not(.terminal-resize-snapshot) {
+  visibility: hidden;
 }
 
 .terminal-host:focus {

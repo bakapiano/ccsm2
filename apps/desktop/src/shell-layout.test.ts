@@ -31,6 +31,16 @@ describe("application shell layout", () => {
     expect(cssRule(".window-resize-north")).toContain("height: 5px");
     expect(cssRule(".window-resize-north")).toContain("cursor: n-resize");
   });
+
+  test("expands the Dockview sash hit target without changing its layout", () => {
+    const hitTarget = cssRule(
+      "#dockview .dv-sash-container > .dv-sash::before",
+    );
+    expect(hitTarget).toContain('content: ""');
+    expect(hitTarget).toContain("position: absolute");
+    expect(hitTarget).toContain("inset: -6px");
+    expect(hitTarget).toContain("pointer-events: auto");
+  });
 });
 
 function cssRule(selector: string): string {

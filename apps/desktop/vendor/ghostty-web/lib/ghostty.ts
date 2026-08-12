@@ -16,7 +16,7 @@ import {
   type GhosttyWasmExports,
   KeyEncoderOption,
   type KeyEvent,
-  type KittyKeyFlags,
+  KittyKeyFlags,
   type RGB,
   type RenderStateColors,
   type RenderStateCursor,
@@ -196,6 +196,18 @@ export class KeyEncoder {
     this.exports.ghostty_key_event_set_action(eventPtr, event.action);
     this.exports.ghostty_key_event_set_key(eventPtr, event.key);
     this.exports.ghostty_key_event_set_mods(eventPtr, event.mods);
+    if (event.consumedMods !== undefined) {
+      this.exports.ghostty_key_event_set_consumed_mods(eventPtr, event.consumedMods);
+    }
+    if (event.composing !== undefined) {
+      this.exports.ghostty_key_event_set_composing(eventPtr, event.composing);
+    }
+    if (event.unshiftedCodepoint !== undefined) {
+      this.exports.ghostty_key_event_set_unshifted_codepoint(
+        eventPtr,
+        event.unshiftedCodepoint
+      );
+    }
 
     if (event.utf8) {
       const encoder = new TextEncoder();
@@ -244,6 +256,106 @@ export class KeyEncoder {
 }
 
 /**
+ * Mirrors keyboard reporting state that libghostty-vt parses but does not
+ * currently expose through its C API. Applications use these CSI sequences to
+ * select how modified keys must be encoded back to the PTY.
+ */
+class KeyboardProtocolTracker {
+  kittyKeyFlags: KittyKeyFlags = KittyKeyFlags.DISABLED;
+  modifyOtherKeysState = 0;
+  private readonly kittyKeyFlagStack: KittyKeyFlags[] = [];
+  private parserState: 'ground' | 'escape' | 'csi' = 'ground';
+  private csiParameters = '';
+
+  accept(bytes: Uint8Array): void {
+    for (const byte of bytes) {
+      if (byte === 0x9b) {
+        this.parserState = 'csi';
+        this.csiParameters = '';
+        continue;
+      }
+
+      if (this.parserState === 'ground') {
+        if (byte === 0x1b) this.parserState = 'escape';
+        continue;
+      }
+
+      if (this.parserState === 'escape') {
+        if (byte === 0x5b) {
+          this.parserState = 'csi';
+          this.csiParameters = '';
+        } else if (byte === 0x63) {
+          this.reset();
+        } else if (byte !== 0x1b) {
+          this.parserState = 'ground';
+        }
+        continue;
+      }
+
+      if (byte === 0x1b) {
+        this.parserState = 'escape';
+        this.csiParameters = '';
+      } else if (byte >= 0x40 && byte <= 0x7e) {
+        this.handleCsi(String.fromCharCode(byte));
+        this.parserState = 'ground';
+        this.csiParameters = '';
+      } else if (this.csiParameters.length < 64) {
+        this.csiParameters += String.fromCharCode(byte);
+      } else {
+        this.parserState = 'ground';
+        this.csiParameters = '';
+      }
+    }
+  }
+
+  private handleCsi(finalByte: string): void {
+    if (finalByte === 'u') {
+      const operation = this.csiParameters[0];
+      const parameter = this.csiParameters.slice(1);
+      if (operation === '>') {
+        this.kittyKeyFlagStack.push(this.kittyKeyFlags);
+        this.kittyKeyFlags = this.parseKittyFlags(parameter);
+      } else if (operation === '=') {
+        this.kittyKeyFlags = this.parseKittyFlags(parameter);
+      } else if (operation === '<') {
+        const count = this.parseNonNegativeInteger(parameter, 1);
+        for (let index = 0; index < count; index += 1) {
+          this.kittyKeyFlags =
+            this.kittyKeyFlagStack.pop() ?? KittyKeyFlags.DISABLED;
+        }
+      }
+      return;
+    }
+
+    if (finalByte === 'm') {
+      const match = /^>4;([012])$/.exec(this.csiParameters);
+      if (match) this.modifyOtherKeysState = Number(match[1]);
+    }
+  }
+
+  private parseKittyFlags(parameter: string): KittyKeyFlags {
+    return (
+      this.parseNonNegativeInteger(parameter, KittyKeyFlags.DISABLED) &
+      KittyKeyFlags.ALL
+    ) as KittyKeyFlags;
+  }
+
+  private parseNonNegativeInteger(parameter: string, fallback: number): number {
+    if (!/^\d+$/.test(parameter)) return fallback;
+    const value = Number(parameter);
+    return Number.isSafeInteger(value) ? value : fallback;
+  }
+
+  private reset(): void {
+    this.kittyKeyFlags = KittyKeyFlags.DISABLED;
+    this.modifyOtherKeysState = 0;
+    this.kittyKeyFlagStack.length = 0;
+    this.parserState = 'ground';
+    this.csiParameters = '';
+  }
+}
+
+/**
  * GhosttyTerminal - High-performance terminal emulator
  *
  * Uses Ghostty's native RenderState for optimal performance:
@@ -257,6 +369,7 @@ export class GhosttyTerminal {
   private handle: TerminalHandle;
   private _cols: number;
   private _rows: number;
+  private readonly keyboardProtocol = new KeyboardProtocolTracker();
 
   /** Size of GhosttyCell in WASM (16 bytes) */
   private static readonly CELL_SIZE = 16;
@@ -339,12 +452,21 @@ export class GhosttyTerminal {
     return this._rows;
   }
 
+  getKittyKeyFlags(): KittyKeyFlags {
+    return this.keyboardProtocol.kittyKeyFlags;
+  }
+
+  hasModifyOtherKeysState2(): boolean {
+    return this.keyboardProtocol.modifyOtherKeysState === 2;
+  }
+
   // ==========================================================================
   // Lifecycle
   // ==========================================================================
 
   write(data: string | Uint8Array): void {
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+    this.keyboardProtocol.accept(bytes);
     const ptr = this.exports.ghostty_wasm_alloc_u8_array(bytes.length);
     new Uint8Array(this.memory.buffer).set(bytes, ptr);
     this.exports.ghostty_terminal_write(this.handle, ptr, bytes.length);
@@ -353,9 +475,21 @@ export class GhosttyTerminal {
 
   resize(cols: number, rows: number): void {
     if (cols === this._cols && rows === this._rows) return;
-    this._cols = cols;
-    this._rows = rows;
-    this.exports.ghostty_terminal_resize(this.handle, cols, rows);
+
+    // Full-screen TUIs commonly disable DEC wraparound while drawing. Ghostty
+    // interprets that mode as a request to resize without reflow, which
+    // truncates the right side of primary-screen history when the terminal is
+    // narrowed. Temporarily enable wraparound for the resize so scrollback is
+    // reflowed, then restore the application's mode before it handles SIGWINCH.
+    const wraparound = this.getMode(7, false);
+    if (!wraparound) this.write("\x1b[?7h");
+    try {
+      this._cols = cols;
+      this._rows = rows;
+      this.exports.ghostty_terminal_resize(this.handle, cols, rows);
+    } finally {
+      if (!wraparound) this.write("\x1b[?7l");
+    }
     this.invalidateBuffers();
     this.initCellPool();
   }

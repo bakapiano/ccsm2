@@ -10,7 +10,7 @@ export interface ITerminalOptions {
   cursorBlink?: boolean; // Default: false
   cursorStyle?: "block" | "underline" | "bar";
   theme?: ITheme;
-  scrollback?: number; // Default: 1000
+  scrollback?: number; // Byte budget; default: 10000
   fontSize?: number; // Default: 15
   fontFamily?: string; // Default: 'monospace'
   fontCellWidth?: number; // Optional fixed cell width in CSS pixels

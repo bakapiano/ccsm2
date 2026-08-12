@@ -9,7 +9,13 @@ import {
   stripOscSequences,
   takeByteBatch,
 } from "./terminal-flow";
-import { isDockGeometrySettled } from "./terminal-layout";
+import {
+  isDockGeometrySettled,
+  isRenderableTerminalViewport,
+  isTerminalResizeHandle,
+  TerminalFitSettler,
+  TerminalFrameSwap,
+} from "./terminal-layout";
 
 describe("terminal flow control", () => {
   test("debounces a fit burst to one trailing task", () => {
@@ -35,6 +41,101 @@ describe("terminal flow control", () => {
     callbacks.values().next().value?.();
     expect(calls).toEqual([3]);
     expect(debounce.pending).toBe(false);
+  });
+
+  test("defers terminal fit until an interactive resize gesture ends", () => {
+    const callbacks = new Map<number, () => void>();
+    let nextHandle = 0;
+    const debounce = new DebouncedTask(
+      80,
+      (callback) => {
+        nextHandle += 1;
+        callbacks.set(nextHandle, callback);
+        return nextHandle as unknown as ReturnType<typeof setTimeout>;
+      },
+      (handle) => callbacks.delete(handle as unknown as number),
+    );
+    const calls: string[] = [];
+    const settler = new TerminalFitSettler(
+      80,
+      () => calls.push("fit"),
+      debounce,
+    );
+
+    settler.request();
+    expect(callbacks.size).toBe(1);
+    settler.beginResizeGesture();
+    expect(callbacks.size).toBe(0);
+    settler.request();
+    settler.request(true);
+    expect(callbacks.size).toBe(0);
+    expect(settler.pending).toBe(true);
+
+    settler.endResizeGesture();
+    expect(callbacks.size).toBe(1);
+    callbacks.values().next().value?.();
+    expect(calls).toEqual(["fit"]);
+    expect(settler.pending).toBe(false);
+  });
+
+  test("rejects minimized WebView geometry and recognizes resize handles", () => {
+    expect(isRenderableTerminalViewport(144, 19)).toBe(false);
+    expect(isRenderableTerminalViewport(900, 560)).toBe(true);
+    expect(
+      isTerminalResizeHandle({
+        closest: (selector: string) =>
+          selector.includes(".dv-sash.dv-enabled") ? {} : null,
+      } as unknown as EventTarget),
+    ).toBe(true);
+    expect(isTerminalResizeHandle(null)).toBe(false);
+  });
+
+  test("keeps one last-good frame until the final grid commits", () => {
+    const classes: string[] = [];
+    const appended: unknown[] = [];
+    let createCount = 0;
+    let removeCount = 0;
+    const snapshot = {
+      classList: { add: (name: string) => classes.push(name) },
+      remove: () => {
+        removeCount += 1;
+      },
+    } as unknown as HTMLCanvasElement;
+    const panel = {
+      dataset: { resizePending: "true" },
+    } as unknown as HTMLElement;
+    const host = {
+      append: (node: unknown) => appended.push(node),
+    } as unknown as HTMLElement;
+    const source = {
+      createFrameSnapshot: () => {
+        createCount += 1;
+        return snapshot;
+      },
+    };
+    const swap = new TerminalFrameSwap(panel);
+
+    swap.capture(source, host, { cols: 80, rows: 37 });
+    expect(swap.active).toBe(true);
+    expect(swap.matches({ cols: 80, rows: 37 })).toBe(true);
+    expect(panel.dataset.resizeSnapshot).toBe("true");
+    expect(classes).toEqual(["terminal-resize-snapshot"]);
+    expect(appended).toEqual([snapshot]);
+
+    swap.capture(source, host, { cols: 60, rows: 37 });
+    expect(createCount).toBe(1);
+    expect(swap.matches({ cols: 80, rows: 37 })).toBe(false);
+    expect(swap.matches({ cols: 60, rows: 37 })).toBe(true);
+    expect(removeCount).toBe(0);
+
+    swap.release();
+    expect(swap.active).toBe(false);
+    expect(swap.matches({ cols: 60, rows: 37 })).toBe(false);
+    expect(removeCount).toBe(1);
+    expect(panel.dataset.resizeSnapshot).toBeUndefined();
+    expect(panel.dataset.resizePending).toBeUndefined();
+    swap.release();
+    expect(removeCount).toBe(1);
   });
 
   test("coalesces a resize burst to the latest dimensions", () => {

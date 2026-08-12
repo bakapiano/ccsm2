@@ -153,6 +153,36 @@ const KEY_MAP: Record<string, Key> = {
   F24: Key.F24,
 };
 
+export interface KeyboardEncoderModeState {
+  kittyKeyFlags: number;
+  modifyOtherKeysState2: boolean;
+}
+
+const UNSHIFTED_ASCII_BY_CODE: Record<string, string> = {
+  Space: ' ',
+  Minus: '-',
+  Equal: '=',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Backslash: '\\',
+  Semicolon: ';',
+  Quote: "'",
+  Backquote: '`',
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+};
+
+function unshiftedCodepoint(event: KeyboardEvent): number | undefined {
+  if (/^Key[A-Z]$/.test(event.code)) {
+    return event.code.charCodeAt(3) + 0x20;
+  }
+  if (/^Digit[0-9]$/.test(event.code)) {
+    return event.code.charCodeAt(5);
+  }
+  return UNSHIFTED_ASCII_BY_CODE[event.code]?.codePointAt(0);
+}
+
 /**
  * InputHandler class
  * Attaches keyboard event listeners to a container and converts
@@ -166,6 +196,7 @@ export class InputHandler {
   private onKeyCallback?: (keyEvent: IKeyEvent) => void;
   private customKeyEventHandler?: (event: KeyboardEvent) => boolean;
   private getModeCallback?: (mode: number) => boolean;
+  private getKeyboardEncoderModeCallback?: () => KeyboardEncoderModeState;
   private keydownListener: ((e: KeyboardEvent) => void) | null = null;
   private keypressListener: ((e: KeyboardEvent) => void) | null = null;
   private pasteListener: ((e: ClipboardEvent) => void) | null = null;
@@ -184,6 +215,7 @@ export class InputHandler {
    * @param onKey - Optional callback for raw key events
    * @param customKeyEventHandler - Optional custom key event handler
    * @param getMode - Optional callback to query terminal mode state (for application cursor mode)
+   * @param getKeyboardEncoderMode - Optional callback for negotiated keyboard protocols
    */
   constructor(
     ghostty: Ghostty,
@@ -192,7 +224,8 @@ export class InputHandler {
     onBell: () => void,
     onKey?: (keyEvent: IKeyEvent) => void,
     customKeyEventHandler?: (event: KeyboardEvent) => boolean,
-    getMode?: (mode: number) => boolean
+    getMode?: (mode: number) => boolean,
+    getKeyboardEncoderMode?: () => KeyboardEncoderModeState
   ) {
     this.encoder = ghostty.createKeyEncoder();
     this.container = container;
@@ -201,6 +234,7 @@ export class InputHandler {
     this.onKeyCallback = onKey;
     this.customKeyEventHandler = customKeyEventHandler;
     this.getModeCallback = getMode;
+    this.getKeyboardEncoderModeCallback = getKeyboardEncoderMode;
 
     // Attach event listeners
     this.attach();
@@ -354,7 +388,10 @@ export class InputHandler {
     const mods = this.extractModifiers(event);
 
     // Handle simple special keys that produce standard sequences
-    if (mods === Mods.NONE || mods === Mods.SHIFT) {
+    if (
+      mods === Mods.NONE ||
+      (mods === Mods.SHIFT && key !== Key.ENTER)
+    ) {
       let simpleOutput: string | null = null;
 
       switch (key) {
@@ -441,11 +478,34 @@ export class InputHandler {
 
     // For non-printable keys or keys with modifiers, encode using Ghostty
     try {
-      // Sync encoder options with terminal mode state
-      // Mode 1 (DECCKM) controls whether arrow keys send CSI or SS3 sequences
+      // Sync all encoder options whose state is owned by the application's VT
+      // output. Keeping only DECCKM in sync loses modifiers on Enter and Alt
+      // chords after a TUI negotiates an enhanced keyboard protocol.
       if (this.getModeCallback) {
-        const appCursorMode = this.getModeCallback(1);
-        this.encoder.setOption(KeyEncoderOption.CURSOR_KEY_APPLICATION, appCursorMode);
+        this.encoder.setOption(
+          KeyEncoderOption.CURSOR_KEY_APPLICATION,
+          this.getModeCallback(1)
+        );
+        this.encoder.setOption(
+          KeyEncoderOption.KEYPAD_KEY_APPLICATION,
+          this.getModeCallback(66)
+        );
+        this.encoder.setOption(
+          KeyEncoderOption.IGNORE_KEYPAD_WITH_NUMLOCK,
+          this.getModeCallback(1035)
+        );
+        this.encoder.setOption(
+          KeyEncoderOption.ALT_ESC_PREFIX,
+          this.getModeCallback(1036)
+        );
+      }
+      if (this.getKeyboardEncoderModeCallback) {
+        const mode = this.getKeyboardEncoderModeCallback();
+        this.encoder.setOption(
+          KeyEncoderOption.MODIFY_OTHER_KEYS_STATE_2,
+          mode.modifyOtherKeysState2
+        );
+        this.encoder.setKittyFlags(mode.kittyKeyFlags);
       }
 
       // For letter/number keys, even with modifiers, pass the base character
@@ -461,6 +521,7 @@ export class InputHandler {
         key,
         mods,
         utf8,
+        unshiftedCodepoint: unshiftedCodepoint(event),
       });
 
       // Convert Uint8Array to string

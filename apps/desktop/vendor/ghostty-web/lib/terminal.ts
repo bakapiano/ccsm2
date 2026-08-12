@@ -554,6 +554,11 @@ export class Terminal implements ITerminalCore {
           // Query terminal mode state (e.g., mode 1 for application cursor mode)
           return this.wasmTerm?.getMode(mode, false) ?? false;
         },
+        () => ({
+          kittyKeyFlags: this.wasmTerm?.getKittyKeyFlags() ?? 0,
+          modifyOtherKeysState2:
+            this.wasmTerm?.hasModifyOtherKeysState2() ?? false,
+        }),
       );
 
       // Create selection manager (pass textarea for context menu positioning)
@@ -815,6 +820,42 @@ export class Terminal implements ITerminalCore {
     this.syncInputPosition(true);
   }
 
+  /** Force a full Canvas repaint without changing VT state or dimensions. */
+  redraw(): void {
+    this.assertOpen();
+    if (!this.renderer || !this.wasmTerm) return;
+    this.renderer.render(this.wasmTerm, true, this.viewportY, this);
+    this.syncInputPosition(true);
+    this.updateScrollbarView();
+  }
+
+  /** Copy the currently presented Canvas frame without mutating VT state. */
+  createFrameSnapshot(): HTMLCanvasElement | null {
+    this.assertOpen();
+    if (!this.canvas || !this.element) return null;
+    const snapshot = this.element.ownerDocument.createElement("canvas");
+    snapshot.width = this.canvas.width;
+    snapshot.height = this.canvas.height;
+    const context = snapshot.getContext("2d");
+    if (!context) return null;
+    try {
+      context.drawImage(this.canvas, 0, 0);
+    } catch {
+      return null;
+    }
+
+    const sourceRect = this.canvas.getBoundingClientRect();
+    const hostRect = this.element.getBoundingClientRect();
+    snapshot.dataset.ghosttyFrameSnapshot = "true";
+    snapshot.setAttribute("aria-hidden", "true");
+    snapshot.style.position = "absolute";
+    snapshot.style.left = `${sourceRect.left - hostRect.left}px`;
+    snapshot.style.top = `${sourceRect.top - hostRect.top}px`;
+    snapshot.style.width = `${sourceRect.width}px`;
+    snapshot.style.height = `${sourceRect.height}px`;
+    return snapshot;
+  }
+
   /**
    * Clear terminal screen
    */
@@ -843,6 +884,38 @@ export class Terminal implements ITerminalCore {
 
     // Reset title
     this.currentTitle = "";
+  }
+
+  /**
+   * Atomically replace the primary screen and scrollback with a validated
+   * application repaint while preserving input and terminal modes.
+   */
+  replaceBufferWithRepaint(data: Uint8Array): void {
+    this.assertOpen();
+    if (!this.wasmTerm || !this.renderer) return;
+
+    if (this.scrollAnimationFrame) {
+      cancelAnimationFrame(this.scrollAnimationFrame);
+      this.scrollAnimationFrame = undefined;
+      this.scrollAnimationStartTime = undefined;
+      this.scrollAnimationStartY = undefined;
+    }
+    this.viewportY = 0;
+    this.targetViewportY = 0;
+    this.selectionManager?.clearSelection();
+    this.linkDetector?.invalidateCache();
+
+    // ED 3 clears scrollback and ED 2 clears the active screen without RIS,
+    // so application modes such as bracketed paste and focus reporting survive.
+    this.wasmTerm.write("\x1b[3J\x1b[2J\x1b[H");
+    this.wasmTerm.write(data);
+    while (this.wasmTerm.readResponse() !== null) {
+      // Replayed query responses were already answered by the live terminal.
+    }
+
+    this.renderer.render(this.wasmTerm, true, 0, this);
+    this.scrollEmitter.fire(0);
+    this.syncInputPosition(true);
   }
 
   /**

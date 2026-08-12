@@ -405,7 +405,10 @@ export interface GhosttyWasmExports extends WebAssembly.Exports {
   ghostty_key_event_set_action(event: number, action: number): void;
   ghostty_key_event_set_key(event: number, key: number): void;
   ghostty_key_event_set_mods(event: number, mods: number): void;
+  ghostty_key_event_set_consumed_mods(event: number, mods: number): void;
+  ghostty_key_event_set_composing(event: number, composing: boolean): void;
   ghostty_key_event_set_utf8(event: number, ptr: number, len: number): void;
+  ghostty_key_event_set_unshifted_codepoint(event: number, codepoint: number): void;
 
   // Terminal lifecycle
   ghostty_terminal_new(cols: number, rows: number): TerminalHandle;
@@ -516,7 +519,7 @@ export const COLORS_STRUCT_SIZE = 12;
  * All color values use 0xRRGGBB format. A value of 0 means "use default".
  */
 export interface GhosttyTerminalConfig {
-  scrollbackLimit?: number;
+  scrollbackLimit?: number; // Byte budget
   fgColor?: number;
   bgColor?: number;
   cursorColor?: number;
@@ -588,7 +591,7 @@ export interface Cursor {
  * Terminal configuration (passed to ghostty_terminal_new_with_config)
  */
 export interface TerminalConfig {
-  scrollback_limit: number; // Number of scrollback lines (default: 10,000)
+  scrollback_limit: number; // Scrollback byte budget (default: 10,000)
   fg_color: RGB; // Default foreground color
   bg_color: RGB; // Default background color
 }

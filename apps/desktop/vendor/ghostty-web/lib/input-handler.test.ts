@@ -919,6 +919,120 @@ describe('InputHandler', () => {
     });
   });
 
+  describe('Negotiated Keyboard Protocols', () => {
+    test('preserves Shift+Enter instead of collapsing it to Enter', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+
+      simulateKey(container, createKeyEvent('Enter', 'Enter', { shift: true }));
+
+      expect(dataReceived).toEqual(['\x1b[27;2;13~']);
+      handler.dispose();
+    });
+
+    test('tracks split Kitty pushes and encodes Ctrl+Enter as CSI u', () => {
+      const terminal = ghostty.createTerminal();
+      terminal.write('\x1b[>');
+      terminal.write('7u');
+      expect(terminal.getKittyKeyFlags()).toBe(7);
+
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        },
+        undefined,
+        undefined,
+        (mode) => terminal.getMode(mode),
+        () => ({
+          kittyKeyFlags: terminal.getKittyKeyFlags(),
+          modifyOtherKeysState2: terminal.hasModifyOtherKeysState2(),
+        })
+      );
+
+      simulateKey(container, createKeyEvent('Enter', 'Enter', { ctrl: true }));
+
+      expect(dataReceived).toEqual(['\x1b[13;5u']);
+      terminal.write('\x1b[<1u');
+      expect(terminal.getKittyKeyFlags()).toBe(0);
+      handler.dispose();
+      terminal.free();
+    });
+
+    test('tracks modifyOtherKeys and resets negotiated state on RIS', () => {
+      const terminal = ghostty.createTerminal();
+      terminal.write('\x1b[>4;2m\x1b[>7u');
+      expect(terminal.hasModifyOtherKeysState2()).toBe(true);
+      expect(terminal.getKittyKeyFlags()).toBe(7);
+
+      terminal.write('\x1bc');
+
+      expect(terminal.hasModifyOtherKeysState2()).toBe(false);
+      expect(terminal.getKittyKeyFlags()).toBe(0);
+      terminal.free();
+    });
+
+    test('uses the DEC Alt escape-prefix mode for Alt+V', () => {
+      const terminal = ghostty.createTerminal();
+      expect(terminal.getMode(1036)).toBe(true);
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        },
+        undefined,
+        undefined,
+        (mode) => terminal.getMode(mode),
+        () => ({
+          kittyKeyFlags: terminal.getKittyKeyFlags(),
+          modifyOtherKeysState2: terminal.hasModifyOtherKeysState2(),
+        })
+      );
+
+      simulateKey(container, createKeyEvent('KeyV', 'v', { alt: true }));
+
+      expect(dataReceived).toEqual(['\x1bv']);
+      handler.dispose();
+      terminal.free();
+    });
+
+    test('supplies the unshifted codepoint for modified Kitty text keys', () => {
+      const terminal = ghostty.createTerminal();
+      terminal.write('\x1b[>1u');
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        },
+        undefined,
+        undefined,
+        (mode) => terminal.getMode(mode),
+        () => ({
+          kittyKeyFlags: terminal.getKittyKeyFlags(),
+          modifyOtherKeysState2: terminal.hasModifyOtherKeysState2(),
+        })
+      );
+
+      simulateKey(container, createKeyEvent('KeyV', 'v', { alt: true }));
+
+      expect(dataReceived).toEqual(['\x1b[118;3u']);
+      handler.dispose();
+      terminal.free();
+    });
+  });
+
   describe('Clipboard Operations', () => {
     test('handles paste event', () => {
       const handler = new InputHandler(

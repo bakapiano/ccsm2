@@ -344,4 +344,130 @@ describe("IME composition overlay", () => {
     expect(terminal.getViewportY()).toBe(beforeViewport);
     terminal.dispose();
   });
+
+  test("explicit redraw preserves VT contents and viewport", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({
+      ghostty,
+      cols: 20,
+      rows: 5,
+      scrollback: 1024 * 1024,
+    });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    terminal.open(host);
+    for (let index = 0; index < 16; index++) {
+      terminal.writeln(`line-${index}`);
+    }
+    terminal.scrollLines(-3);
+    const beforeText = terminal.buffer.active
+      .getLine(2)
+      ?.translateToString(true);
+    const beforeScrollback = terminal.getScrollbackLength();
+    const beforeViewport = terminal.getViewportY();
+
+    terminal.redraw();
+
+    expect(terminal.buffer.active.getLine(2)?.translateToString(true)).toBe(
+      beforeText,
+    );
+    expect(terminal.getScrollbackLength()).toBe(beforeScrollback);
+    expect(terminal.getViewportY()).toBe(beforeViewport);
+    terminal.dispose();
+  });
+
+  test("frame snapshot copies the presented Canvas without changing VT", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({ ghostty, cols: 20, rows: 5 });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    terminal.open(host);
+    terminal.writeln("snapshot-marker");
+    const beforeText = terminal.buffer.active
+      .getLine(0)
+      ?.translateToString(true);
+
+    const snapshot = terminal.createFrameSnapshot();
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.dataset.ghosttyFrameSnapshot).toBe("true");
+    expect(snapshot?.getAttribute("aria-hidden")).toBe("true");
+    expect(snapshot?.style.left).toBe("10px");
+    expect(snapshot?.style.top).toBe("64px");
+    expect(snapshot?.style.width).toBe("800px");
+    expect(snapshot?.style.height).toBe("456px");
+    expect(host.contains(snapshot!)).toBe(false);
+    expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe(
+      beforeText,
+    );
+    terminal.dispose();
+  });
+
+  test("resize reflows history even when a TUI disables DEC wraparound", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({
+      ghostty,
+      cols: 20,
+      rows: 4,
+      scrollback: 1024 * 1024,
+    });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    terminal.open(host);
+
+    terminal.writeln("marker-ABCDEFGHIJKL");
+    for (let index = 0; index < 12; index += 1) {
+      terminal.writeln(`history-${index}`);
+    }
+    expect(terminal.buffer.active.length).toBeGreaterThan(terminal.rows);
+
+    terminal.write("\x1b[?7l");
+    terminal.resize(10, 4);
+
+    let text = "";
+    for (let index = 0; index < terminal.buffer.active.length; index += 1) {
+      text += terminal.buffer.active.getLine(index)?.translateToString(true);
+    }
+    expect(text).toContain("marker-ABCDEFGHIJKL");
+
+    terminal.dispose();
+  });
+
+  test("validated repaint replaces history without resetting input modes", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({
+      ghostty,
+      cols: 20,
+      rows: 4,
+      scrollback: 1024 * 1024,
+    });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    terminal.open(host);
+    for (let index = 0; index < 10; index += 1) {
+      terminal.writeln(`old-${index}`);
+    }
+    terminal.write("\x1b[?2004h");
+
+    const replies: string[] = [];
+    terminal.onData((data) => replies.push(data));
+    terminal.replaceBufferWithRepaint(
+      new TextEncoder().encode(
+        "\x1b[Hfresh-0\r\nfresh-1\r\nfresh-2\r\nfresh-3\r\nfresh-4\r\n\x1b[6n",
+      ),
+    );
+
+    const text: string[] = [];
+    for (let index = 0; index < terminal.buffer.active.length; index += 1) {
+      text.push(
+        terminal.buffer.active.getLine(index)?.translateToString(true) ?? "",
+      );
+    }
+    expect(text.join("\n")).not.toContain("old-");
+    expect(text.join("\n")).toContain("fresh-0");
+    expect(terminal.wasmTerm?.hasBracketedPaste()).toBe(true);
+    expect(replies).toEqual([]);
+
+    terminal.dispose();
+  });
 });

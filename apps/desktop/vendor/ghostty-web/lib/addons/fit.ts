@@ -188,10 +188,9 @@ export class FitAddon implements ITerminalAddon {
       return undefined;
     }
 
-    const scrollbarWidth =
-      Number.parseInt(
-        elementStyle.getPropertyValue("--terminal-fit-scrollbar-width"),
-      ) || DEFAULT_SCROLLBAR_WIDTH;
+    const scrollbarWidth = resolveScrollbarWidth(
+      elementStyle.getPropertyValue("--terminal-fit-scrollbar-width"),
+    );
 
     // Calculate available space (subtract padding since clientWidth includes padding)
     const availableWidth =
@@ -255,4 +254,9 @@ export class FitAddon implements ITerminalAddon {
     // This gives us stable resize events when the CONTAINER changes, not when our canvas changes
     this._resizeObserver.observe(this._terminal.element);
   }
+}
+
+export function resolveScrollbarWidth(cssValue: string): number {
+  const parsed = Number.parseInt(cssValue, 10);
+  return Number.isNaN(parsed) ? DEFAULT_SCROLLBAR_WIDTH : Math.max(0, parsed);
 }

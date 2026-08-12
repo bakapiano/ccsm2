@@ -22,6 +22,14 @@ Local changes:
 - follow incoming output only while the viewport is already at the bottom;
   preserve a user-controlled history anchor across appended scrollback and
   continuous TUI thinking/status updates.
+- temporarily enable DEC wraparound while resizing so a TUI that disables it
+  cannot truncate primary-screen history instead of reflowing it.
+- allow a validated application repaint to atomically replace screen and
+  scrollback without resetting terminal input modes or replaying query replies.
+- expose state-preserving full Canvas redraw and frame-copy APIs for native
+  WebView restoration and atomic resize presentation.
+- mirror Kitty keyboard and xterm modifyOtherKeys negotiation into the key
+  encoder, preserve modified Enter, and honor DEC Alt escape-prefix mode.
 - narrow nullable selection endpoints before destructuring so the vendored
   source passes the production TypeScript strict check without changing runtime behavior.
 
