@@ -171,6 +171,21 @@ describe('URL Detection', () => {
     expect(typeof links?.[0].activate).toBe('function');
   });
 
+  test('routes Ctrl/Cmd activation through the embedder link handler', async () => {
+    const opened: string[] = [];
+    const provider = new UrlRegexProvider(
+      createMockTerminal('https://example.com') as any,
+      (uri) => opened.push(uri),
+    );
+    const links = await new Promise<ILink[] | undefined>((resolve) =>
+      provider.provideLinks(0, resolve),
+    );
+
+    links?.[0].activate({ ctrlKey: false, metaKey: false } as MouseEvent);
+    links?.[0].activate({ ctrlKey: true, metaKey: false } as MouseEvent);
+    expect(opened).toEqual(['https://example.com']);
+  });
+
   test('detects tel: URLs', async () => {
     const links = await getLinks('Call tel:+1234567890');
     expect(links).toBeDefined();

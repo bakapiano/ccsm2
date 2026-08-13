@@ -11,10 +11,10 @@ use crate::{
         CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
         DirectoryListingDto, FileDocumentDto, GitSnapshotDto, HookReport, ListDirectoryRequest,
         MoveFolderRequest, MoveSpaceRequest, NativeBindingDto, NativeBindingState, ReadFileRequest,
-        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, RuntimeEvent,
-        RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
-        SpaceSnapshotDto, StartRuntimeRequest, TabDto, TabKind, UpdateTabStateRequest,
-        WriteFileRequest, WriteFileResultDto,
+        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, ResolveFileReferenceRequest,
+        ResolvedFileReferenceDto, RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest,
+        SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto,
+        TabKind, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
     ports::{FileSystemBackend, FileWatchBackend, GitBackend, PtyBackend, StateStore},
@@ -248,6 +248,13 @@ impl AppBackend {
 
     pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {
         self.root_context.read_file(request)
+    }
+
+    pub fn resolve_file_reference(
+        &self,
+        request: ResolveFileReferenceRequest,
+    ) -> BackendResult<ResolvedFileReferenceDto> {
+        self.root_context.resolve_file_reference(request)
     }
 
     pub fn write_file(&self, request: WriteFileRequest) -> BackendResult<WriteFileResultDto> {

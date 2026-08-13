@@ -72,12 +72,14 @@ export function encodeLegacyMouse(input: TerminalMouseInput): string {
   const modifiers =
     (input.shift ? 4 : 0) + (input.alt ? 8 : 0) + (input.ctrl ? 16 : 0);
   const button =
-    (input.release ? 3 : input.button) +
-    modifiers +
-    (input.motion ? 32 : 0);
+    (input.release ? 3 : input.button) + modifiers + (input.motion ? 32 : 0);
   const col = Math.min(222, Math.max(0, Math.floor(input.col)));
   const row = Math.min(222, Math.max(0, Math.floor(input.row)));
   return `\x1b[M${String.fromCharCode(32 + button, 33 + col, 33 + row)}`;
+}
+
+function hasLinkModifier(event: MouseEvent): boolean {
+  return event.ctrlKey || event.metaKey;
 }
 
 // ============================================================================
@@ -208,6 +210,9 @@ export class Terminal implements ITerminalCore {
       convertEol: options.convertEol ?? false,
       disableStdin: options.disableStdin ?? false,
       smoothScrollDuration: options.smoothScrollDuration ?? 100, // Default: 100ms smooth scroll
+      linkHandler:
+        options.linkHandler ??
+        ((uri: string) => window.open(uri, "_blank", "noopener,noreferrer")),
     };
 
     // Wrap in Proxy to intercept runtime changes (xterm.js compatibility)
@@ -628,9 +633,13 @@ export class Terminal implements ITerminalCore {
 
       // Register link providers
       // OSC8 first (explicit hyperlinks take precedence)
-      this.linkDetector.registerProvider(new OSC8LinkProvider(this));
+      this.linkDetector.registerProvider(
+        new OSC8LinkProvider(this, this.options.linkHandler),
+      );
       // URL regex second (fallback for plain text URLs)
-      this.linkDetector.registerProvider(new UrlRegexProvider(this));
+      this.linkDetector.registerProvider(
+        new UrlRegexProvider(this, this.options.linkHandler),
+      );
 
       // Setup mouse event handling for links and scrollbar
       // Use capture phase to intercept scrollbar clicks before SelectionManager
@@ -1682,7 +1691,7 @@ export class Terminal implements ITerminalCore {
   private handleMouseMove = (e: MouseEvent): void => {
     if (!this.canvas || !this.renderer || !this.wasmTerm) return;
 
-    if (this.shouldReportMouseMotion(e)) {
+    if (this.shouldReportMouseMotion(e) && !hasLinkModifier(e)) {
       const cell = this.mouseCell(e);
       if (cell) {
         const button = this.pressedMouseButton ?? 3;
@@ -1899,7 +1908,7 @@ export class Terminal implements ITerminalCore {
     // rather than relying on cached hover state (avoids async races)
     if (!this.canvas || !this.renderer || !this.linkDetector || !this.wasmTerm)
       return;
-    if (this.wasmTerm.hasMouseTracking()) {
+    if (this.wasmTerm.hasMouseTracking() && !hasLinkModifier(e)) {
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -2019,6 +2028,13 @@ export class Terminal implements ITerminalCore {
    */
   private handleMouseDown = (e: MouseEvent): void => {
     if (!this.scrollbarView || !this.wasmTerm) return;
+
+    if (hasLinkModifier(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
 
     if (this.wasmTerm.hasMouseTracking()) {
       const cell = this.mouseCell(e);
@@ -2163,10 +2179,9 @@ export class Terminal implements ITerminalCore {
       alt: e.altKey,
       ctrl: e.ctrlKey,
     };
-    const report =
-      this.wasmTerm.getMode(TerminalMode.MOUSE_FORMAT_SGR, false)
-        ? encodeSgrMouse(input)
-        : encodeLegacyMouse(input);
+    const report = this.wasmTerm.getMode(TerminalMode.MOUSE_FORMAT_SGR, false)
+      ? encodeSgrMouse(input)
+      : encodeLegacyMouse(input);
     this.lastMouseReport = report;
     this.dataEmitter.fire(report);
   }

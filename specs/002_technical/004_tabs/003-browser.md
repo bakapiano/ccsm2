@@ -25,6 +25,8 @@ native child WebView的`on_document_title_changed`发送`surface_id + document t
 
 `window.open`和`target="_blank"`由native WebView的new-window callback拦截。desktop host拒绝系统窗口并发送`source_surface_id + URL`；前端创建持久Browser Tab，并以`direction='within'`加入来源Browser Panel的Dockview group。
 
+CLI Terminal输出中的HTTP/HTTPS与OSC 8 Web链接通过Terminal link handler进入同一Browser Tab创建流程，并相对来源CLI Panel放置。Terminal renderer不直接调用系统`window.open`。Browser Tab URL白名单继续由AppBackend验证。
+
 ## Live lifecycle
 
 - active Tab同步 bounds、visibility和focus。

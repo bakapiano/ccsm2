@@ -9,9 +9,9 @@ use ccsm_core::{
         DeleteSpaceRequest, DeleteTabRequest, DirectoryListingDto, FileDocumentDto, GitSnapshotDto,
         ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, ReadFileRequest,
         RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, ReplaceCliSessionRequest,
-        RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest,
-        SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto, UpdateTabStateRequest,
-        WriteFileRequest, WriteFileResultDto,
+        ResolveFileReferenceRequest, ResolvedFileReferenceDto, RuntimeEvent, RuntimeStartedDto,
+        SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto,
+        StartRuntimeRequest, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
     },
     error::{ApiErrorDto, BackendError},
 };
@@ -293,6 +293,20 @@ pub async fn read_file(
 ) -> CommandResult<FileDocumentDto> {
     let backend = Arc::clone(&state.backend);
     on_blocking_worker(move || backend.read_file(request).map_err(ApiErrorDto::from)).await
+}
+
+#[tauri::command]
+pub async fn resolve_file_reference(
+    request: ResolveFileReferenceRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<ResolvedFileReferenceDto> {
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || {
+        backend
+            .resolve_file_reference(request)
+            .map_err(ApiErrorDto::from)
+    })
+    .await
 }
 
 #[tauri::command]

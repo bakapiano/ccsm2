@@ -75,6 +75,7 @@ export class FileEditorTabProvider implements TabProvider {
   readonly kind = "file-editor" as const;
   readonly #sessions = new Map<string, FileEditorSession>();
   readonly #panels = new Map<string, FileEditorPanel>();
+  readonly #pendingReveals = new Map<string, EditorRevealPosition>();
 
   constructor(
     private readonly client: CcsmDesktopClient,
@@ -86,8 +87,23 @@ export class FileEditorTabProvider implements TabProvider {
     if (!panel) {
       panel = new FileEditorPanel(this.#session(tab));
       this.#panels.set(tab.id, panel);
+      const pending = this.#pendingReveals.get(tab.id);
+      if (pending) {
+        this.#pendingReveals.delete(tab.id);
+        panel.revealPosition(pending);
+      }
     }
     return panel;
+  }
+
+  revealPosition(tabId: string, position: EditorRevealPosition): void {
+    const normalized = {
+      line: Math.max(1, Math.floor(position.line)),
+      column: Math.max(1, Math.floor(position.column)),
+    };
+    const panel = this.#panels.get(tabId);
+    if (panel) panel.revealPosition(normalized);
+    else this.#pendingReveals.set(tabId, normalized);
   }
 
   isDirty(tabId: string): boolean {
@@ -133,6 +149,7 @@ export class FileEditorTabProvider implements TabProvider {
     this.#panels.delete(tabId);
     this.#sessions.get(tabId)?.dispose();
     this.#sessions.delete(tabId);
+    this.#pendingReveals.delete(tabId);
     this.options.presentationChanged();
   }
 
@@ -141,6 +158,7 @@ export class FileEditorTabProvider implements TabProvider {
     this.#panels.clear();
     for (const session of this.#sessions.values()) session.dispose();
     this.#sessions.clear();
+    this.#pendingReveals.clear();
   }
 
   #session(tab: TabDto): FileEditorSession {
@@ -638,6 +656,7 @@ class FileEditorPanel implements IContentRenderer {
   #languageLabel = "text";
   #languageSupport: Extension = [];
   #languageRequest = 0;
+  #pendingReveal: EditorRevealPosition | null = null;
 
   constructor(private readonly session: FileEditorSession) {
     this.element.className = "file-editor-panel";
@@ -699,6 +718,11 @@ class FileEditorPanel implements IContentRenderer {
     const view = this.#view;
     if (!view || view.dom.contains(document.activeElement)) return;
     view.focus();
+  }
+
+  revealPosition(position: EditorRevealPosition): void {
+    this.#pendingReveal = position;
+    this.#applyPendingReveal();
   }
 
   dispose(): void {
@@ -877,6 +901,23 @@ class FileEditorPanel implements IContentRenderer {
     }
     this.#renderChrome(snapshot);
     this.#renderPosition();
+    this.#applyPendingReveal();
+  }
+
+  #applyPendingReveal(): void {
+    const position = this.#pendingReveal;
+    const view = this.#view;
+    if (!position || !view || this.session.snapshot().status === "loading")
+      return;
+    const lineNumber = Math.min(position.line, view.state.doc.lines);
+    const line = view.state.doc.line(lineNumber);
+    const offset = Math.min(line.to, line.from + position.column - 1);
+    this.#pendingReveal = null;
+    view.dispatch({
+      selection: { anchor: offset },
+      effects: EditorView.scrollIntoView(offset, { y: "center" }),
+    });
+    view.focus();
   }
 
   #renderChrome(snapshot: SessionSnapshot): void {
@@ -977,6 +1018,11 @@ class FileEditorPanel implements IContentRenderer {
 
 function editableExtensions(canEdit: boolean): Extension {
   return [EditorState.readOnly.of(!canEdit), EditorView.editable.of(canEdit)];
+}
+
+export interface EditorRevealPosition {
+  line: number;
+  column: number;
 }
 
 function statusLabel(status: EditorStatus): string {

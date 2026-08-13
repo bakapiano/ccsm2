@@ -21,6 +21,7 @@
 - CLI Tab保留带修饰键的输入语义：Codex中`Shift+Enter`输入换行而不提交，并兼容`Ctrl+Enter`；Claude Code中`Shift+Enter`输入换行而不提交；Windows上的Claude Code中`Alt+V`交给CLI读取系统剪贴板并粘贴图片。
 - Claude Code与Codex Tab在用户开始键盘输入、粘贴或提交IME文本时立即滚动到当前输出底部，再将输入交给CLI。
 - CLI Tab在Dockview连续resize和原生窗口最小化/恢复期间保留最后一个完整终端画面；最终PTY resize与对应TUI repaint完成后一次性切换到新画面。
+- CLI Tab将Claude Code、Codex、GitHub Copilot及Shell输出中的Space内文件引用识别为链接；`Ctrl/Cmd+Click`打开或聚焦内置File Editor Tab并跳到指定行列。HTTP/HTTPS链接通过相同手势打开同一Space内的内置Browser Tab。
 
 用户自定义 CLI Provider进入后续版本。
 
