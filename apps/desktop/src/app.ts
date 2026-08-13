@@ -50,7 +50,10 @@ import { FileEditorTabProvider } from "./tabs/file-editor-provider";
 import { FileExplorerTabProvider } from "./tabs/file-explorer-provider";
 import { GitTabProvider } from "./tabs/git-provider";
 import { TabProviderRegistry } from "./tabs/registry";
-import { TerminalTabProvider } from "./tabs/terminal-provider";
+import {
+  TerminalTabProvider,
+  type TerminalLinkOpenRequest,
+} from "./tabs/terminal-provider";
 import { type ThemeController, updateThemeButton } from "./theme";
 import { describeError, desktopClient } from "./transport/desktop-client";
 import { bindWindowChrome } from "./window-chrome";
@@ -108,6 +111,7 @@ export class CcsmApp {
     this.#terminalProvider = new TerminalTabProvider(
       desktopClient,
       theme.current,
+      (request) => void this.#openTerminalLink(request),
     );
     const themeButton = requiredElement<HTMLButtonElement>(
       root,
@@ -665,7 +669,11 @@ export class CcsmApp {
     }
   }
 
-  async #openFileEditor(spaceId: string, relativePath: string): Promise<void> {
+  async #openFileEditor(
+    spaceId: string,
+    relativePath: string,
+    options: OpenFileEditorOptions = {},
+  ): Promise<void> {
     await this.#tabDeletionQueue;
     const snapshot = this.#activeSnapshot;
     if (!snapshot || snapshot.space.id !== spaceId) return;
@@ -679,6 +687,9 @@ export class CcsmApp {
     );
     if (existing) {
       this.#focusTab(existing);
+      if (options.position) {
+        this.#fileEditorProvider.revealPosition(existing.id, options.position);
+      }
       return;
     }
     this.#setGlobalStatus("starting", `opening ${path}`);
@@ -691,7 +702,15 @@ export class CcsmApp {
         (candidate) => candidate.id === tab.id,
       );
       if (alreadyLoaded) this.#focusTab(alreadyLoaded);
-      else this.#addCreatedTab(tab);
+      else {
+        const reference = options.sourceTabId
+          ? findDockPanelById(this.#dockview.panels, options.sourceTabId)
+          : undefined;
+        this.#addCreatedTab(tab, reference);
+      }
+      if (options.position) {
+        this.#fileEditorProvider.revealPosition(tab.id, options.position);
+      }
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus("error", `open file · ${describeError(error)}`);
@@ -716,6 +735,64 @@ export class CcsmApp {
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus("error", describeError(error));
+    }
+  }
+
+  async #openTerminalLink(request: TerminalLinkOpenRequest): Promise<void> {
+    if (request.target.kind === "web") {
+      await this.#openTerminalWebLink(request);
+      return;
+    }
+    await this.#tabDeletionQueue;
+    const snapshot = this.#activeSnapshot;
+    if (!snapshot || snapshot.space.id !== request.spaceId) return;
+    const reference = request.target.reference;
+    this.#setGlobalStatus("starting", `resolving ${reference.path}`);
+    try {
+      const resolved = await desktopClient.backend.resolveFileReference({
+        spaceId: request.spaceId,
+        path: reference.path,
+      });
+      await this.#openFileEditor(request.spaceId, resolved.relativePath, {
+        sourceTabId: request.sourceTabId,
+        position:
+          reference.line === null
+            ? undefined
+            : {
+                line: reference.line,
+                column: reference.column ?? 1,
+              },
+      });
+    } catch (error) {
+      this.#setGlobalStatus(
+        "error",
+        `open terminal file · ${describeError(error)}`,
+      );
+    }
+  }
+
+  async #openTerminalWebLink(request: TerminalLinkOpenRequest): Promise<void> {
+    await this.#tabDeletionQueue;
+    const snapshot = this.#activeSnapshot;
+    if (!snapshot || snapshot.space.id !== request.spaceId) return;
+    if (request.target.kind !== "web") return;
+    this.#setGlobalStatus("starting", "opening Browser Tab");
+    try {
+      const tab = await desktopClient.backend.createBrowserTab({
+        spaceId: request.spaceId,
+        url: request.target.url,
+      });
+      const reference =
+        findDockPanelById(this.#dockview.panels, request.sourceTabId) ??
+        this.#dockview.activePanel ??
+        this.#dockview.panels[0];
+      this.#addCreatedTab(tab, reference);
+      this.#setGlobalStatus("running", "ready");
+    } catch (error) {
+      this.#setGlobalStatus(
+        "error",
+        `open terminal link · ${describeError(error)}`,
+      );
     }
   }
 
@@ -1215,6 +1292,11 @@ function requiredElement<T extends Element = HTMLElement>(
   const element = root.querySelector<T>(selector);
   if (!element) throw new Error(`missing required element: ${selector}`);
   return element;
+}
+
+interface OpenFileEditorOptions {
+  sourceTabId?: string;
+  position?: { line: number; column: number };
 }
 
 function isSerializedDockview(value: unknown): value is SerializedDockview {

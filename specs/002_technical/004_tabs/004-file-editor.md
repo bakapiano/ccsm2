@@ -26,6 +26,7 @@ interface FileEditorTabState {
 
 ```text
 tabs.create_file_editor(space_id, relative_path) -> TabDto
+fs.resolve_file_reference(space_id, displayed_path) -> ResolvedFileReferenceDto
 fs.read_file(space_id, relative_path) -> FileDocumentDto
 fs.write_file(
   space_id,
@@ -44,6 +45,7 @@ fs.write_file(
 ## Capability 与格式
 
 - AppBackend通过`space_id`解析`RootDescriptor`。
+- Terminal文件引用可使用Space-relative或absolute path；platform adapter canonicalize存在文件、验证root containment并返回规范化Space-relative path。路径解析失败时不创建TabRecord。
 - platform adapter拒绝absolute、parent traversal和canonical root外的symlink target。
 - platform adapter先读取metadata；超过5 MiB时不读取内容。
 - 读取检测NUL binary和UTF-8 decode失败，并返回typed unsupported状态。
@@ -110,3 +112,4 @@ CodeMirror配置包含：
 - SQLite contract覆盖同Space path去重与恢复state。
 - TypeScript unit tests覆盖标题消歧、语言识别、watch hint匹配、CodeMirror依赖边界和Panel布局。
 - Development Testing使用`playwright-cli`连接Windows WebView2，覆盖打开去重、编辑Dirty、保存、关闭Cancel和磁盘结果。
+- Terminal link scenario分别从Claude Code、Codex与GitHub Copilot的真实VT输出点击文件引用和HTTP URL，验证File Editor行列定位、Tab去重、内置Browser URL及Debug/Release构建。

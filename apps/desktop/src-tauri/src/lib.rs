@@ -153,6 +153,7 @@ pub fn run() {
             commands::replace_cli_session,
             commands::list_directory,
             commands::read_file,
+            commands::resolve_file_reference,
             commands::write_file,
             commands::browse_host_directory,
             commands::create_host_directory,

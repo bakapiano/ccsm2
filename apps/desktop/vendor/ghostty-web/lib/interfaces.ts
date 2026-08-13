@@ -24,6 +24,9 @@ export interface ITerminalOptions {
   // Scrolling options
   smoothScrollDuration?: number; // Duration in ms for smooth scroll animation (default: 100, 0 = instant)
 
+  // Link activation hook. Embedders can route links without window.open().
+  linkHandler?: (uri: string, event: MouseEvent) => void;
+
   // Internal: Ghostty WASM instance (optional, for test isolation)
   // If not provided, uses the module-level instance from init()
   ghostty?: Ghostty;

@@ -7,8 +7,9 @@ use crate::{
         CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
         DeleteSpaceRequest, DeleteTabRequest, DesiredState, FileDocumentDto, FileEntryDto,
         GitSnapshotDto, MoveFolderRequest, MoveSpaceRequest, ProviderKind, RenameFolderRequest,
-        RenameSpaceRequest, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
-        SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
+        RenameSpaceRequest, ResolvedFileReferenceDto, SaveLayoutRequest, SetFolderCollapsedRequest,
+        SpaceLayoutDto, SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest,
+        WriteFileResultDto,
     },
     error::BackendResult,
 };
@@ -73,6 +74,11 @@ pub struct RootDescriptor {
 }
 
 pub trait FileSystemBackend: Send + Sync {
+    fn resolve_file_reference(
+        &self,
+        root: &RootDescriptor,
+        path: &str,
+    ) -> BackendResult<ResolvedFileReferenceDto>;
     fn list_directory(
         &self,
         root: &RootDescriptor,

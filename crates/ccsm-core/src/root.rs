@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use crate::{
     dto::{
         AppEvent, DirectoryListingDto, FileChangeHintDto, FileDocumentDto, GitSnapshotDto,
-        ListDirectoryRequest, ReadFileRequest, RefreshGitRequest, WriteFileRequest,
-        WriteFileResultDto,
+        ListDirectoryRequest, ReadFileRequest, RefreshGitRequest, ResolveFileReferenceRequest,
+        ResolvedFileReferenceDto, WriteFileRequest, WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
     ports::{
@@ -106,6 +106,14 @@ impl ActiveRootContext {
     pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {
         let root = self.store.space_root(&request.space_id)?;
         self.filesystem.read_file(&root, &request.relative_path)
+    }
+
+    pub fn resolve_file_reference(
+        &self,
+        request: ResolveFileReferenceRequest,
+    ) -> BackendResult<ResolvedFileReferenceDto> {
+        let root = self.store.space_root(&request.space_id)?;
+        self.filesystem.resolve_file_reference(&root, &request.path)
     }
 
     pub fn write_file(&self, request: WriteFileRequest) -> BackendResult<WriteFileResultDto> {

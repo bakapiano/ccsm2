@@ -34,6 +34,12 @@ import {
   shouldSettleResizePresentation,
 } from "../terminal-repaint";
 import { TERMINAL_THEMES, type ThemeMode } from "../theme";
+import {
+  FilePathLinkProvider,
+  classifyTerminalUri,
+  type TerminalFileReference,
+  type TerminalLinkTarget,
+} from "../terminal-links";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
 import {
@@ -73,12 +79,13 @@ export class TerminalTabProvider implements TabProvider {
   constructor(
     private readonly client: CcsmDesktopClient,
     private theme: ThemeMode,
+    private readonly openLink: (request: TerminalLinkOpenRequest) => void,
   ) {}
 
   createRenderer(tab: TabDto): IContentRenderer {
     return this.#renderers.getOrCreate(
       tab.id,
-      () => new TerminalPanel(tab, this.client, this.theme),
+      () => new TerminalPanel(tab, this.client, this.theme, this.openLink),
     );
   }
 
@@ -164,6 +171,7 @@ class TerminalPanel implements IContentRenderer {
     tab: TabDto,
     client: CcsmDesktopClient,
     private theme: ThemeMode,
+    private readonly openLink: (request: TerminalLinkOpenRequest) => void,
   ) {
     this.#tab = tab;
     this.#client = client;
@@ -364,9 +372,18 @@ class TerminalPanel implements IContentRenderer {
         disableStdin: true,
         scrollback: SCROLLBACK_BYTES,
         theme: { ...TERMINAL_THEMES[this.theme] },
+        linkHandler: (uri) => {
+          const target = classifyTerminalUri(uri);
+          if (target) this.#openTerminalLink(target);
+        },
       });
       this.#terminal.loadAddon(this.#fitAddon);
       this.#terminal.open(this.#host);
+      this.#terminal.registerLinkProvider(
+        new FilePathLinkProvider(this.#terminal, (reference) =>
+          this.#openTerminalFile(reference),
+        ),
+      );
       this.#syncInputState();
       this.#inputFollowDispose = installCliInputFollow(
         this.#terminal,
@@ -941,6 +958,18 @@ class TerminalPanel implements IContentRenderer {
     this.#status.textContent = text;
   }
 
+  #openTerminalFile(reference: TerminalFileReference): void {
+    this.#openTerminalLink({ kind: "file", reference });
+  }
+
+  #openTerminalLink(target: TerminalLinkTarget): void {
+    this.openLink({
+      sourceTabId: this.#tab.id,
+      spaceId: this.#tab.spaceId,
+      target,
+    });
+  }
+
   #debugSnapshot(): object {
     const terminal = this.#terminal;
     const lines: string[] = [];
@@ -960,6 +989,9 @@ class TerminalPanel implements IContentRenderer {
       nativeSessionId: this.#session?.nativeSessionId ?? null,
       cols: terminal?.cols ?? null,
       rows: terminal?.rows ?? null,
+      bufferLength: terminal?.buffer.active.length ?? null,
+      cellWidth: terminal?.renderer?.charWidth ?? null,
+      cellHeight: terminal?.renderer?.charHeight ?? null,
       scrollbackLength: terminal?.getScrollbackLength() ?? null,
       viewportY: terminal?.getViewportY() ?? null,
       queuedOutputChunks: this.#outputQueue.length,
@@ -991,6 +1023,12 @@ class TerminalPanel implements IContentRenderer {
 type TerminalDebugElement = HTMLElement & {
   __CCSM_TERMINAL_DEBUG__?: () => object;
 };
+
+export interface TerminalLinkOpenRequest {
+  sourceTabId: string;
+  spaceId: string;
+  target: TerminalLinkTarget;
+}
 
 interface ClaudeRepaintCaptureResult {
   complete: boolean;

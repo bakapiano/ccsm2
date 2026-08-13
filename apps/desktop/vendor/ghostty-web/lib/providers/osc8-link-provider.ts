@@ -10,7 +10,7 @@
  * so we just need to scan for contiguous regions with the same ID.
  */
 
-import type { IBufferRange, ILink, ILinkProvider } from '../types';
+import type { IBufferRange, ILink, ILinkProvider } from "../types";
 
 /**
  * OSC 8 Hyperlink Provider
@@ -20,13 +20,22 @@ import type { IBufferRange, ILink, ILinkProvider } from '../types';
  * hyperlink_id across wrapped lines.
  */
 export class OSC8LinkProvider implements ILinkProvider {
-  constructor(private terminal: ITerminalForOSC8Provider) {}
+  constructor(
+    private terminal: ITerminalForOSC8Provider,
+    private readonly linkHandler: (
+      uri: string,
+      event: MouseEvent,
+    ) => void = defaultLinkHandler,
+  ) {}
 
   /**
    * Provide all OSC 8 links on the given row
    * Note: This may return links that span multiple rows
    */
-  provideLinks(y: number, callback: (links: ILink[] | undefined) => void): void {
+  provideLinks(
+    y: number,
+    callback: (links: ILink[] | undefined) => void,
+  ): void {
     const links: ILink[] = [];
     const visitedIds = new Set<number>();
 
@@ -64,7 +73,7 @@ export class OSC8LinkProvider implements ILinkProvider {
           activate: (event) => {
             // Open link if Ctrl/Cmd is pressed
             if (event.ctrlKey || event.metaKey) {
-              window.open(uri, '_blank', 'noopener,noreferrer');
+              this.linkHandler(uri, event);
             }
           },
         });
@@ -78,7 +87,11 @@ export class OSC8LinkProvider implements ILinkProvider {
    * Find the full extent of a link by scanning for contiguous cells
    * with the same hyperlink_id. Handles multi-line links.
    */
-  private findLinkRange(hyperlinkId: number, startY: number, startX: number): IBufferRange {
+  private findLinkRange(
+    hyperlinkId: number,
+    startY: number,
+    startX: number,
+  ): IBufferRange {
     const buffer = this.terminal.buffer.active;
 
     // Find the start of the link (scan backwards)
@@ -189,6 +202,10 @@ export class OSC8LinkProvider implements ILinkProvider {
   dispose(): void {
     // No resources to clean up
   }
+}
+
+function defaultLinkHandler(uri: string): void {
+  window.open(uri, "_blank", "noopener,noreferrer");
 }
 
 /**

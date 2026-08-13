@@ -8,7 +8,7 @@ use std::{
 use ccsm_core::{
     dto::{
         FileDocumentDto, FileEntryDto, FileEntryKind, FileLineEnding, FileOpenStatus,
-        WriteFileRequest, WriteFileResultDto,
+        ResolvedFileReferenceDto, WriteFileRequest, WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
     ports::{FileSystemBackend, RootDescriptor},
@@ -144,6 +144,46 @@ impl Default for LocalFileSystemBackend {
 }
 
 impl FileSystemBackend for LocalFileSystemBackend {
+    fn resolve_file_reference(
+        &self,
+        root: &RootDescriptor,
+        path: &str,
+    ) -> BackendResult<ResolvedFileReferenceDto> {
+        let path = path.trim();
+        if path.is_empty() || path.len() > 4096 {
+            return Err(BackendError::Invalid("invalid file reference".into()));
+        }
+        let root_path = canonical_root(root)?;
+        let requested = PathBuf::from(path);
+        let unresolved = if requested.is_absolute() {
+            requested
+        } else {
+            root_path.join(requested)
+        };
+        let resolved = unresolved.canonicalize().map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                BackendError::NotFound(format!("file reference {path}"))
+            } else {
+                BackendError::Platform(format!("canonicalize file reference: {error}"))
+            }
+        })?;
+        if !resolved.starts_with(&root_path) {
+            return Err(BackendError::Invalid(
+                "file reference escapes the canonical Space root".into(),
+            ));
+        }
+        if !resolved.is_file() {
+            return Err(BackendError::Invalid("file reference is not a file".into()));
+        }
+        let relative = resolved.strip_prefix(&root_path).map_err(|_| {
+            BackendError::Invalid("file reference is outside the Space root".into())
+        })?;
+        Ok(ResolvedFileReferenceDto {
+            space_id: root.space_id.clone(),
+            relative_path: path_to_slashes(relative),
+        })
+    }
+
     fn list_directory(
         &self,
         root: &RootDescriptor,
@@ -709,6 +749,46 @@ mod host_directory_tests {
             std::fs::read(path).unwrap(),
             b"\xEF\xBB\xBFfirst\r\n\xE4\xB8\xAD\xE6\x96\x87"
         );
+    }
+
+    #[test]
+    fn resolves_relative_and_absolute_file_references_inside_the_space() {
+        let root = tempfile::tempdir().unwrap();
+        let nested = root.path().join("src");
+        std::fs::create_dir(&nested).unwrap();
+        let file = nested.join("main.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        let filesystem = LocalFileSystemBackend::new();
+        let descriptor = root_descriptor(root.path());
+
+        let relative = filesystem
+            .resolve_file_reference(&descriptor, "src/main.rs")
+            .unwrap();
+        let absolute = filesystem
+            .resolve_file_reference(&descriptor, file.to_string_lossy().as_ref())
+            .unwrap();
+
+        assert_eq!(relative.relative_path, "src/main.rs");
+        assert_eq!(absolute.relative_path, "src/main.rs");
+    }
+
+    #[test]
+    fn rejects_file_references_outside_the_space_and_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::create_dir(root.path().join("src")).unwrap();
+        let filesystem = LocalFileSystemBackend::new();
+        let descriptor = root_descriptor(root.path());
+
+        assert!(matches!(
+            filesystem
+                .resolve_file_reference(&descriptor, outside.path().to_string_lossy().as_ref()),
+            Err(BackendError::Invalid(_))
+        ));
+        assert!(matches!(
+            filesystem.resolve_file_reference(&descriptor, "src"),
+            Err(BackendError::Invalid(_))
+        ));
     }
 
     #[test]

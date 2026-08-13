@@ -36,6 +36,8 @@ import type { RenameSpaceRequest } from "../generated/RenameSpaceRequest";
 import type { RefreshGitRequest } from "../generated/RefreshGitRequest";
 import type { ReadFileRequest } from "../generated/ReadFileRequest";
 import type { ReplaceCliSessionRequest } from "../generated/ReplaceCliSessionRequest";
+import type { ResolveFileReferenceRequest } from "../generated/ResolveFileReferenceRequest";
+import type { ResolvedFileReferenceDto } from "../generated/ResolvedFileReferenceDto";
 import type { RuntimeEvent } from "../generated/RuntimeEvent";
 import type { RuntimeStartedDto } from "../generated/RuntimeStartedDto";
 import type { SaveLayoutRequest } from "../generated/SaveLayoutRequest";
@@ -65,6 +67,9 @@ export interface AppBackendClient {
   moveFolder(request: MoveFolderRequest): Promise<BootstrapDto>;
   listDirectory(request: ListDirectoryRequest): Promise<DirectoryListingDto>;
   readFile(request: ReadFileRequest): Promise<FileDocumentDto>;
+  resolveFileReference(
+    request: ResolveFileReferenceRequest,
+  ): Promise<ResolvedFileReferenceDto>;
   writeFile(request: WriteFileRequest): Promise<WriteFileResultDto>;
   cachedGit(spaceId: string): Promise<GitSnapshotDto>;
   refreshGit(request: RefreshGitRequest): Promise<GitSnapshotDto>;
@@ -205,6 +210,12 @@ class TauriBackendClient implements AppBackendClient {
 
   readFile(request: ReadFileRequest): Promise<FileDocumentDto> {
     return invoke("read_file", { request });
+  }
+
+  resolveFileReference(
+    request: ResolveFileReferenceRequest,
+  ): Promise<ResolvedFileReferenceDto> {
+    return invoke("resolve_file_reference", { request });
   }
 
   writeFile(request: WriteFileRequest): Promise<WriteFileResultDto> {

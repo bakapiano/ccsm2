@@ -25,7 +25,7 @@ portable-pty platform backend
 ## 所有权与约束
 
 - ghostty-web 是唯一 VT、cursor、mode、viewport、selection 和 scrollback 所有者。
-- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。应用mouse mode优先于链接、选择和scrollbar交互。
+- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。应用mouse mode优先于普通pointer交互；`Ctrl/Cmd`修饰的链接hover与点击由CCSM保留，不发送给PTY。
 - Rust 管理 PTY/process、byte transport、resize 和 shutdown。
 - PTY output 有序且只写入 ghostty-web 一次；input/query reply 原样回传。
 - ghostty-web 是终端实现；ANSI 解析和兼容修复集中在其 WASM/TypeScript 层。
@@ -55,6 +55,7 @@ portable-pty platform backend
 - GUI进程生命周期内 ghostty-web持有完整 VT/scrollback。应用退出释放PTY和CLI process tree；下次启动根据Session desired state创建新runtime。
 - 每个retained Terminal renderer持有独立Ghostty WASM实例；WASM module下载可缓存，allocator和RenderState arena不跨Tab共享，关闭后新建Tab不能观察已释放VT的cells。
 - CLI Provider兼容层将Codex的`Shift+Enter`和`Ctrl+Enter`映射为其已支持的legacy `Alt+Enter`（`ESC CR`）multiline input；不得发送未协商的CSI-u序列，否则可打印后缀会进入prompt。终端输入回归集同时验证协商后的通用modified Enter、Claude所需的`Shift+Enter`不退化为CR，以及默认DEC Alt ESC prefix下`Alt+V`产生`ESC v`。
+- ghostty-web LinkProvider在VT buffer完成ANSI解析后识别普通URL、OSC 8 URL和文件引用。HTTP/HTTPS/`about:`交给CCSM创建内置Browser Tab；文件引用先由platform adapter canonicalize并验证Space containment，再创建或聚焦File Editor Tab。链接路由不改写PTY byte stream。
 
 ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `WindowsPtyBackend`；Unix fd、process group 和 signal 属于 macOS/Linux backend。ghostty-web byte contract 对三平台完全相同。
 

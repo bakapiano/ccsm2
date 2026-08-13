@@ -367,6 +367,24 @@ export_ts! {
 }
 
 export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ResolveFileReferenceRequest {
+        pub space_id: String,
+        pub path: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ResolvedFileReferenceDto {
+        pub space_id: String,
+        pub relative_path: String,
+    }
+}
+
+export_ts! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
     #[serde(rename_all = "kebab-case")]
     pub enum FileOpenStatus {
