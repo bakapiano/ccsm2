@@ -293,9 +293,16 @@ function lingeringRuntimeProcesses(
     .split("\n")
     .filter((line) => {
       const command = line.trimStart().split(/\s+/, 1)[0] ?? "";
+      const providerArguments =
+        line.includes(`/usr/local/bin/${provider}`) ||
+        (provider === "claude" &&
+          line.includes(".claude/statusline-command")) ||
+        (provider === "codex" && line.includes("@openai/codex")) ||
+        (provider === "copilot" && line.includes("@github/copilot"));
       return (
         command === provider ||
         command.startsWith(`${provider}-`) ||
+        providerArguments ||
         processGroups.some((pgid) => line.includes(` process-watchdog ${pgid}`))
       );
     });

@@ -4,6 +4,8 @@ param(
     [string]$DistroName = "Ubuntu-24.04"
 )
 
+$ErrorActionPreference = "Stop"
+
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System;
