@@ -90,12 +90,7 @@ export class UrlRegexProvider implements ILinkProvider {
             start: { x: startX, y },
             end: { x: endX, y },
           },
-          activate: (event) => {
-            // Open link if Ctrl/Cmd is pressed
-            if (event.ctrlKey || event.metaKey) {
-              this.linkHandler(url, event);
-            }
-          },
+          activate: (event) => this.linkHandler(url, event),
         });
       }
 

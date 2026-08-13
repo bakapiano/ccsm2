@@ -9,6 +9,7 @@ Rust AppBackend是`data.db`的单一writer。数据库启用WAL、foreign keys�
 ```text
 CCSM data directory
 ├─ data.db
+├─ main-webview/
 ├─ browser-profile/
 └─ logs/
 ```
@@ -85,7 +86,9 @@ git_status_cache
 
 ## Filesystem stores
 
+- 显式 `--ccsm-data-dir` 或 `CCSM_DATA_DIR` 覆盖将主界面 WebView profile 放入同一数据目录的 `main-webview/`，使隔离实例可与正式实例并行运行。
 - `browser-profile/` 是全局持久 WebView profile，保存共享 cookies、账号登录、storage 和 HTTP cache。
+- 主界面和 Browser Tabs 使用不同的 WebView profile；启动隔离实例时不设置进程级 `WEBVIEW2_USER_DATA_FOLDER`。
 - `logs/` 保存AppBackend、desktop adapter、renderer和测试可观测日志。
 - Agent CLI provider transcripts保持在provider data directory；CCSM不读取或扫描这些目录来推断native Session ID。
 - Agent CLI登录由provider CLI管理；Git认证由Git工具链管理；Browser认证由platform WebView profile管理。

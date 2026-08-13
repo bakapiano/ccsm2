@@ -171,7 +171,7 @@ describe('URL Detection', () => {
     expect(typeof links?.[0].activate).toBe('function');
   });
 
-  test('routes Ctrl/Cmd activation through the embedder link handler', async () => {
+  test('routes plain-click activation through the embedder link handler', async () => {
     const opened: string[] = [];
     const provider = new UrlRegexProvider(
       createMockTerminal('https://example.com') as any,
@@ -182,7 +182,6 @@ describe('URL Detection', () => {
     );
 
     links?.[0].activate({ ctrlKey: false, metaKey: false } as MouseEvent);
-    links?.[0].activate({ ctrlKey: true, metaKey: false } as MouseEvent);
     expect(opened).toEqual(['https://example.com']);
   });
 

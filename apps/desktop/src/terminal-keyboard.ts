@@ -34,6 +34,19 @@ export function cliShortcutInput(
   return null;
 }
 
+export function isAgentCliCopyShortcut(
+  provider: ProviderKind | null,
+  event: ModifierKeyEvent,
+): boolean {
+  return (
+    provider !== null &&
+    provider !== "shell" &&
+    event.code === "KeyC" &&
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey
+  );
+}
+
 export function installCliInputFollow(
   terminal: CliInputTerminal,
   host: EventTarget,

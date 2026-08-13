@@ -62,7 +62,7 @@ describe("terminal links", () => {
     });
   });
 
-  test("maps text offsets to terminal columns and requires Ctrl/Cmd activation", async () => {
+  test("maps text offsets to terminal columns and activates on a plain click", async () => {
     const text = "中文 specs/README.md:3:4";
     const cells = Array.from(text).map((character) => ({
       getCodepoint: () => character.codePointAt(0) ?? 0,
@@ -93,7 +93,6 @@ describe("terminal links", () => {
 
     expect(links?.[0].range.start.x).toBe(3);
     links?.[0].activate({ ctrlKey: false, metaKey: false } as MouseEvent);
-    links?.[0].activate({ ctrlKey: true, metaKey: false } as MouseEvent);
     expect(activated).toEqual(["specs/README.md"]);
   });
 });

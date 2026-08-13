@@ -362,10 +362,7 @@ export class InputHandler {
     }
 
     // Allow Cmd+C for copy (on Mac, Cmd+C should copy, not send interrupt)
-    // SelectionManager handles the actual copying
-    // Note: Ctrl+C on all platforms sends interrupt signal (0x03)
     if (event.metaKey && event.code === 'KeyC') {
-      // Let browser/SelectionManager handle copy
       return;
     }
 

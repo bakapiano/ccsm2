@@ -26,6 +26,7 @@ import {
   BROWSER_POPUP_DOCK_DIRECTION,
   DOCKVIEW_DND_STRATEGY,
   findDockPanelById,
+  findNearestRightAlignedDockGroup,
   findRestoredActivePanel,
   findSourceBrowserTab,
   findVisibleDockPanelIds,
@@ -703,10 +704,7 @@ export class CcsmApp {
       );
       if (alreadyLoaded) this.#focusTab(alreadyLoaded);
       else {
-        const reference = options.sourceTabId
-          ? findDockPanelById(this.#dockview.panels, options.sourceTabId)
-          : undefined;
-        this.#addCreatedTab(tab, reference);
+        this.#addCreatedTab(tab, undefined, options.targetGroupId ?? null);
       }
       if (options.position) {
         this.#fileEditorProvider.revealPosition(tab.id, options.position);
@@ -754,7 +752,7 @@ export class CcsmApp {
         path: reference.path,
       });
       await this.#openFileEditor(request.spaceId, resolved.relativePath, {
-        sourceTabId: request.sourceTabId,
+        targetGroupId: this.#terminalLinkTargetGroupId(request.sourceTabId),
         position:
           reference.line === null
             ? undefined
@@ -782,11 +780,11 @@ export class CcsmApp {
         spaceId: request.spaceId,
         url: request.target.url,
       });
-      const reference =
-        findDockPanelById(this.#dockview.panels, request.sourceTabId) ??
-        this.#dockview.activePanel ??
-        this.#dockview.panels[0];
-      this.#addCreatedTab(tab, reference);
+      this.#addCreatedTab(
+        tab,
+        undefined,
+        this.#terminalLinkTargetGroupId(request.sourceTabId),
+      );
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus(
@@ -794,6 +792,15 @@ export class CcsmApp {
         `open terminal link · ${describeError(error)}`,
       );
     }
+  }
+
+  #terminalLinkTargetGroupId(sourceTabId: string): string | null {
+    const sourcePanel = findDockPanelById(this.#dockview.panels, sourceTabId);
+    if (!sourcePanel) return null;
+    return (
+      findNearestRightAlignedDockGroup(sourcePanel.group, this.#dockview.groups)
+        ?.id ?? sourcePanel.group.id
+    );
   }
 
   #focusTab(tab: TabDto): void {
@@ -1295,7 +1302,7 @@ function requiredElement<T extends Element = HTMLElement>(
 }
 
 interface OpenFileEditorOptions {
-  sourceTabId?: string;
+  targetGroupId?: string | null;
   position?: { line: number; column: number };
 }
 

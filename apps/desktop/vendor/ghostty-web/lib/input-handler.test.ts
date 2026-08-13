@@ -432,7 +432,6 @@ describe('InputHandler', () => {
       simulateKey(container, createKeyEvent('KeyC', 'c', { ctrl: true }));
 
       expect(dataReceived.length).toBe(1);
-      // Ctrl+C should produce 0x03
       expect(dataReceived[0].charCodeAt(0)).toBe(0x03);
     });
 
@@ -482,8 +481,6 @@ describe('InputHandler', () => {
 
       simulateKey(container, createKeyEvent('KeyC', 'c', { meta: true }));
 
-      // Cmd+C should NOT send data - it should allow copy operation
-      // SelectionManager handles the actual copying
       expect(dataReceived.length).toBe(0);
     });
   });

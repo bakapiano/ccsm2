@@ -119,6 +119,15 @@ export function applyFontCellOverrides(
   };
 }
 
+export function calculateLinkUnderlineY(
+  cellY: number,
+  metrics: Pick<FontMetrics, "height" | "baseline">,
+): number {
+  const desired = cellY + metrics.baseline + 1;
+  const insideBottomEdge = cellY + metrics.height - 2;
+  return Math.max(cellY + 1, Math.min(desired, insideBottomEdge));
+}
+
 // ============================================================================
 // Default Theme
 // ============================================================================
@@ -841,45 +850,55 @@ export class CanvasRenderer {
       this.ctx.stroke();
     }
 
-    // Draw hyperlink underline (for OSC8 hyperlinks)
-    if (cell.hyperlink_id > 0) {
-      const isHovered = cell.hyperlink_id === this.hoveredHyperlinkId;
-
-      // Only show underline when hovered (cleaner look)
-      if (isHovered) {
-        const underlineY = cellY + this.metrics.baseline + 2;
-        this.ctx.strokeStyle = "#4A90E2"; // Blue underline on hover
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.moveTo(cellX, underlineY);
-        this.ctx.lineTo(cellX + cellWidth, underlineY);
-        this.ctx.stroke();
-      }
+    // Link underlines are visible while hovering the detected link.
+    if (
+      cell.hyperlink_id > 0 &&
+      cell.hyperlink_id === this.hoveredHyperlinkId
+    ) {
+      this.drawLinkUnderline(cellX, cellY, cellWidth);
     }
 
-    // Draw regex link underline (for plain text URLs)
-    if (this.hoveredLinkRange) {
-      const range = this.hoveredLinkRange;
-      // Check if this cell is within the hovered link range
-      const isInRange =
-        (y === range.startY &&
-          x >= range.startX &&
-          (y < range.endY || x <= range.endX)) ||
-        (y > range.startY && y < range.endY) ||
-        (y === range.endY &&
-          x <= range.endX &&
-          (y > range.startY || x >= range.startX));
-
-      if (isInRange) {
-        const underlineY = cellY + this.metrics.baseline + 2;
-        this.ctx.strokeStyle = "#4A90E2"; // Blue underline on hover
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.moveTo(cellX, underlineY);
-        this.ctx.lineTo(cellX + cellWidth, underlineY);
-        this.ctx.stroke();
-      }
+    const hasHoveredLink =
+      this.hoveredLinkRange !== null &&
+      this.isCellInLinkRange(x, y, this.hoveredLinkRange);
+    if (cell.hyperlink_id === 0 && hasHoveredLink) {
+      this.drawLinkUnderline(cellX, cellY, cellWidth);
     }
+  }
+
+  private isCellInLinkRange(
+    x: number,
+    y: number,
+    range: {
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    },
+  ): boolean {
+    return (
+      (y === range.startY &&
+        x >= range.startX &&
+        (y < range.endY || x <= range.endX)) ||
+      (y > range.startY && y < range.endY) ||
+      (y === range.endY &&
+        x <= range.endX &&
+        (y > range.startY || x >= range.startX))
+    );
+  }
+
+  private drawLinkUnderline(
+    cellX: number,
+    cellY: number,
+    cellWidth: number,
+  ): void {
+    const underlineY = calculateLinkUnderlineY(cellY, this.metrics);
+    this.ctx.strokeStyle = "#4A90E2";
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.moveTo(cellX, underlineY);
+    this.ctx.lineTo(cellX + cellWidth, underlineY);
+    this.ctx.stroke();
   }
 
   /**

@@ -12,7 +12,11 @@ import {
   shouldAutoStartCliRuntime,
   takeByteBatch,
 } from "../terminal-flow";
-import { cliShortcutInput, installCliInputFollow } from "../terminal-keyboard";
+import {
+  cliShortcutInput,
+  installCliInputFollow,
+  isAgentCliCopyShortcut,
+} from "../terminal-keyboard";
 import {
   isDockGeometrySettled,
   isRenderableTerminalViewport,
@@ -392,7 +396,12 @@ class TerminalPanel implements IContentRenderer {
       );
       this.#terminal.onData((data) => this.#enqueueInput(data));
       this.#terminal.attachCustomKeyEventHandler((event) => {
-        const data = cliShortcutInput(this.#session?.provider ?? null, event);
+        const provider = this.#session?.provider ?? null;
+        if (isAgentCliCopyShortcut(provider, event)) {
+          this.#terminal?.copySelection();
+          return true;
+        }
+        const data = cliShortcutInput(provider, event);
         if (data === null) return false;
         this.#terminal?.input(data, true);
         return true;

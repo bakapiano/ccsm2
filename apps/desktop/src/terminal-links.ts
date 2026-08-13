@@ -119,9 +119,7 @@ export class FilePathLinkProvider implements ILinkProvider {
             y,
           },
         },
-        activate: (event: MouseEvent) => {
-          if (event.ctrlKey || event.metaKey) this.activateReference(reference);
-        },
+        activate: () => this.activateReference(reference),
       }),
     );
     callback(links.length > 0 ? links : undefined);

@@ -70,12 +70,7 @@ export class OSC8LinkProvider implements ILinkProvider {
         links.push({
           text: uri,
           range,
-          activate: (event) => {
-            // Open link if Ctrl/Cmd is pressed
-            if (event.ctrlKey || event.metaKey) {
-              this.linkHandler(uri, event);
-            }
-          },
+          activate: (event) => this.linkHandler(uri, event),
         });
       }
     }

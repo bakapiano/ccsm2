@@ -5,6 +5,7 @@ import {
   BROWSER_POPUP_DOCK_DIRECTION,
   DOCKVIEW_DND_STRATEGY,
   findDockPanelById,
+  findNearestRightAlignedDockGroup,
   findRestoredActivePanel,
   findSourceBrowserTab,
   findVisibleDockPanelIds,
@@ -15,6 +16,34 @@ beforeAll(() => GlobalRegistrator.register());
 afterAll(() => GlobalRegistrator.unregister());
 
 describe("Dockview regressions", () => {
+  test("selects the nearest top-aligned Dock to the right", () => {
+    const group = (id: string, left: number, top: number, visible = true) => ({
+      id,
+      isVisible: visible,
+      element: {
+        getBoundingClientRect: () => ({ left, right: left + 300, top }),
+      },
+    });
+    const source = group("source", 0, 100);
+    const nearest = group("nearest", 300, 102);
+    const farther = group("farther", 600, 100);
+    const below = group("below", 300, 450);
+    const hidden = group("hidden", 300, 100, false);
+
+    expect(
+      findNearestRightAlignedDockGroup(source, [
+        farther,
+        below,
+        hidden,
+        source,
+        nearest,
+      ])?.id,
+    ).toBe("nearest");
+    expect(findNearestRightAlignedDockGroup(source, [source, below])).toBe(
+      undefined,
+    );
+  });
+
   test("uses pointer DnD for the embedded WebView host", async () => {
     const { DockviewComponent } = await import("dockview");
     const root = document.createElement("div");

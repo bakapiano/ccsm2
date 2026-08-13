@@ -78,10 +78,6 @@ export function encodeLegacyMouse(input: TerminalMouseInput): string {
   return `\x1b[M${String.fromCharCode(32 + button, 33 + col, 33 + row)}`;
 }
 
-function hasLinkModifier(event: MouseEvent): boolean {
-  return event.ctrlKey || event.metaKey;
-}
-
 // ============================================================================
 // Terminal Class
 // ============================================================================
@@ -125,6 +121,9 @@ export class Terminal implements ITerminalCore {
   private currentHoveredLink?: ILink;
   private mouseMoveThrottleTimeout?: number;
   private pendingMouseMove?: MouseEvent;
+  private linkPointerDown = false;
+  private resolvingTrackedMouseDown = false;
+  private queuedTrackedMouseUp?: MouseEvent;
   private pressedMouseButton: number | null = null;
   private lastMouseCell: { col: number; row: number } | null = null;
   private lastMouseReport: string | null = null;
@@ -1147,6 +1146,10 @@ export class Terminal implements ITerminalCore {
     return this.selectionManager?.hasSelection() || false;
   }
 
+  public copySelection(): boolean {
+    return this.selectionManager?.copySelection() ?? false;
+  }
+
   /**
    * Clear the current selection
    */
@@ -1480,6 +1483,8 @@ export class Terminal implements ITerminalCore {
       this.mouseMoveThrottleTimeout = undefined;
     }
     this.pendingMouseMove = undefined;
+    this.resolvingTrackedMouseDown = false;
+    this.queuedTrackedMouseUp = undefined;
 
     // Dispose addons
     for (const addon of this.addons) {
@@ -1691,18 +1696,6 @@ export class Terminal implements ITerminalCore {
   private handleMouseMove = (e: MouseEvent): void => {
     if (!this.canvas || !this.renderer || !this.wasmTerm) return;
 
-    if (this.shouldReportMouseMotion(e) && !hasLinkModifier(e)) {
-      const cell = this.mouseCell(e);
-      if (cell) {
-        const button = this.pressedMouseButton ?? 3;
-        this.reportMouse(e, button, cell, false, true);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }
-      return;
-    }
-
     // If dragging scrollbar, handle immediately without throttling
     if (this.isDraggingScrollbar) {
       this.processScrollbarDrag(e);
@@ -1711,22 +1704,38 @@ export class Terminal implements ITerminalCore {
 
     if (!this.linkDetector) return;
 
-    // Throttle to ~60fps (16ms) to avoid blocking scroll/other events
+    // Warm and update link hover at most once per frame. In mouse-tracking
+    // modes the first movement into a link may still reach the TUI; once the
+    // link is resolved, CCSM owns its hover and primary click events.
     if (this.mouseMoveThrottleTimeout) {
       this.pendingMouseMove = e;
-      return;
+    } else {
+      this.processMouseMove(e);
+
+      this.mouseMoveThrottleTimeout = window.setTimeout(() => {
+        this.mouseMoveThrottleTimeout = undefined;
+        if (this.pendingMouseMove) {
+          const pending = this.pendingMouseMove;
+          this.pendingMouseMove = undefined;
+          this.handleMouseMove(pending);
+        }
+      }, 16);
     }
 
-    this.processMouseMove(e);
-
-    this.mouseMoveThrottleTimeout = window.setTimeout(() => {
-      this.mouseMoveThrottleTimeout = undefined;
-      if (this.pendingMouseMove) {
-        const pending = this.pendingMouseMove;
-        this.pendingMouseMove = undefined;
-        this.processMouseMove(pending);
+    if (
+      this.shouldReportMouseMotion(e) &&
+      !this.currentHoveredLink &&
+      !this.resolvingTrackedMouseDown
+    ) {
+      const cell = this.mouseCell(e);
+      if (cell) {
+        const button = this.pressedMouseButton ?? 3;
+        this.reportMouse(e, button, cell, false, true);
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
       }
-    }, 16);
+    }
   };
 
   /**
@@ -1908,12 +1917,6 @@ export class Terminal implements ITerminalCore {
     // rather than relying on cached hover state (avoids async races)
     if (!this.canvas || !this.renderer || !this.linkDetector || !this.wasmTerm)
       return;
-    if (this.wasmTerm.hasMouseTracking() && !hasLinkModifier(e)) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-
     // Get click position
     const rect = this.canvas.getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left) / this.renderer.charWidth);
@@ -1945,11 +1948,10 @@ export class Terminal implements ITerminalCore {
     if (link) {
       // Activate link
       link.activate(e);
-
-      // Prevent default action if modifier key held
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-      }
+      this.linkPointerDown = false;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     }
   };
 
@@ -2029,24 +2031,27 @@ export class Terminal implements ITerminalCore {
   private handleMouseDown = (e: MouseEvent): void => {
     if (!this.scrollbarView || !this.wasmTerm) return;
 
-    if (hasLinkModifier(e)) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      return;
-    }
-
+    this.linkPointerDown = false;
     if (this.wasmTerm.hasMouseTracking()) {
       const cell = this.mouseCell(e);
       const button = mouseButtonCode(e.button);
       if (cell && button !== null) {
-        this.pressedMouseButton = button;
-        this.reportMouse(e, button, cell);
-        this.focus();
+        this.resolvingTrackedMouseDown = true;
+        this.queuedTrackedMouseUp = undefined;
+        const linkPosition = this.linkBufferPosition(e);
+        void this.resolveTrackedMouseDown(e, button, cell, linkPosition);
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
       }
+      return;
+    }
+
+    if (e.button === 0 && this.currentHoveredLink) {
+      this.linkPointerDown = true;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
       return;
     }
 
@@ -2101,6 +2106,20 @@ export class Terminal implements ITerminalCore {
    * Handle mouse up for scrollbar drag
    */
   private handleMouseUp = (e: MouseEvent): void => {
+    if (this.resolvingTrackedMouseDown) {
+      this.queuedTrackedMouseUp = e;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (this.linkPointerDown) {
+      this.linkPointerDown = false;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
     if (this.wasmTerm?.hasMouseTracking() && this.pressedMouseButton !== null) {
       const cell = this.mouseCell(e) ?? this.lastMouseCell;
       if (cell) {
@@ -2128,6 +2147,43 @@ export class Terminal implements ITerminalCore {
       }
     }
   };
+
+  private async resolveTrackedMouseDown(
+    event: MouseEvent,
+    button: number,
+    cell: { col: number; row: number },
+    linkPosition: { col: number; row: number } | null,
+  ): Promise<void> {
+    let link: ILink | undefined;
+    try {
+      link =
+        button === 0 && linkPosition && this.linkDetector
+          ? await this.linkDetector.getLinkAt(
+              linkPosition.col,
+              linkPosition.row,
+            )
+          : undefined;
+    } catch {
+      link = undefined;
+    }
+    this.resolvingTrackedMouseDown = false;
+    if (link) {
+      this.linkPointerDown = true;
+      this.queuedTrackedMouseUp = undefined;
+      return;
+    }
+
+    this.pressedMouseButton = button;
+    this.reportMouse(event, button, cell);
+    this.focus();
+    const queuedMouseUp = this.queuedTrackedMouseUp;
+    this.queuedTrackedMouseUp = undefined;
+    if (queuedMouseUp) {
+      const releaseCell = this.mouseCell(queuedMouseUp) ?? cell;
+      this.reportMouse(queuedMouseUp, button, releaseCell, true);
+      this.pressedMouseButton = null;
+    }
+  }
 
   private handleContextMenu = (e: MouseEvent): void => {
     if (!this.wasmTerm?.hasMouseTracking()) return;
@@ -2159,6 +2215,38 @@ export class Terminal implements ITerminalCore {
     };
     this.lastMouseCell = cell;
     return cell;
+  }
+
+  private linkBufferPosition(
+    e: MouseEvent,
+  ): { col: number; row: number } | null {
+    if (!this.canvas || !this.renderer || !this.wasmTerm) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const col = Math.floor((e.clientX - rect.left) / this.renderer.charWidth);
+    const viewportRow = Math.floor(
+      (e.clientY - rect.top) / this.renderer.charHeight,
+    );
+    if (
+      col < 0 ||
+      viewportRow < 0 ||
+      col >= this.cols ||
+      viewportRow >= this.rows
+    ) {
+      return null;
+    }
+
+    const scrollbackLength = this.wasmTerm.getScrollbackLength();
+    const viewportY = Math.max(0, Math.floor(this.getViewportY()));
+    if (viewportY > 0) {
+      return {
+        col,
+        row:
+          viewportRow < viewportY
+            ? scrollbackLength - viewportY + viewportRow
+            : scrollbackLength + viewportRow - viewportY,
+      };
+    }
+    return { col, row: scrollbackLength + viewportRow };
   }
 
   private reportMouse(

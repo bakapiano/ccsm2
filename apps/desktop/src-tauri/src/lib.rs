@@ -43,7 +43,11 @@ impl DesktopState {
 pub fn run() {
     let data_dir_override = argument_value("--ccsm-data-dir")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("CCSM_DATA_DIR").map(PathBuf::from));
+        .or_else(|| std::env::var_os("CCSM_DATA_DIR").map(PathBuf::from))
+        .filter(|value| !value.as_os_str().is_empty());
+    let main_webview_data_dir = data_dir_override
+        .as_ref()
+        .map(|data_dir| data_dir.join("main-webview"));
     let claude_model_override =
         argument_value("--ccsm-claude-model").or_else(|| std::env::var("CCSM_CLAUDE_MODEL").ok());
     let claude_base_url_override = argument_value("--ccsm-claude-base-url")
@@ -57,16 +61,22 @@ pub fn run() {
         });
     let raw_claude_path_override = argument_value("--ccsm-raw-claude-path")
         .or_else(|| std::env::var("CCSM_REAL_CLAUDE_PATH").ok());
+    let mut context = tauri::generate_context!();
+    let isolated_main_window = main_webview_data_dir.as_ref().map(|_| {
+        let windows = &mut context.config_mut().app.windows;
+        let main_window_index = windows
+            .iter()
+            .position(|window| window.label == "main")
+            .expect("CCSM main window is missing from the Tauri configuration");
+        windows.remove(main_window_index)
+    });
     let app = tauri::Builder::default()
         .setup(move |app| {
-            let data_dir = data_dir_override
-                .filter(|value| !value.as_os_str().is_empty())
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    app.path().app_local_data_dir().map_err(|error| {
-                        format!("resolve application data directory failed: {error}")
-                    })
-                })?;
+            let data_dir = data_dir_override.map(Ok).unwrap_or_else(|| {
+                app.path()
+                    .app_local_data_dir()
+                    .map_err(|error| format!("resolve application data directory failed: {error}"))
+            })?;
             std::fs::create_dir_all(&data_dir)?;
             let executable = std::env::current_exe()
                 .map_err(|error| format!("resolve CCSM executable failed: {error}"))?;
@@ -125,6 +135,18 @@ pub fn run() {
                 shim_root,
                 shutdown_started: AtomicBool::new(false),
             });
+            if let (Some(window_config), Some(profile_dir)) = (
+                isolated_main_window.as_ref(),
+                main_webview_data_dir.as_ref(),
+            ) {
+                std::fs::create_dir_all(profile_dir)
+                    .map_err(|error| format!("create main WebView profile failed: {error}"))?;
+                tauri::WebviewWindowBuilder::from_config(app, window_config)
+                    .map_err(|error| format!("configure isolated main WebView failed: {error}"))?
+                    .data_directory(profile_dir.clone())
+                    .build()
+                    .map_err(|error| format!("create isolated main WebView failed: {error}"))?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -172,7 +194,7 @@ pub fn run() {
             commands::reload_browser,
             commands::close_browser,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("failed to build CCSM desktop application");
 
     app.run(|app_handle, event| {

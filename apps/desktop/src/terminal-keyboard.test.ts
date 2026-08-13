@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { cliShortcutInput, installCliInputFollow } from "./terminal-keyboard";
+import {
+  cliShortcutInput,
+  installCliInputFollow,
+  isAgentCliCopyShortcut,
+} from "./terminal-keyboard";
 
 const noModifiers = {
   ctrlKey: false,
@@ -10,6 +14,17 @@ const noModifiers = {
 };
 
 describe("cliShortcutInput", () => {
+  test("reserves Ctrl/Cmd+C for copy only in Agent CLI Tabs", () => {
+    const ctrlC = { ...noModifiers, code: "KeyC", ctrlKey: true };
+    const cmdC = { ...noModifiers, code: "KeyC", metaKey: true };
+
+    expect(isAgentCliCopyShortcut("claude", ctrlC)).toBe(true);
+    expect(isAgentCliCopyShortcut("codex", ctrlC)).toBe(true);
+    expect(isAgentCliCopyShortcut("copilot", cmdC)).toBe(true);
+    expect(isAgentCliCopyShortcut("shell", ctrlC)).toBe(false);
+    expect(isAgentCliCopyShortcut(null, ctrlC)).toBe(false);
+  });
+
   test("maps Codex Ctrl+Enter and Shift+Enter to legacy Alt+Enter", () => {
     const ctrlEnter = cliShortcutInput("codex", {
       ...noModifiers,

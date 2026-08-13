@@ -244,6 +244,13 @@ export class SelectionManager {
     );
   }
 
+  copySelection(): boolean {
+    const text = this.getSelection();
+    if (!text) return false;
+    void this.copyToClipboard(text);
+    return true;
+  }
+
   /**
    * Clear the selection
    */

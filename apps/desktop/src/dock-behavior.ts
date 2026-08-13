@@ -20,6 +20,34 @@ export function findDockPanelById<T extends { id: string }>(
   return panels.find((panel) => panel.id === panelId);
 }
 
+export function findNearestRightAlignedDockGroup<
+  TGroup extends {
+    id: string;
+    isVisible?: boolean;
+    element: {
+      getBoundingClientRect(): Pick<DOMRect, "left" | "right" | "top">;
+    };
+  },
+>(
+  sourceGroup: TGroup,
+  groups: readonly TGroup[],
+  alignmentTolerance = 4,
+): TGroup | undefined {
+  const sourceRect = sourceGroup.element.getBoundingClientRect();
+  return groups
+    .filter((group) => group.id !== sourceGroup.id && group.isVisible !== false)
+    .map((group) => ({
+      group,
+      rect: group.element.getBoundingClientRect(),
+    }))
+    .filter(
+      ({ rect }) =>
+        rect.left >= sourceRect.right - alignmentTolerance &&
+        Math.abs(rect.top - sourceRect.top) <= alignmentTolerance,
+    )
+    .sort((left, right) => left.rect.left - right.rect.left)[0]?.group;
+}
+
 export function findVisibleDockPanelIds<
   TPanel extends { id: string },
   TGroup extends { activePanel?: TPanel; isVisible?: boolean },

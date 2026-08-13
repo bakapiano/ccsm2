@@ -3,13 +3,14 @@ import { resolveScrollbarWidth } from "./addons/fit";
 import { calculateInputAnchor } from "./input-anchor";
 import {
   applyFontCellOverrides,
+  calculateLinkUnderlineY,
   calculateFontMetrics,
   createThemeColorRemap,
 } from "./renderer";
 import { crossedDragThreshold, resolveDragRow } from "./selection-hit-test";
 import { SelectionManager } from "./selection-manager";
 import { calculateScrollbarGeometry } from "./scrollbar-geometry";
-import { encodeLegacyMouse, encodeSgrMouse } from "./terminal";
+import { encodeLegacyMouse, encodeSgrMouse, Terminal } from "./terminal";
 
 function cell(codepoint: number, width: number = 1) {
   return { codepoint, width, grapheme_len: 0 } as any;
@@ -37,6 +38,47 @@ function selectionManagerForLine(
 }
 
 describe("local ghostty-web regressions", () => {
+  test("link underline stays visibly inside a fixed-height cell", () => {
+    expect(calculateLinkUnderlineY(18, { height: 18, baseline: 18 })).toBe(34);
+    expect(calculateLinkUnderlineY(0, { height: 18, baseline: 14 })).toBe(15);
+  });
+
+  test("mouse tracking classifies links before reporting PTY clicks", async () => {
+    const terminal = Object.create(Terminal.prototype) as any;
+    const reports: Array<{ release: boolean }> = [];
+    terminal.resolvingTrackedMouseDown = true;
+    terminal.queuedTrackedMouseUp = {} as MouseEvent;
+    terminal.linkDetector = { getLinkAt: async () => ({}) };
+    terminal.reportMouse = (
+      _event: MouseEvent,
+      _button: number,
+      _cell: unknown,
+      release = false,
+    ) => reports.push({ release });
+    terminal.focus = () => {};
+    terminal.mouseCell = () => ({ col: 1, row: 1 });
+
+    await terminal.resolveTrackedMouseDown(
+      {} as MouseEvent,
+      0,
+      { col: 1, row: 1 },
+      { col: 1, row: 1 },
+    );
+    expect(reports).toEqual([]);
+    expect(terminal.linkPointerDown).toBe(true);
+
+    terminal.resolvingTrackedMouseDown = true;
+    terminal.queuedTrackedMouseUp = {} as MouseEvent;
+    terminal.linkDetector = { getLinkAt: async () => undefined };
+    await terminal.resolveTrackedMouseDown(
+      {} as MouseEvent,
+      0,
+      { col: 1, row: 1 },
+      { col: 1, row: 1 },
+    );
+    expect(reports).toEqual([{ release: false }, { release: true }]);
+  });
+
   test("an explicit zero scrollbar reservation uses the full terminal width", () => {
     expect(resolveScrollbarWidth("0px")).toBe(0);
     expect(resolveScrollbarWidth("")).toBe(15);
