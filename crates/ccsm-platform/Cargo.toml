@@ -7,6 +7,7 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
 ccsm-core.workspace = true
 notify = "8.2.0"
 portable-pty = { path = "vendor/portable-pty" }

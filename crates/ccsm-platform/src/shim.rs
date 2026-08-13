@@ -5,6 +5,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[cfg(windows)]
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use ccsm_core::dto::ProviderKind;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -122,7 +124,14 @@ fn hook_command() -> String {
 
 #[cfg(windows)]
 fn windows_hook_command(reporter: &Path) -> String {
-    format!("\"{}\" hook report", reporter.display())
+    let reporter = reporter.to_string_lossy().replace('\'', "''");
+    let script = format!("& '{reporter}' hook report");
+    let utf16le = script
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let encoded = BASE64_STANDARD.encode(utf16le);
+    format!("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}")
 }
 
 fn build_claude_args(
@@ -805,12 +814,65 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_hook_command_uses_the_absolute_reporter_path() {
-        let reporter = Path::new(r"C:\Program Files\CCSM\ccsm-desktop.exe");
+    fn windows_hook_command_uses_powershell_with_the_absolute_reporter_path() {
+        let reporter = Path::new(r"C:\Program Files\Owner's CCSM\ccsm-desktop.exe");
+        let command = windows_hook_command(reporter);
+        let encoded = command.split_whitespace().last().unwrap();
+        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
+        let script = String::from_utf16(
+            &bytes
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         assert_eq!(
-            windows_hook_command(reporter),
-            r#""C:\Program Files\CCSM\ccsm-desktop.exe" hook report"#
+            script,
+            r#"& 'C:\Program Files\Owner''s CCSM\ccsm-desktop.exe' hook report"#
         );
+        assert!(command.contains(" -EncodedCommand "));
+        let codex_args = build_codex_args(Vec::new(), &command, None);
+        assert!(
+            codex_args
+                .iter()
+                .any(|argument| argument.to_string_lossy().contains(&command))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_hook_command_runs_from_powershell_and_preserves_stdin() {
+        use std::{io::Write, process::Stdio};
+
+        let directory = tempfile::tempdir().unwrap();
+        let reporter_directory = directory.path().join("Owner's CCSM");
+        std::fs::create_dir(&reporter_directory).unwrap();
+        let reporter = reporter_directory.join("ccsm hook.cmd");
+        std::fs::write(
+            &reporter,
+            "@echo off\r\nif not \"%~1\"==\"hook\" exit /b 11\r\nif not \"%~2\"==\"report\" exit /b 12\r\nset /p payload=\r\nif not \"%payload%\"==\"hook-payload\" exit /b 13\r\nexit /b 0\r\n",
+        )
+        .unwrap();
+
+        let mut child = Command::new("powershell.exe")
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &windows_hook_command(&reporter),
+            ])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"hook-payload\n")
+            .unwrap();
+
+        assert!(child.wait().unwrap().success());
     }
 
     #[cfg(windows)]
