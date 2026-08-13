@@ -110,6 +110,11 @@ export class FileEditorTabProvider implements TabProvider {
     return this.#sessions.get(tabId)?.isDirty() ?? false;
   }
 
+  dirtyCount(): number {
+    return [...this.#sessions.values()].filter((session) => session.isDirty())
+      .length;
+  }
+
   async requestClose(tab: TabDto): Promise<boolean> {
     const session = this.#sessions.get(tab.id);
     if (!session?.isDirty()) return true;

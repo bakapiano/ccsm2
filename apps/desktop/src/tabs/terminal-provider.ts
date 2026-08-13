@@ -105,6 +105,14 @@ export class TerminalTabProvider implements TabProvider {
     return true;
   }
 
+  liveRuntimeCount(): number {
+    let count = 0;
+    this.#renderers.forEach((renderer) => {
+      if (renderer.hasLiveRuntime()) count += 1;
+    });
+    return count;
+  }
+
   releaseTabs(tabIds: Iterable<string>): void {
     this.#renderers.release(tabIds);
   }
@@ -250,6 +258,10 @@ class TerminalPanel implements IContentRenderer {
     if (this.#terminal) {
       this.#terminal.options.theme = { ...TERMINAL_THEMES[theme] };
     }
+  }
+
+  hasLiveRuntime(): boolean {
+    return this.#runtimeId !== null;
   }
 
   dispose(): void {
