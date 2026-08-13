@@ -13,6 +13,12 @@ fn main() {
     if arguments.as_slice() == ["hook", "report"] {
         std::process::exit(ccsm_platform::run_hook_reporter());
     }
+    if let [mode, pgid] = arguments.as_slice()
+        && mode == "process-watchdog"
+    {
+        let pgid = pgid.parse::<i32>().unwrap_or_default();
+        std::process::exit(ccsm_platform::run_process_watchdog(pgid));
+    }
     if let Err(error) = ccsm_platform::install_process_tree_guard() {
         eprintln!("CCSM process-tree containment failed: {error}");
         std::process::exit(1);
@@ -36,6 +42,7 @@ fn detach_standalone_console() {
 #[cfg(not(windows))]
 fn detach_standalone_console() {}
 
+#[cfg(any(windows, test))]
 fn should_detach_standalone_console(process_count: u32) -> bool {
     process_count == 1
 }

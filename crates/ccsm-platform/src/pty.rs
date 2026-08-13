@@ -75,8 +75,12 @@ fn process_is_alive(pid: u32) -> bool {
 }
 
 #[cfg(not(windows))]
-fn process_is_alive(_pid: u32) -> bool {
-    true
+fn process_is_alive(pid: u32) -> bool {
+    let Ok(pid) = i32::try_from(pid) else {
+        return false;
+    };
+    let result = unsafe { libc::kill(pid, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 enum InputCommand {
@@ -136,6 +140,7 @@ struct PortablePtyProcess {
     pending_resize: Arc<Mutex<Option<(u16, u16)>>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     containment: ProcessContainment,
+    watchdog: ProcessWatchdog,
     threads: Mutex<PortablePtyThreads>,
     _runtime_shim: Option<RuntimeShim>,
 }
@@ -162,6 +167,11 @@ impl PortablePtyProcess {
         let mut first_error = self.containment.terminate().err();
         if let Ok(mut killer) = self.killer.lock() {
             let _ = killer.kill();
+        }
+        if let Err(error) = self.watchdog.shutdown()
+            && first_error.is_none()
+        {
+            first_error = Some(error);
         }
 
         let _ = self.input_tx.send(InputCommand::Shutdown);
@@ -317,6 +327,14 @@ impl PtyBackend for PortablePtyBackend {
         })?;
         let pid = child.process_id();
         let containment = ProcessContainment::attach(pid)?;
+        let watchdog = match ProcessWatchdog::spawn(&self.executable, pid) {
+            Ok(watchdog) => watchdog,
+            Err(error) => {
+                let _ = containment.terminate();
+                let _ = child.kill();
+                return Err(error);
+            }
+        };
         let killer = child.clone_killer();
         drop(pair.slave);
 
@@ -391,6 +409,7 @@ impl PtyBackend for PortablePtyBackend {
             pending_resize,
             killer: Mutex::new(killer),
             containment,
+            watchdog,
             threads: Mutex::new(PortablePtyThreads {
                 shutdown_started: false,
                 input: Some(input_thread),
@@ -400,6 +419,69 @@ impl PtyBackend for PortablePtyBackend {
             }),
             _runtime_shim: runtime_shim,
         }))
+    }
+}
+
+#[cfg(unix)]
+struct ProcessWatchdog {
+    stdin: Mutex<Option<std::process::ChildStdin>>,
+    child: Mutex<Option<std::process::Child>>,
+}
+
+#[cfg(unix)]
+impl ProcessWatchdog {
+    fn spawn(executable: &Path, pid: Option<u32>) -> BackendResult<Self> {
+        use std::process::{Command, Stdio};
+
+        let pgid =
+            pid.ok_or_else(|| BackendError::Platform("spawned process has no PID".into()))?;
+        let mut child = Command::new(executable)
+            .args(["process-watchdog", &pgid.to_string()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| BackendError::Platform(format!("start process watchdog: {error}")))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| BackendError::Platform("process watchdog has no control pipe".into()))?;
+        Ok(Self {
+            stdin: Mutex::new(Some(stdin)),
+            child: Mutex::new(Some(child)),
+        })
+    }
+
+    fn shutdown(&self) -> BackendResult<()> {
+        self.stdin
+            .lock()
+            .map_err(|_| BackendError::Platform("process watchdog pipe lock poisoned".into()))?
+            .take();
+        if let Some(mut child) = self
+            .child
+            .lock()
+            .map_err(|_| BackendError::Platform("process watchdog lock poisoned".into()))?
+            .take()
+        {
+            child.wait().map_err(|error| {
+                BackendError::Platform(format!("wait for process watchdog: {error}"))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+struct ProcessWatchdog;
+
+#[cfg(windows)]
+impl ProcessWatchdog {
+    fn spawn(_executable: &Path, _pid: Option<u32>) -> BackendResult<Self> {
+        Ok(Self)
+    }
+
+    fn shutdown(&self) -> BackendResult<()> {
+        Ok(())
     }
 }
 
@@ -691,6 +773,7 @@ fn queue_resize(
     }
 }
 
+#[cfg(windows)]
 fn find_on_path(program: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH")?;
     env::split_paths(&path)
@@ -797,7 +880,6 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
     #[test]
     fn stale_runtime_shim_roots_are_scavenged_safely() {
         let parent = tempfile::tempdir().unwrap();

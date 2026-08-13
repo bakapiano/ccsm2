@@ -424,14 +424,18 @@ name = "ccsm-desktop"
 version = "0.1.0-beta.2"
 dependencies = [
  "base64 0.22.1",
+ "cairo-rs",
  "ccsm-core",
  "ccsm-platform",
+ "gio",
+ "gtk",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "ts-rs",
  "uuid",
+ "webkit2gtk",
  "webview2-com",
  "windows",
  "windows-sys 0.61.2",
@@ -443,6 +447,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "base64 0.22.1",
  "ccsm-core",
+ "libc",
  "notify",
  "portable-pty",
  "rusqlite",

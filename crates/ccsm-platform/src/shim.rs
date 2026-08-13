@@ -398,9 +398,13 @@ struct ProviderSearchPath {
 }
 
 fn provider_search_path() -> ProviderSearchPath {
-    let mut values = env::var_os("PATH").into_iter().collect::<Vec<_>>();
+    let values = env::var_os("PATH").into_iter().collect::<Vec<_>>();
     #[cfg(windows)]
-    values.extend(current_windows_path_values().into_iter().flatten());
+    let values = {
+        let mut values = values;
+        values.extend(current_windows_path_values().into_iter().flatten());
+        values
+    };
     provider_search_path_from_values(values)
 }
 
@@ -447,9 +451,23 @@ fn find_cli_in_directories(
             }
             command_candidates(directory, command)
                 .into_iter()
-                .find(|candidate| candidate.is_file())
+                .find(|candidate| is_launchable_candidate(candidate))
         })
     })
+}
+
+#[cfg(windows)]
+fn is_launchable_candidate(candidate: &Path) -> bool {
+    candidate.is_file()
+}
+
+#[cfg(unix)]
+fn is_launchable_candidate(candidate: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    candidate
+        .metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(windows)]
@@ -810,6 +828,27 @@ mod tests {
             Some(ProviderKind::Copilot)
         );
         assert_eq!(provider_from_identity("ccsm-provider", None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_provider_resolution_requires_an_executable_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let command = directory.path().join("codex");
+        std::fs::write(&command, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            find_cli_in_directories(&["codex"], &[directory.path().into()], None),
+            None
+        );
+
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            find_cli_in_directories(&["codex"], &[directory.path().into()], None),
+            Some(command)
+        );
     }
 
     #[cfg(windows)]
