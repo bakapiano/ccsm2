@@ -18,10 +18,31 @@ use ccsm_core::{
     error::{BackendError, BackendResult},
     ports::{RootDescriptor, StateStore},
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use uuid::Uuid;
 
 const MAX_SPACE_TREE_NAME_CHARACTERS: usize = 64;
+pub const RENDERER_HEALTH_LOG_MAX_ROWS: i64 = 2_048;
+pub const RENDERER_HEALTH_LOG_MAX_PAYLOAD_BYTES: i64 = 8 * 1024 * 1024;
+pub const RENDERER_HEALTH_LOG_MAX_ROW_BYTES: usize = 8 * 1024;
+pub const RENDERER_HEALTH_LOG_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
+
+#[derive(Clone, Debug)]
+pub struct RendererHealthLogRecord {
+    pub incident_id: String,
+    pub recorded_at: i64,
+    pub event_kind: String,
+    pub input_seq: Option<u64>,
+    pub state: String,
+    pub latency_ms: Option<u64>,
+    pub details_json: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RendererHealthLogStats {
+    pub row_count: i64,
+    pub payload_bytes: i64,
+}
 
 pub struct SqliteStateStore {
     connection: Mutex<Connection>,
@@ -144,9 +165,26 @@ impl SqliteStateStore {
                     snapshot_json TEXT NOT NULL,
                     captured_at INTEGER NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS renderer_health_log (
+                    id INTEGER PRIMARY KEY,
+                    incident_id TEXT NOT NULL,
+                    recorded_at INTEGER NOT NULL,
+                    event_kind TEXT NOT NULL,
+                    input_seq INTEGER,
+                    state TEXT NOT NULL,
+                    latency_ms INTEGER,
+                    payload_bytes INTEGER NOT NULL,
+                    details_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS renderer_health_log_recorded_at
+                    ON renderer_health_log(recorded_at);
+                CREATE INDEX IF NOT EXISTS renderer_health_log_incident_id
+                    ON renderer_health_log(incident_id);
                 "#,
             )
             .map_err(storage_error)?;
+        prune_renderer_health_log(&mut connection, now_timestamp())?;
         connection
             .execute(
                 "UPDATE cli_sessions
@@ -173,6 +211,107 @@ impl SqliteStateStore {
             .lock()
             .map_err(|_| BackendError::Storage("data.db connection lock poisoned".into()))
     }
+
+    pub fn append_renderer_health_log(&self, record: RendererHealthLogRecord) -> BackendResult<()> {
+        let mut details_json = record.details_json;
+        if details_json.len() > RENDERER_HEALTH_LOG_MAX_ROW_BYTES {
+            details_json = r#"{"truncated":true}"#.into();
+        }
+        let payload_bytes = i64::try_from(details_json.len()).unwrap_or(i64::MAX);
+        let input_seq = record
+            .input_seq
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| {
+                BackendError::Storage("renderer input sequence exceeds SQLite i64".into())
+            })?;
+        let latency_ms = record
+            .latency_ms
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| BackendError::Storage("renderer ACK latency exceeds SQLite i64".into()))?;
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction().map_err(storage_error)?;
+        transaction
+            .execute(
+                "INSERT INTO renderer_health_log(
+                    incident_id, recorded_at, event_kind, input_seq, state,
+                    latency_ms, payload_bytes, details_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    record.incident_id,
+                    record.recorded_at,
+                    record.event_kind,
+                    input_seq,
+                    record.state,
+                    latency_ms,
+                    payload_bytes,
+                    details_json,
+                ],
+            )
+            .map_err(storage_error)?;
+        prune_renderer_health_log_transaction(&transaction, record.recorded_at)?;
+        transaction.commit().map_err(storage_error)
+    }
+
+    pub fn renderer_health_log_stats(&self) -> BackendResult<RendererHealthLogStats> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                "SELECT COUNT(*), COALESCE(SUM(payload_bytes), 0)
+                 FROM renderer_health_log",
+                [],
+                |row| {
+                    Ok(RendererHealthLogStats {
+                        row_count: row.get(0)?,
+                        payload_bytes: row.get(1)?,
+                    })
+                },
+            )
+            .map_err(storage_error)
+    }
+}
+
+fn prune_renderer_health_log(connection: &mut Connection, now: i64) -> BackendResult<()> {
+    let transaction = connection.transaction().map_err(storage_error)?;
+    prune_renderer_health_log_transaction(&transaction, now)?;
+    transaction.commit().map_err(storage_error)
+}
+
+fn prune_renderer_health_log_transaction(
+    transaction: &Transaction<'_>,
+    now: i64,
+) -> BackendResult<()> {
+    let cutoff = now.saturating_sub(RENDERER_HEALTH_LOG_TTL_SECONDS);
+    transaction
+        .execute(
+            "DELETE FROM renderer_health_log WHERE recorded_at < ?1",
+            [cutoff],
+        )
+        .map_err(storage_error)?;
+    transaction
+        .execute(
+            "DELETE FROM renderer_health_log
+             WHERE id IN (
+               SELECT id FROM (
+                 SELECT
+                   id,
+                   ROW_NUMBER() OVER (ORDER BY recorded_at DESC, id DESC) AS row_rank,
+                   SUM(payload_bytes) OVER (
+                     ORDER BY recorded_at DESC, id DESC
+                     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                   ) AS retained_bytes
+                 FROM renderer_health_log
+               )
+               WHERE row_rank > ?1 OR retained_bytes > ?2
+             )",
+            params![
+                RENDERER_HEALTH_LOG_MAX_ROWS,
+                RENDERER_HEALTH_LOG_MAX_PAYLOAD_BYTES
+            ],
+        )
+        .map_err(storage_error)?;
+    Ok(())
 }
 
 impl StateStore for SqliteStateStore {
@@ -1722,4 +1861,84 @@ fn now_timestamp() -> i64 {
 
 fn storage_error(error: rusqlite::Error) -> BackendError {
     BackendError::Storage(error.to_string())
+}
+
+#[cfg(test)]
+mod renderer_health_log_tests {
+    use super::*;
+
+    #[test]
+    fn renderer_health_log_prunes_ttl_rows_and_payload_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStateStore::open(&directory.path().join("data.db")).unwrap();
+        let now = 2_000_000_000_i64;
+        {
+            let mut connection = store.connection().unwrap();
+            let transaction = connection.transaction().unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO renderer_health_log(
+                       incident_id, recorded_at, event_kind, state,
+                       payload_bytes, details_json
+                     ) VALUES ('expired', ?1, 'input.timeout', 'InputPathSuspect', 2, '{}')",
+                    [now - RENDERER_HEALTH_LOG_TTL_SECONDS - 1],
+                )
+                .unwrap();
+            let details = "x".repeat(5_000);
+            for index in 0..2_100_i64 {
+                transaction
+                    .execute(
+                        "INSERT INTO renderer_health_log(
+                           incident_id, recorded_at, event_kind, input_seq, state,
+                           payload_bytes, details_json
+                         ) VALUES ('bounded', ?1, 'input.timeout', ?2,
+                                   'InputPathSuspect', ?3, ?4)",
+                        params![now, index, details.len() as i64, details],
+                    )
+                    .unwrap();
+            }
+            prune_renderer_health_log_transaction(&transaction, now).unwrap();
+            transaction.commit().unwrap();
+        }
+
+        let stats = store.renderer_health_log_stats().unwrap();
+        assert!(stats.row_count <= RENDERER_HEALTH_LOG_MAX_ROWS);
+        assert!(stats.payload_bytes <= RENDERER_HEALTH_LOG_MAX_PAYLOAD_BYTES);
+        let connection = store.connection().unwrap();
+        let expired: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM renderer_health_log WHERE incident_id = 'expired'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(expired, 0);
+    }
+
+    #[test]
+    fn renderer_health_log_truncates_oversized_details() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStateStore::open(&directory.path().join("data.db")).unwrap();
+        store
+            .append_renderer_health_log(RendererHealthLogRecord {
+                incident_id: "incident".into(),
+                recorded_at: now_timestamp(),
+                event_kind: "input.timeout".into(),
+                input_seq: Some(1),
+                state: "InputPathSuspect".into(),
+                latency_ms: Some(1_000),
+                details_json: "x".repeat(RENDERER_HEALTH_LOG_MAX_ROW_BYTES + 1),
+            })
+            .unwrap();
+
+        let connection = store.connection().unwrap();
+        let details: String = connection
+            .query_row(
+                "SELECT details_json FROM renderer_health_log ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(details, r#"{"truncated":true}"#);
+    }
 }

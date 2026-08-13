@@ -15,5 +15,9 @@ pub use git::CommandGitBackend;
 pub use hook::{HookReportSink, LocalHookEndpoint, run_hook_reporter};
 pub use pty::{PortablePtyBackend, cleanup_stale_runtime_shim_roots};
 pub use shim::{provider_from_environment, provider_from_executable, run_cli_shim};
-pub use store::SqliteStateStore;
+pub use store::{
+    RENDERER_HEALTH_LOG_MAX_PAYLOAD_BYTES, RENDERER_HEALTH_LOG_MAX_ROW_BYTES,
+    RENDERER_HEALTH_LOG_MAX_ROWS, RENDERER_HEALTH_LOG_TTL_SECONDS, RendererHealthLogRecord,
+    RendererHealthLogStats, SqliteStateStore,
+};
 pub use watch::NotifyFileWatchBackend;

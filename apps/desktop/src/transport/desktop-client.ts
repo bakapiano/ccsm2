@@ -35,6 +35,11 @@ import type { RenameFolderRequest } from "../generated/RenameFolderRequest";
 import type { RenameSpaceRequest } from "../generated/RenameSpaceRequest";
 import type { RefreshGitRequest } from "../generated/RefreshGitRequest";
 import type { ReadFileRequest } from "../generated/ReadFileRequest";
+import type { RendererHealthDebugSnapshot } from "../generated/RendererHealthDebugSnapshot";
+import type { RendererInputAckRequest } from "../generated/RendererInputAckRequest";
+import type { RendererInputProbe } from "../generated/RendererInputProbe";
+import type { RendererReadyRequest } from "../generated/RendererReadyRequest";
+import type { RendererReadyResponse } from "../generated/RendererReadyResponse";
 import type { ReplaceCliSessionRequest } from "../generated/ReplaceCliSessionRequest";
 import type { ResolveFileReferenceRequest } from "../generated/ResolveFileReferenceRequest";
 import type { ResolvedFileReferenceDto } from "../generated/ResolvedFileReferenceDto";
@@ -137,11 +142,22 @@ export interface WindowChromeClient {
   subscribeCloseRequested(listener: () => void): Promise<UnlistenFn>;
 }
 
+export interface RendererHealthClient {
+  acknowledgeInput(request: RendererInputAckRequest): Promise<void>;
+  markReady(request: RendererReadyRequest): Promise<RendererReadyResponse>;
+  subscribeInputProbe(
+    listener: (probe: RendererInputProbe) => void,
+  ): Promise<UnlistenFn>;
+  debugSimulateClick(): Promise<number>;
+  debugSnapshot(): Promise<RendererHealthDebugSnapshot>;
+}
+
 export interface CcsmDesktopClient {
   backend: AppBackendClient;
   browser: BrowserSurfaceClient;
   directories: DirectoryBrowserClient;
   windowChrome: WindowChromeClient;
+  rendererHealth: RendererHealthClient;
   events: DesktopEventStream;
 }
 
@@ -397,11 +413,38 @@ class TauriWindowChromeClient implements WindowChromeClient {
   }
 }
 
+class TauriRendererHealthClient implements RendererHealthClient {
+  acknowledgeInput(request: RendererInputAckRequest): Promise<void> {
+    return invoke("renderer_input_ack", { request });
+  }
+
+  markReady(request: RendererReadyRequest): Promise<RendererReadyResponse> {
+    return invoke("renderer_ready", { request });
+  }
+
+  subscribeInputProbe(
+    listener: (probe: RendererInputProbe) => void,
+  ): Promise<UnlistenFn> {
+    return listen<RendererInputProbe>("ccsm:renderer-input-probe", (event) =>
+      listener(event.payload),
+    );
+  }
+
+  debugSimulateClick(): Promise<number> {
+    return invoke("debug_renderer_simulate_click");
+  }
+
+  debugSnapshot(): Promise<RendererHealthDebugSnapshot> {
+    return invoke("debug_renderer_health_snapshot");
+  }
+}
+
 export const desktopClient: CcsmDesktopClient = {
   backend: new TauriBackendClient(),
   browser: new TauriBrowserSurfaceClient(),
   directories: new TauriDirectoryBrowserClient(),
   windowChrome: new TauriWindowChromeClient(),
+  rendererHealth: new TauriRendererHealthClient(),
   events: {
     subscribe(listener) {
       return listen<AppEvent>("ccsm:event", (event) => listener(event.payload));

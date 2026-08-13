@@ -15,7 +15,7 @@ use ccsm_core::{
     },
     error::{ApiErrorDto, BackendError},
 };
-use tauri::{AppHandle, State, Window, ipc::Channel};
+use tauri::{AppHandle, State, Webview, Window, ipc::Channel};
 
 use crate::{
     DesktopState,
@@ -23,6 +23,11 @@ use crate::{
     directory_browser::{
         BrowseHostDirectoryRequest, CreateHostDirectoryRequest, HostDirectoryEntryDto,
         HostDirectoryListingDto, workspace_root,
+    },
+    native_input::NativeInputObserver,
+    renderer_health::{
+        RendererHealthDebugSnapshot, RendererInputAckRequest, RendererReadyRequest,
+        RendererReadyResponse,
     },
 };
 
@@ -484,4 +489,61 @@ pub fn close_browser(
     state: State<'_, DesktopState>,
 ) -> Result<(), String> {
     state.browser.close(&app, &surface_id)
+}
+
+#[tauri::command]
+pub fn renderer_input_ack(
+    request: RendererInputAckRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<()> {
+    state
+        .renderer_health
+        .acknowledge_input(request)
+        .map_err(platform_api_error)
+}
+
+#[tauri::command]
+pub fn renderer_ready(
+    webview: Webview,
+    request: RendererReadyRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<RendererReadyResponse> {
+    NativeInputObserver::bind_main_webview(&webview).map_err(platform_api_error)?;
+    state
+        .renderer_health
+        .renderer_ready(request)
+        .map_err(platform_api_error)
+}
+
+#[tauri::command]
+pub fn debug_renderer_simulate_click(state: State<'_, DesktopState>) -> CommandResult<u32> {
+    if !cfg!(debug_assertions) {
+        return Err(platform_api_error(
+            "renderer health simulation is available only in debug builds".into(),
+        ));
+    }
+    state
+        .renderer_health
+        .observe_native_click(true)
+        .map_err(platform_api_error)?
+        .ok_or_else(|| platform_api_error("renderer health monitor rejected debug probe".into()))
+}
+
+#[tauri::command]
+pub fn debug_renderer_health_snapshot(
+    state: State<'_, DesktopState>,
+) -> CommandResult<RendererHealthDebugSnapshot> {
+    if !cfg!(debug_assertions) {
+        return Err(platform_api_error(
+            "renderer health snapshot is available only in debug builds".into(),
+        ));
+    }
+    state
+        .renderer_health
+        .debug_snapshot()
+        .map_err(platform_api_error)
+}
+
+fn platform_api_error(message: String) -> ApiErrorDto {
+    ApiErrorDto::from(BackendError::Platform(message))
 }
