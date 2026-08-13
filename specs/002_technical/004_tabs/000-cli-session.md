@@ -4,14 +4,14 @@ CLI Session Tab 通过稳定 `cli_session_id` 引用 Session，并在 mount 时 
 
 ## Built-in Providers
 
-| Provider    | Launch                  | Native Session    | Cold resume            |
-| ----------- | ----------------------- | ----------------- | ---------------------- |
-| Shell       | platform default shell  | —                 | 创建新 runtime         |
-| Claude Code | 优先`ccp`，回落`claude` | Hook `session_id` | `claude --resume <id>` |
-| Codex       | 优先`cxp`，回落`codex`  | Hook `session_id` | `codex resume <id>`    |
-| GitHub Copilot | `copilot`             | Hook `session_id` | `copilot --resume=<id>` |
+| Provider       | Launch                 | Native Session    | Cold resume             |
+| -------------- | ---------------------- | ----------------- | ----------------------- |
+| Shell          | platform default shell | —                 | 创建新 runtime          |
+| Claude Code    | `claude`               | Hook `session_id` | `claude --resume <id>`  |
+| Codex          | `codex`                | Hook `session_id` | `codex resume <id>`     |
+| GitHub Copilot | `copilot`              | Hook `session_id` | `copilot --resume=<id>` |
 
-Provider resolver先遍历完整PATH寻找本地launcher，再遍历完整PATH寻找raw CLI。launcher内部再次调用同名CLI时，per-runtime shim通过depth guard只解析raw CLI，避免`ccp/cxp → shim → ccp/cxp`递归。用户自定义 command/args/env/resume template进入后续版本。
+Provider resolver遍历完整PATH寻找对应的原生CLI。per-runtime shim通过depth guard把CLI内部的同名调用转发到已解析的原生CLI。用户自定义command、args、env和resume template进入后续版本。
 
 Windows resolver将进程继承的PATH与当前HKCU/HKLM环境PATH合并，并把合并结果传给launcher。Explorer在CLI安装前启动所持有的旧环境不能导致已安装Provider持续不可用；开发终端临时PATH保持最高优先级。
 

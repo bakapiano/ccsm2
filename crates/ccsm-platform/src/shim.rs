@@ -65,14 +65,14 @@ pub fn run_cli_shim(provider: ProviderKind) -> i32 {
     let user_args = env::args_os().skip(1).collect::<Vec<_>>();
     let passthrough = env::var_os(WRAPPER_ACTIVE).is_some();
     let search_path = provider_search_path();
-    let real = match resolve_real_cli(provider, !passthrough, &search_path.directories) {
+    let real = match resolve_real_cli(provider, &search_path.directories) {
         Ok(path) => path,
         Err(message) => {
             eprintln!("ccsm: {message}");
             return 127;
         }
     };
-    let mut args = if passthrough || !has_hook_context() {
+    let args = if passthrough || !has_hook_context() {
         user_args
     } else {
         let native_session_id = env::var("CCSM_NATIVE_SESSION_ID")
@@ -92,50 +92,7 @@ pub fn run_cli_shim(provider: ProviderKind) -> i32 {
             ProviderKind::Shell => user_args,
         }
     };
-    if !passthrough
-        && provider == ProviderKind::Claude
-        && real
-            .file_stem()
-            .is_some_and(|name| name.eq_ignore_ascii_case("ccp"))
-    {
-        ensure_claude_model(&mut args, configured_ccp_model());
-    }
     launch_real_cli(provider, &real, &args, search_path.value.as_ref())
-}
-
-fn ensure_claude_model(args: &mut Vec<OsString>, model: Option<String>) {
-    if model.is_none()
-        || args.iter().any(|argument| {
-            let argument = argument.to_string_lossy();
-            matches!(argument.as_ref(), "--model" | "-m") || argument.starts_with("--model=")
-        })
-    {
-        return;
-    }
-    args.push("--model".into());
-    args.push(model.unwrap().into());
-}
-
-fn configured_ccp_model() -> Option<String> {
-    if let Some(model) = env::var("CCSM_CLAUDE_MODEL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        return Some(model);
-    }
-    let home = env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
-    let path = PathBuf::from(home)
-        .join(".local")
-        .join("share")
-        .join("gc2cc")
-        .join("ccp.json");
-    let config: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
-    config
-        .get("defaultModel")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
 }
 
 fn has_hook_context() -> bool {
@@ -349,24 +306,18 @@ fn has_explicit_copilot_session_flag(args: &[OsString]) -> bool {
     })
 }
 
-fn resolve_real_cli(
-    provider: ProviderKind,
-    prefer_local_launcher: bool,
-    directories: &[PathBuf],
-) -> Result<PathBuf, String> {
-    let commands = launcher_names(provider, prefer_local_launcher);
+fn resolve_real_cli(provider: ProviderKind, directories: &[PathBuf]) -> Result<PathBuf, String> {
+    let commands = provider_commands(provider);
     let custom_key = match provider {
         ProviderKind::Claude => "CCSM_REAL_CLAUDE_PATH",
         ProviderKind::Codex => "CCSM_REAL_CODEX_PATH",
         ProviderKind::Copilot => "CCSM_REAL_COPILOT_PATH",
         ProviderKind::Shell => unreachable!(),
     };
-    if !prefer_local_launcher {
-        if let Some(custom) = env::var_os(custom_key).map(PathBuf::from)
-            && custom.is_file()
-        {
-            return Ok(custom);
-        }
+    if let Some(custom) = env::var_os(custom_key).map(PathBuf::from)
+        && custom.is_file()
+    {
+        return Ok(custom);
     }
     let self_dir = env::current_exe()
         .ok()
@@ -558,14 +509,12 @@ fn read_windows_registry_path(
     Some(OsString::from_wide(&buffer[..length]))
 }
 
-fn launcher_names(provider: ProviderKind, prefer_local_launcher: bool) -> Vec<&'static str> {
-    match (provider, prefer_local_launcher) {
-        (ProviderKind::Claude, true) => vec!["ccp", "claude"],
-        (ProviderKind::Codex, true) => vec!["cxp", "codex"],
-        (ProviderKind::Copilot, _) => vec!["copilot"],
-        (ProviderKind::Claude, false) => vec!["claude"],
-        (ProviderKind::Codex, false) => vec!["codex"],
-        (ProviderKind::Shell, _) => Vec::new(),
+fn provider_commands(provider: ProviderKind) -> Vec<&'static str> {
+    match provider {
+        ProviderKind::Claude => vec!["claude"],
+        ProviderKind::Codex => vec!["codex"],
+        ProviderKind::Copilot => vec!["copilot"],
+        ProviderKind::Shell => Vec::new(),
     }
 }
 
@@ -831,28 +780,10 @@ mod tests {
     }
 
     #[test]
-    fn local_provider_launchers_are_used_only_for_the_outer_shim() {
-        assert_eq!(launcher_names(ProviderKind::Codex, true), ["cxp", "codex"]);
-        assert_eq!(launcher_names(ProviderKind::Codex, false), ["codex"]);
-        assert_eq!(
-            launcher_names(ProviderKind::Claude, true),
-            ["ccp", "claude"]
-        );
-        assert_eq!(launcher_names(ProviderKind::Claude, false), ["claude"]);
-        assert_eq!(launcher_names(ProviderKind::Copilot, true), ["copilot"]);
-        assert_eq!(launcher_names(ProviderKind::Copilot, false), ["copilot"]);
-    }
-
-    #[test]
-    fn ccp_model_is_explicit_without_overriding_a_user_choice() {
-        let mut args = vec![OsString::from("--settings"), OsString::from("hooks.json")];
-        ensure_claude_model(&mut args, Some("gpt-5.6-sol[1m]".into()));
-        assert_eq!(args[args.len() - 2], "--model");
-        assert_eq!(args[args.len() - 1], "gpt-5.6-sol[1m]");
-
-        let mut explicit = vec![OsString::from("--model"), OsString::from("custom")];
-        ensure_claude_model(&mut explicit, Some("default".into()));
-        assert_eq!(explicit, ["--model", "custom"]);
+    fn built_in_providers_resolve_their_native_commands() {
+        assert_eq!(provider_commands(ProviderKind::Codex), ["codex"]);
+        assert_eq!(provider_commands(ProviderKind::Claude), ["claude"]);
+        assert_eq!(provider_commands(ProviderKind::Copilot), ["copilot"]);
     }
 
     #[test]
@@ -884,18 +815,15 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn preferred_launcher_wins_even_when_raw_cli_is_earlier_on_path() {
+    fn native_claude_is_resolved_from_path() {
         let directory = tempfile::tempdir().unwrap();
         let raw_dir = directory.path().join("raw");
-        let launcher_dir = directory.path().join("launcher");
         std::fs::create_dir_all(&raw_dir).unwrap();
-        std::fs::create_dir_all(&launcher_dir).unwrap();
         std::fs::write(raw_dir.join("claude.exe"), []).unwrap();
-        std::fs::write(launcher_dir.join("ccp.cmd"), []).unwrap();
-        let commands = launcher_names(ProviderKind::Claude, true);
-        let directories = [raw_dir, launcher_dir.clone()];
+        let commands = provider_commands(ProviderKind::Claude);
+        let directories = [raw_dir];
         let resolved = find_cli_in_directories(&commands, &directories, None);
-        assert_eq!(resolved, Some(launcher_dir.join("ccp.cmd")));
+        assert_eq!(resolved, Some(directories[0].join("claude.exe")));
     }
 
     #[cfg(windows)]
@@ -924,16 +852,16 @@ mod tests {
         let fresh_dir = directory.path().join("fresh");
         std::fs::create_dir_all(&stale_dir).unwrap();
         std::fs::create_dir_all(&fresh_dir).unwrap();
-        std::fs::write(fresh_dir.join("cxp.cmd"), []).unwrap();
+        std::fs::write(fresh_dir.join("codex.cmd"), []).unwrap();
 
         let search_path = provider_search_path_from_values(vec![
             stale_dir.as_os_str().to_owned(),
             fresh_dir.as_os_str().to_owned(),
         ]);
-        let commands = launcher_names(ProviderKind::Codex, true);
+        let commands = provider_commands(ProviderKind::Codex);
         let resolved = find_cli_in_directories(&commands, &search_path.directories, None);
 
-        assert_eq!(resolved, Some(fresh_dir.clone().join("cxp.cmd")));
+        assert_eq!(resolved, Some(fresh_dir.clone().join("codex.cmd")));
         assert!(
             search_path
                 .value
@@ -962,8 +890,7 @@ mod tests {
     #[test]
     fn installed_copilot_batch_launcher_can_find_its_node_runtime() {
         let search_path = provider_search_path();
-        let Ok(program) = resolve_real_cli(ProviderKind::Copilot, true, &search_path.directories)
-        else {
+        let Ok(program) = resolve_real_cli(ProviderKind::Copilot, &search_path.directories) else {
             return;
         };
         let mut command = platform_command(&program, &[OsString::from("--version")]);

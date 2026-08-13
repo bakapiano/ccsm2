@@ -1,7 +1,7 @@
 {
   "name": "ccsm2",
   "private": true,
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "dev": "pnpm desktop:dev",

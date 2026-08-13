@@ -63,7 +63,7 @@ ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `Windows
 - `ccsm-desktop.exe`使用Windows Console subsystem，使同一构建可作为ConPTY provider与Hook reporter运行。
 - 桌面模式在启动后通过`FreeConsole`解除仅属于自身的console；从现有Windows Terminal启动时保留父console。
 - 每个agent runtime创建中性`ccsm-provider.exe`与`ccsm-hook.exe`硬链接。`CCSM_PROVIDER`选择Claude、Codex或Copilot。
-- 中性shim目录加入PATH。真实`codex`/`claude`名称保持可解析到`cxp`/`ccp`及其底层CLI。
+- 中性shim目录加入PATH。Provider resolver在shim目录之外解析原生`codex`、`claude`和`copilot`命令。
 - Provider、wrapper和真实CLI继承同一个ConPTY，所有stdin/stdout/stderr保持在CCSM Tab内。
 
 ## 依赖纪律

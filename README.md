@@ -27,7 +27,7 @@ Architecture starts at [specs/README.md](specs/README.md).
 
 Download the Windows x64 ZIP from [GitHub Releases](https://github.com/bakapiano/ccsm2/releases), extract the complete archive, and run `ccsm-desktop.exe`. Keep the bundled `conpty/` directory beside the executable.
 
-Windows 10 version 1809 or newer is required. The Microsoft Edge WebView2 Runtime and the CLI providers you want to use (`codex`/`cxp` and `claude`/`ccp`) must be available on the machine.
+Windows 10 version 1809 or newer is required. The Microsoft Edge WebView2 Runtime and the CLI providers you want to use (`codex`, `claude`, and `copilot`) must be available on the machine.
 
 Build a release archive locally with:
 
