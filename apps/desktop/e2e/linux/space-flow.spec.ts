@@ -34,6 +34,39 @@ interface SpaceUiState {
   }>;
 }
 
+interface GitCacheCounts {
+  repositories: number;
+  statuses: number;
+}
+
+function gitCacheCounts(): GitCacheCounts {
+  const dataDirectory = process.env.CCSM_DATA_DIR;
+  if (!dataDirectory) {
+    throw new Error("CCSM_DATA_DIR is required for Git cache assertions");
+  }
+  const output = execFileSync(
+    "sqlite3",
+    [
+      join(dataDirectory, "data.db"),
+      "select (select count(*) from git_repositories_cache) || '|' || (select count(*) from git_status_cache);",
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  const [repositories, statuses] = output
+    .split("|")
+    .map((value) => Number.parseInt(value, 10));
+  return { repositories, statuses };
+}
+
+async function visibleGitStatus(): Promise<string> {
+  return browser.execute(() => {
+    const panel = Array.from(
+      document.querySelectorAll<HTMLElement>(".git-panel"),
+    ).find((candidate) => candidate.checkVisibility());
+    return panel?.querySelector(".git-status")?.textContent ?? "";
+  });
+}
+
 async function spaceUiState(): Promise<SpaceUiState> {
   return browser.execute(() => {
     const terminal = document.querySelector<HTMLElement>(".terminal-panel");
@@ -192,6 +225,12 @@ describe("Linux Space workflow", () => {
     await waitForActiveRuntime();
     await waitForBrowserReady();
     const created = await spaceUiState();
+    const hiddenGitCache = gitCacheCounts();
+    expect(hiddenGitCache).toEqual({ repositories: 0, statuses: 0 });
+    writeFileSync(
+      join(artifactDirectory, "git-cache-hidden.json"),
+      `${JSON.stringify(hiddenGitCache, null, 2)}\n`,
+    );
     writeFileSync(
       join(artifactDirectory, "space-created.json"),
       `${JSON.stringify(created, null, 2)}\n`,
@@ -242,5 +281,30 @@ describe("Linux Space workflow", () => {
     captureWslgWindow("space-switched-again-composited.png");
     expect(switchedAgain.activeRoot).toBe(targetSpaceRoot);
     expect(switchedAgain.activeRuntimeId).toBe(created.activeRuntimeId);
+
+    recordStep("activate Git Tab");
+    await $(".ccsm-tab[data-tab-kind='git']").click();
+    await $(".git-panel").waitForDisplayed();
+    await browser.waitUntil(
+      async () => /\d+ repos/.test(await visibleGitStatus()),
+      {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: "visible Git scan did not finish",
+      },
+    );
+    const visibleGitCache = gitCacheCounts();
+    expect(visibleGitCache.repositories).toBeGreaterThan(0);
+    writeFileSync(
+      join(artifactDirectory, "git-cache-visible.json"),
+      `${JSON.stringify(
+        { ...visibleGitCache, status: await visibleGitStatus() },
+        null,
+        2,
+      )}\n`,
+    );
+    recordStep("visible Git scan completed");
+    captureWslgWindow("git-visible-composited.png");
+    recordStep("visible Git screenshot captured");
   });
 });
