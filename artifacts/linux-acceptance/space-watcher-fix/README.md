@@ -22,7 +22,7 @@ This caused four connected symptoms:
 3. switching Space waited on the same activation path;
 4. a restart reopened the persisted active root and repeated the wait.
 
-The fix gives Linux a non-recursive root watch during activation. File
+The fix gives every platform a non-recursive root watch during activation. File
 Explorer directory loads, File Editor reads/writes, and Git repository
 coordination materialize bounded non-recursive scopes. The polling fallback
 uses the same scopes.
@@ -90,3 +90,8 @@ same application commands and assertions.
 - `pnpm --filter @ccsm/desktop check`: passed;
 - frontend tests: `252 passed, 0 failed`;
 - Rustfmt, Prettier, and `git diff --check`: passed.
+
+## Cross-platform extension
+
+The same bounded watcher behavior passed native Windows adapter and desktop
+acceptance. See the [Windows evidence bundle](../../windows-acceptance/space-watcher-fix/README.md).

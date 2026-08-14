@@ -28,7 +28,14 @@ impl FileWatchBackend for RejectRootWatcher {
         root: &RootDescriptor,
         _sink: FileWatchEventSink,
     ) -> BackendResult<Box<dyn FileWatchHandle>> {
-        if PathBuf::from(&root.root_path) == self.rejected_root {
+        let requested_root = PathBuf::from(&root.root_path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(&root.root_path));
+        let rejected_root = self
+            .rejected_root
+            .canonicalize()
+            .unwrap_or_else(|_| self.rejected_root.clone());
+        if requested_root == rejected_root {
             return Err(BackendError::Platform("forced watch failure".into()));
         }
         Ok(Box::new(NoopWatchHandle))
@@ -143,7 +150,7 @@ fn switch_space_restores_the_previous_active_space_when_root_activation_fails() 
 }
 
 #[test]
-fn active_directory_and_file_reads_materialize_linux_watch_scopes() {
+fn active_directory_and_file_reads_materialize_watch_scopes() {
     let database_directory = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     let nested = root.path().join("nested");

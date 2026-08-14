@@ -173,7 +173,7 @@ fn watcher_keeps_accessible_files_live_with_an_inaccessible_descendant() {
     std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700)).unwrap();
     assert!(
         observed,
-        "watcher did not report accessible.txt after its recursive fallback"
+        "watcher did not report accessible.txt from the shallow root scope"
     );
 }
 

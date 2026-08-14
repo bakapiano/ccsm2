@@ -158,14 +158,7 @@ impl FileWatchBackend for NotifyFileWatchBackend {
 }
 
 fn initial_watch_mode() -> RecursiveMode {
-    #[cfg(target_os = "linux")]
-    {
-        RecursiveMode::NonRecursive
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        RecursiveMode::Recursive
-    }
+    RecursiveMode::NonRecursive
 }
 
 fn watch_event_handler(
@@ -238,9 +231,8 @@ mod tests {
 
     use super::{initial_watch_mode, is_redundant_directory_modify, is_transient_git_scan_path};
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn linux_materializes_scoped_watches_from_a_shallow_root() {
+    fn starts_every_platform_with_a_shallow_root_watch() {
         assert_eq!(initial_watch_mode(), notify::RecursiveMode::NonRecursive);
     }
 
