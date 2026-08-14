@@ -17,6 +17,18 @@ After fix:
 - final active root: /mnt/d/ccsmv2-linux
 - both CLI sessions desired state: running
 
+Extracted Ubuntu Release:
+- source: v0.1.0-beta.2-11-gf46345a
+- archive bytes: 3201399
+- archive SHA256: 96e253ea94390aad9d11f0528c0bc13e3f134355a9db44dce9abc2a4ba8fe78c
+- binary SHA256: 36d556f12a8e43ebf9aec6440a1d5991a5cdd17962030b50b8e800682f546f51
+- cold start reached ready within four seconds
+- create lib.user-is-merged: 164 ms
+- switch to desktop: 154 ms
+- switch again to lib.user-is-merged: 105 ms
+- node_modules file descriptors after final switch: 0
+- final Browser: WebKitGTK ready and visible
+
 Gates:
 - Rust workspace tests passed
 - Rust workspace check passed

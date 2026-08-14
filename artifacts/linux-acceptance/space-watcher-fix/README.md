@@ -43,6 +43,26 @@ embedded production frontend, isolated `CCSM_DATA_DIR`.
 - SQLite retained both layouts, both desired-running CLI sessions, and the
   final active Space.
 
+## Extracted Release acceptance
+
+The final Ubuntu archive was built from fix commit `f46345a` and extracted to
+a fresh directory before launch.
+
+- source revision: `v0.1.0-beta.2-11-gf46345a`;
+- archive bytes: `3201399`;
+- archive SHA-256:
+  `96e253ea94390aad9d11f0528c0bc13e3f134355a9db44dce9abc2a4ba8fe78c`;
+- extracted binary SHA-256:
+  `36d556f12a8e43ebf9aec6440a1d5991a5cdd17962030b50b8e800682f546f51`;
+- full repository cold start: ready within the four-second capture window;
+- opened `node_modules` file descriptors after ready: `0`;
+- create `lib.user-is-merged`: `164 ms`;
+- switch to `desktop`: `154 ms`;
+- switch again to `lib.user-is-merged`: `105 ms`;
+- final active root: `/mnt/d/ccsmv2-linux`;
+- final Browser: `WebKitGTK · ready`, visible;
+- both CLI sessions: desired state `running`.
+
 The desktop state transitions were exercised through the native Tauri
 WebDriver protocol. The repository's WDIO entrypoint was also attempted; its
 Node process remained in WSL `p9_client_rpc` while loading dependencies from
@@ -57,6 +77,8 @@ same application commands and assertions.
 - [Created `lib.user-is-merged`](after-created-composited.png)
 - [Switched back to `desktop`](after-switched-back-composited.png)
 - [Switched again to `lib.user-is-merged`](after-switched-again-composited.png)
+- [Extracted Release cold start at four seconds](release-cold-start-4s-composited.png)
+- [Extracted Release after bidirectional switch](release-after-switched-again-composited.png)
 
 ## Automated gates
 
