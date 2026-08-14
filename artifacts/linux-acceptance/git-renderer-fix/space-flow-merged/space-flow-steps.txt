@@ -1,0 +1,13 @@
+2026-08-14T09:46:35.690Z open directory picker
+2026-08-14T09:46:35.885Z directory picker opened
+2026-08-14T09:46:35.915Z directory path selected
+2026-08-14T09:46:35.995Z Space name dialog opened
+2026-08-14T09:46:36.097Z submit Space creation
+2026-08-14T09:46:36.127Z Space creation click returned
+2026-08-14T09:46:36.218Z Space name dialog closed
+2026-08-14T09:46:38.761Z new Space active
+2026-08-14T09:46:39.075Z initial Space active again
+2026-08-14T09:46:41.013Z new Space active again
+2026-08-14T09:46:43.014Z activate Git Tab
+2026-08-14T09:46:47.854Z visible Git scan completed
+2026-08-14T09:46:49.705Z visible Git screenshot captured

@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{
     dto::{
@@ -97,6 +100,14 @@ pub trait FileSystemBackend: Send + Sync {
 }
 
 pub trait GitBackend: Send + Sync {
+    /// Selects the root whose scans may continue. Implementations cancel work
+    /// that belongs to a previously selected root.
+    fn activate_root(&self, _root_id: &str) -> BackendResult<()> {
+        Ok(())
+    }
+
+    fn cancel_pending(&self) {}
+
     fn scan(&self, root: &RootDescriptor, scan_generation: u32) -> BackendResult<GitSnapshotDto>;
     fn diff(
         &self,
@@ -114,7 +125,11 @@ pub struct FileWatchEvent {
 
 pub type FileWatchEventSink = Arc<dyn Fn(FileWatchEvent) + Send + Sync + 'static>;
 
-pub trait FileWatchHandle: Send + Sync {}
+pub trait FileWatchHandle: Send + Sync {
+    fn add_scopes(&self, _relative_paths: &[PathBuf]) -> BackendResult<()> {
+        Ok(())
+    }
+}
 
 pub trait FileWatchBackend: Send + Sync {
     fn watch(

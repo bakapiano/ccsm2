@@ -1,8 +1,11 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use ccsm_core::{
     AppBackend,
-    dto::{CreateSpaceRequest, ListDirectoryRequest},
+    dto::{CreateSpaceRequest, ListDirectoryRequest, ReadFileRequest},
     error::{BackendError, BackendResult},
     ports::{
         FileWatchBackend, FileWatchEventSink, FileWatchHandle, PtyBackend, PtyEventSink,
@@ -25,10 +28,47 @@ impl FileWatchBackend for RejectRootWatcher {
         root: &RootDescriptor,
         _sink: FileWatchEventSink,
     ) -> BackendResult<Box<dyn FileWatchHandle>> {
-        if PathBuf::from(&root.root_path) == self.rejected_root {
+        let requested_root = PathBuf::from(&root.root_path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(&root.root_path));
+        let rejected_root = self
+            .rejected_root
+            .canonicalize()
+            .unwrap_or_else(|_| self.rejected_root.clone());
+        if requested_root == rejected_root {
             return Err(BackendError::Platform("forced watch failure".into()));
         }
         Ok(Box::new(NoopWatchHandle))
+    }
+}
+
+struct RecordingWatchHandle {
+    scopes: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+impl FileWatchHandle for RecordingWatchHandle {
+    fn add_scopes(&self, relative_paths: &[PathBuf]) -> BackendResult<()> {
+        self.scopes
+            .lock()
+            .unwrap()
+            .extend_from_slice(relative_paths);
+        Ok(())
+    }
+}
+
+struct RecordingWatcher {
+    scopes: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+impl FileWatchBackend for RecordingWatcher {
+    fn watch(
+        &self,
+        _root: &RootDescriptor,
+        _sink: FileWatchEventSink,
+    ) -> BackendResult<Box<dyn FileWatchHandle>> {
+        Ok(Box::new(RecordingWatchHandle {
+            scopes: Arc::clone(&self.scopes),
+        }))
     }
 }
 
@@ -107,6 +147,45 @@ fn switch_space_restores_the_previous_active_space_when_root_activation_fails() 
             relative_path: String::new(),
         })
         .unwrap();
+}
+
+#[test]
+fn active_directory_and_file_reads_materialize_watch_scopes() {
+    let database_directory = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let nested = root.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join("file.txt"), "content").unwrap();
+    let store =
+        Arc::new(SqliteStateStore::open(&database_directory.path().join("data.db")).unwrap());
+    let scopes = Arc::new(Mutex::new(Vec::new()));
+    let backend = AppBackend::new(
+        store.clone(),
+        Arc::new(UnusedPtyBackend),
+        Arc::new(LocalFileSystemBackend::new()),
+        Arc::new(CommandGitBackend::new()),
+        Arc::new(RecordingWatcher {
+            scopes: Arc::clone(&scopes),
+        }),
+        Arc::new(|_| {}),
+    );
+    let initial = backend.bootstrap(root.path()).unwrap();
+
+    backend
+        .list_directory(ListDirectoryRequest {
+            space_id: initial.active_space_id.clone(),
+            relative_path: "nested".into(),
+        })
+        .unwrap();
+    backend
+        .read_file(ReadFileRequest {
+            space_id: initial.active_space_id,
+            relative_path: "nested/file.txt".into(),
+        })
+        .unwrap();
+
+    let scopes = scopes.lock().unwrap();
+    assert!(scopes.iter().any(|scope| scope == &PathBuf::from("nested")));
 }
 
 fn backend(store: Arc<SqliteStateStore>, rejected_root: PathBuf) -> Arc<AppBackend> {

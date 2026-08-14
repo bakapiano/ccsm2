@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -41,11 +41,65 @@ impl Default for NotifyFileWatchBackend {
 }
 
 struct NotifyWatchHandle {
-    _native_watcher: Option<RecommendedWatcher>,
-    _polling_watcher: Option<PollWatcher>,
+    root_path: PathBuf,
+    ignored_paths: Vec<PathBuf>,
+    state: Mutex<NotifyWatchState>,
 }
 
-impl FileWatchHandle for NotifyWatchHandle {}
+enum NotifyWatchDriver {
+    Native(RecommendedWatcher),
+    Polling(PollWatcher),
+}
+
+impl NotifyWatchDriver {
+    fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+        match self {
+            Self::Native(watcher) => watcher.watch(path, mode),
+            Self::Polling(watcher) => watcher.watch(path, mode),
+        }
+    }
+}
+
+struct NotifyWatchState {
+    driver: NotifyWatchDriver,
+    watched_paths: BTreeSet<PathBuf>,
+}
+
+impl FileWatchHandle for NotifyWatchHandle {
+    fn add_scopes(&self, relative_paths: &[PathBuf]) -> BackendResult<()> {
+        let candidates = relative_paths
+            .iter()
+            .filter_map(|relative_path| self.root_path.join(relative_path).canonicalize().ok())
+            .filter(|path| path.is_dir() && path.starts_with(&self.root_path))
+            .filter(|path| {
+                !self
+                    .ignored_paths
+                    .iter()
+                    .any(|ignored| path.starts_with(ignored))
+            })
+            .collect::<BTreeSet<_>>();
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| BackendError::Platform("filesystem watcher scope lock poisoned".into()))?;
+        for path in candidates {
+            if state.watched_paths.contains(&path) {
+                continue;
+            }
+            state
+                .driver
+                .watch(&path, RecursiveMode::NonRecursive)
+                .map_err(|error| {
+                    BackendError::Platform(format!(
+                        "watch scoped Space directory {}: {error}",
+                        path.display()
+                    ))
+                })?;
+            state.watched_paths.insert(path);
+        }
+        Ok(())
+    }
+}
 
 impl FileWatchBackend for NotifyFileWatchBackend {
     fn watch(
@@ -67,16 +121,14 @@ impl FileWatchBackend for NotifyFileWatchBackend {
             Config::default(),
         )
         .map_err(|error| BackendError::Platform(format!("create filesystem watcher: {error}")))?;
-        match native_watcher.watch(&root_path, RecursiveMode::Recursive) {
-            Ok(()) => Ok(Box::new(NotifyWatchHandle {
-                _native_watcher: Some(native_watcher),
-                _polling_watcher: None,
-            })),
+        let initial_mode = initial_watch_mode();
+        let driver = match native_watcher.watch(&root_path, initial_mode) {
+            Ok(()) => NotifyWatchDriver::Native(native_watcher),
             Err(native_error) => {
                 drop(native_watcher);
                 let config = Config::default().with_poll_interval(POLLING_FALLBACK_INTERVAL);
                 let mut polling_watcher = PollWatcher::new(
-                    watch_event_handler(root_path.clone(), ignored_paths, sink),
+                    watch_event_handler(root_path.clone(), ignored_paths.clone(), sink),
                     config,
                 )
                 .map_err(|error| {
@@ -85,19 +137,28 @@ impl FileWatchBackend for NotifyFileWatchBackend {
                     ))
                 })?;
                 polling_watcher
-                    .watch(&root_path, RecursiveMode::Recursive)
+                    .watch(&root_path, initial_mode)
                     .map_err(|error| {
                         BackendError::Platform(format!(
                             "watch Space root: {native_error}; polling fallback: {error}"
                         ))
                     })?;
-                Ok(Box::new(NotifyWatchHandle {
-                    _native_watcher: None,
-                    _polling_watcher: Some(polling_watcher),
-                }))
+                NotifyWatchDriver::Polling(polling_watcher)
             }
-        }
+        };
+        Ok(Box::new(NotifyWatchHandle {
+            root_path: root_path.clone(),
+            ignored_paths,
+            state: Mutex::new(NotifyWatchState {
+                driver,
+                watched_paths: BTreeSet::from([root_path]),
+            }),
+        }))
     }
+}
+
+fn initial_watch_mode() -> RecursiveMode {
+    RecursiveMode::NonRecursive
 }
 
 fn watch_event_handler(
@@ -168,7 +229,12 @@ mod tests {
         event::{DataChange, ModifyKind, RenameMode},
     };
 
-    use super::{is_redundant_directory_modify, is_transient_git_scan_path};
+    use super::{initial_watch_mode, is_redundant_directory_modify, is_transient_git_scan_path};
+
+    #[test]
+    fn starts_every_platform_with_a_shallow_root_watch() {
+        assert_eq!(initial_watch_mode(), notify::RecursiveMode::NonRecursive);
+    }
 
     #[test]
     fn filters_git_status_lock_churn_without_hiding_meaningful_changes() {

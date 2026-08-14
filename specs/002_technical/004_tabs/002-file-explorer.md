@@ -33,7 +33,8 @@ AppBackend将`space_id`解析为`root_id`。File Explorer使用active Space的Ac
 - Provider mount时将root和expanded directories提交为当前Tab的watch scope。
 - Expand/Collapse coalesce后替换整个scope；provider unmount或close时clear scope。
 - ActiveRootContext合并全部File Explorer Tab scopes，并交给FileWatchAdapter。
-- Windows/macOS adapter可以使用root-level recursive watch；Linux adapter可以从scope materialize所需inotify watches。
+- 各平台adapter从Provider scope物化所需的native watches。
+- 各平台激活Space时同步登记root的non-recursive watch；目录列表、文件读取和Git repository协调按需物化额外scope。polling fallback使用相同的bounded scopes。
 - Watch scope仅控制platform watcher范围；文件事件作为`AppEvent`通过统一`DesktopEventStream`发送。
 
 ## Path policy

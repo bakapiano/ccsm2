@@ -48,6 +48,17 @@ public static class CcsmWslgCaptureNative
 
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(
+        IntPtr window,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags
+    );
 }
 '@
 
@@ -101,6 +112,15 @@ if (-not $target) {
 
 [void][CcsmWslgCaptureNative]::ShowWindow($target.Window, 9)
 [void][CcsmWslgCaptureNative]::SetForegroundWindow($target.Window)
+[void][CcsmWslgCaptureNative]::SetWindowPos(
+    $target.Window,
+    [IntPtr](-1),
+    0,
+    0,
+    0,
+    0,
+    0x0043
+)
 Start-Sleep -Milliseconds 250
 
 $rect = [CcsmWslgCaptureNative+Rect]::new()
@@ -127,6 +147,15 @@ try {
 finally {
     $graphics.Dispose()
     $bitmap.Dispose()
+    [void][CcsmWslgCaptureNative]::SetWindowPos(
+        $target.Window,
+        [IntPtr](-2),
+        0,
+        0,
+        0,
+        0,
+        0x0043
+    )
 }
 
 Write-Output $OutputPath

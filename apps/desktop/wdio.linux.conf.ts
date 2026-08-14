@@ -15,18 +15,27 @@ process.env.CCSM_E2E_ARTIFACT_DIR = artifactDirectory;
 
 let tauriDriver: ChildProcess | undefined;
 
-async function waitForDriver(): Promise<void> {
+async function waitForEndpoint(url: string, name: string): Promise<void> {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch("http://127.0.0.1:4444/status");
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(1_000),
+      });
       if (response.ok) return;
     } catch {
-      // The native driver is still starting.
+      // The driver is still starting.
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error("tauri-driver did not become ready on port 4444");
+  throw new Error(`${name} did not become ready at ${url}`);
+}
+
+async function waitForDrivers(): Promise<void> {
+  await Promise.all([
+    waitForEndpoint("http://127.0.0.1:4444/status", "tauri-driver"),
+    waitForEndpoint("http://127.0.0.1:4445/status", "WebKitWebDriver"),
+  ]);
 }
 
 export const config: WebdriverIO.Config = {
@@ -73,7 +82,7 @@ export const config: WebdriverIO.Config = {
     );
     tauriDriver.stdout?.pipe(stdout);
     tauriDriver.stderr?.pipe(stdout);
-    await waitForDriver();
+    await waitForDrivers();
   },
   onComplete: async () => {
     tauriDriver?.kill("SIGTERM");

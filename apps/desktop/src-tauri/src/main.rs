@@ -1,3 +1,5 @@
+mod linux_renderer;
+
 fn main() {
     if let Some(provider) = ccsm_platform::provider_from_executable() {
         std::process::exit(ccsm_platform::run_cli_shim(provider));
@@ -19,6 +21,7 @@ fn main() {
         let pgid = pgid.parse::<i32>().unwrap_or_default();
         std::process::exit(ccsm_platform::run_process_watchdog(pgid));
     }
+    linux_renderer::configure_for_desktop();
     if let Err(error) = ccsm_platform::install_process_tree_guard() {
         eprintln!("CCSM process-tree containment failed: {error}");
         std::process::exit(1);

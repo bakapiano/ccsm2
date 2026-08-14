@@ -1,0 +1,37 @@
+PASS: Linux large-root Space creation and bidirectional switching
+
+Before fix:
+- initial Space activation synchronously traversed node_modules/.pnpm
+- UI remained at Opening Space for about five minutes
+- recursive polling continued scanning the full tree at a two-second interval
+- observed process CPU reached 49.6 percent during repeated traversal
+
+After fix:
+- full repository cold start reached ready within the four-second capture window
+- node_modules file descriptors after ready: 0
+- create lib.user-is-merged: 193 ms
+- switch to desktop: 172-411 ms
+- switch to lib.user-is-merged: 133-152 ms
+- final status: ready
+- final Browser status: WebKitGTK ready and visible
+- final active root: /mnt/d/ccsmv2-linux
+- both CLI sessions desired state: running
+
+Extracted Ubuntu Release:
+- source: v0.1.0-beta.2-11-gf46345a
+- archive bytes: 3201399
+- archive SHA256: 96e253ea94390aad9d11f0528c0bc13e3f134355a9db44dce9abc2a4ba8fe78c
+- binary SHA256: 36d556f12a8e43ebf9aec6440a1d5991a5cdd17962030b50b8e800682f546f51
+- cold start reached ready within four seconds
+- create lib.user-is-merged: 164 ms
+- switch to desktop: 154 ms
+- switch again to lib.user-is-merged: 105 ms
+- node_modules file descriptors after final switch: 0
+- final Browser: WebKitGTK ready and visible
+
+Gates:
+- Rust workspace tests passed
+- Rust workspace check passed
+- TypeScript check passed
+- frontend 252 passed, 0 failed
+- formatting and diff checks passed

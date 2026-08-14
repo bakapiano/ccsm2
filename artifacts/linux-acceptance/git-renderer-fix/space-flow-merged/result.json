@@ -1,0 +1,35 @@
+{
+  "testedCommit": "9c5e22fd3e89a74566feef0adca00d485adf3502",
+  "platform": {
+    "environment": "WSL 2.6.3.0",
+    "distribution": "Ubuntu 24.04.4 LTS",
+    "wslg": "1.0.71"
+  },
+  "binarySha256": "70C43FA588AB4D62D7AA0B255956538BA253836895DFA95DAA4AED1B5B5F6657",
+  "renderer": {
+    "mode": "auto",
+    "selected": "d3d12",
+    "diagnostic": "CCSM Linux renderer: d3d12 (Auto; WSLg D3D12 prerequisites are available)"
+  },
+  "test": {
+    "passing": 1,
+    "scenarioSeconds": 16.1
+  },
+  "spaceFlow": {
+    "createdName": "lib.user-is-merged",
+    "createMs": 2664,
+    "switchToInitialMs": 314,
+    "switchBackMs": 1938,
+    "nativeChildWebViewVisible": true
+  },
+  "gitWhileHidden": {
+    "repositories": 0,
+    "statuses": 0
+  },
+  "gitAfterVisible": {
+    "repositories": 1,
+    "statuses": 1,
+    "status": "1 repos · 28 changes",
+    "scanMs": 4840
+  }
+}

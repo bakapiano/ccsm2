@@ -20,6 +20,8 @@ import type { GitFileDiffDto } from "../generated/GitFileDiffDto";
 import type { GitRepositoryStatusDto } from "../generated/GitRepositoryStatusDto";
 import type { GitSnapshotDto } from "../generated/GitSnapshotDto";
 import type { TabDto } from "../generated/TabDto";
+import { GitScanVisibility } from "../git-scan-visibility";
+import { observePanelVisibility } from "../panel-visibility";
 import { gitChangeNeedsScan } from "../scan-routing";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
@@ -77,6 +79,8 @@ class GitPanel implements IContentRenderer {
   #filter = "";
   #disposed = false;
   #unlisten: (() => void) | null = null;
+  #visibilitySubscription: { dispose(): void } | null = null;
+  readonly #scanVisibility = new GitScanVisibility();
   #loadGeneration = 0;
   #scrollFrame: number | null = null;
   #persistTimer: number | null = null;
@@ -87,7 +91,7 @@ class GitPanel implements IContentRenderer {
     this.#client = client;
     this.#state = parseState(tab.state);
     this.#scanner = new BackgroundScanController(
-      (manual) => this.#refresh(manual),
+      (manual) => this.#runScan(manual),
       (error) => {
         if (!this.#disposed)
           this.#setStatus(`paused · ${describeError(error)}`);
@@ -97,7 +101,7 @@ class GitPanel implements IContentRenderer {
         cooldownMs: 3_000,
         failureThreshold: 2,
         failureCooldownMs: 15_000,
-        timeoutMs: 10_000,
+        timeoutMs: 12_000,
       },
     );
     this.element.className = "git-panel";
@@ -125,7 +129,7 @@ class GitPanel implements IContentRenderer {
     `;
   }
 
-  init(_parameters: GroupPanelPartInitParameters): void {
+  init(parameters: GroupPanelPartInitParameters): void {
     this.#status = required<HTMLElement>(this.element, ".git-status");
     this.#summaryCount = required<HTMLElement>(
       this.element,
@@ -143,9 +147,20 @@ class GitPanel implements IContentRenderer {
       ".git-filter input",
     );
     this.#filterInput = filterInput;
+    this.#visibilitySubscription = observePanelVisibility(
+      parameters.api,
+      (isVisible) => {
+        if (this.#scanVisibility.setVisible(isVisible)) {
+          this.#scanner.request();
+        }
+      },
+    );
     this.element
       .querySelector(".git-refresh")
-      ?.addEventListener("click", () => this.#scanner.request(true));
+      ?.addEventListener("click", () => {
+        this.#scanVisibility.markDirty();
+        this.#scanner.request(true);
+      });
     filterInput.addEventListener("input", () => {
       this.#filter = filterInput.value;
       this.#applyFilter();
@@ -159,7 +174,7 @@ class GitPanel implements IContentRenderer {
           event.kind === "filesystem.changed" &&
           gitChangeNeedsScan(event.payload, this.#snapshot)
         ) {
-          this.#scanner.request();
+          if (this.#scanVisibility.markDirty()) this.#scanner.request();
         }
       })
       .then((unlisten) => {
@@ -179,6 +194,7 @@ class GitPanel implements IContentRenderer {
     this.#disposed = true;
     this.#loadGeneration += 1;
     this.#unlisten?.();
+    this.#visibilitySubscription?.dispose();
     this.#unlisten = null;
     this.#scanner.dispose();
     if (this.#scrollFrame !== null) cancelAnimationFrame(this.#scrollFrame);
@@ -199,7 +215,15 @@ class GitPanel implements IContentRenderer {
     } catch {
       // The refresh below reconciles an empty or stale cache.
     }
-    this.#scanner.request(true);
+    if (this.#scanVisibility.setReady()) this.#scanner.request();
+  }
+
+  async #runScan(manual: boolean): Promise<void> {
+    const revision = this.#scanVisibility.beginScan();
+    await this.#refresh(manual);
+    if (!this.#disposed && this.#scanVisibility.completeScan(revision)) {
+      this.#scanner.request();
+    }
   }
 
   async #refresh(manual: boolean): Promise<void> {

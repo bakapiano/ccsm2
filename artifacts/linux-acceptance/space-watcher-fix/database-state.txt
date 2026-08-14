@@ -1,0 +1,11 @@
+name                display_path                      layout_revision  active
+------------------  --------------------------------  ---------------  ------
+desktop             /mnt/d/ccsmv2-linux/apps/desktop  4                0
+lib.user-is-merged  /mnt/d/ccsmv2-linux               2                1
+
+name                desired_state
+------------------  -------------
+desktop             running
+lib.user-is-merged  running
+
+Source: extracted Ubuntu Release v0.1.0-beta.2-11-gf46345a

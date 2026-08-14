@@ -1,4 +1,9 @@
-use std::{path::Path, process::Command, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Arc,
+    time::Duration,
+};
 
 use ccsm_core::ports::{FileSystemBackend, FileWatchBackend, GitBackend, RootDescriptor};
 use ccsm_platform::{CommandGitBackend, LocalFileSystemBackend, NotifyFileWatchBackend};
@@ -195,6 +200,45 @@ fn watcher_reports_space_relative_paths() {
     assert!(observed, "watcher did not report watched.txt");
 }
 
+#[test]
+fn watcher_reports_changes_from_a_materialized_nested_scope() {
+    let directory = tempfile::tempdir().unwrap();
+    let nested = directory.path().join("nested").join("deeper");
+    std::fs::create_dir_all(&nested).unwrap();
+    let root = descriptor(directory.path());
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let handle = NotifyFileWatchBackend::new()
+        .watch(
+            &root,
+            Arc::new(move |event| {
+                let _ = sender.send(event);
+            }),
+        )
+        .unwrap();
+    handle
+        .add_scopes(&[PathBuf::from("nested/deeper")])
+        .unwrap();
+
+    std::fs::write(nested.join("watched.txt"), "changed").unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut observed = false;
+    while std::time::Instant::now() < deadline {
+        let Ok(event) = receiver.recv_timeout(Duration::from_millis(500)) else {
+            continue;
+        };
+        if event
+            .relative_paths
+            .iter()
+            .any(|path| path == "nested/deeper/watched.txt")
+        {
+            observed = true;
+            break;
+        }
+    }
+    assert!(observed, "watcher did not report the scoped nested file");
+}
+
 #[cfg(unix)]
 #[test]
 fn watcher_keeps_accessible_files_live_with_an_inaccessible_descendant() {
@@ -237,7 +281,7 @@ fn watcher_keeps_accessible_files_live_with_an_inaccessible_descendant() {
     std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700)).unwrap();
     assert!(
         observed,
-        "watcher did not report accessible.txt after its recursive fallback"
+        "watcher did not report accessible.txt from the shallow root scope"
     );
 }
 

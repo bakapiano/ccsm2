@@ -4,6 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const artifactDirectory = process.env.CCSM_E2E_ARTIFACT_DIR!;
+const targetSpaceRoot = process.env.CCSM_E2E_TARGET_SPACE_ROOT ?? "/etc";
+const targetSpaceName = process.env.CCSM_E2E_TARGET_SPACE_NAME ?? "ETC E2E";
 const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../../..",
@@ -30,6 +32,39 @@ interface SpaceUiState {
     root: string;
     active: boolean;
   }>;
+}
+
+interface GitCacheCounts {
+  repositories: number;
+  statuses: number;
+}
+
+function gitCacheCounts(): GitCacheCounts {
+  const dataDirectory = process.env.CCSM_DATA_DIR;
+  if (!dataDirectory) {
+    throw new Error("CCSM_DATA_DIR is required for Git cache assertions");
+  }
+  const output = execFileSync(
+    "sqlite3",
+    [
+      join(dataDirectory, "data.db"),
+      "select (select count(*) from git_repositories_cache) || '|' || (select count(*) from git_status_cache);",
+    ],
+    { encoding: "utf8" },
+  ).trim();
+  const [repositories, statuses] = output
+    .split("|")
+    .map((value) => Number.parseInt(value, 10));
+  return { repositories, statuses };
+}
+
+async function visibleGitStatus(): Promise<string> {
+  return browser.execute(() => {
+    const panel = Array.from(
+      document.querySelectorAll<HTMLElement>(".git-panel"),
+    ).find((candidate) => candidate.checkVisibility());
+    return panel?.querySelector(".git-status")?.textContent ?? "";
+  });
 }
 
 async function spaceUiState(): Promise<SpaceUiState> {
@@ -155,22 +190,22 @@ describe("Linux Space workflow", () => {
     const picker = await $(".directory-dialog");
     await picker.waitForDisplayed();
     recordStep("directory picker opened");
-    await browser.execute(() => {
+    await browser.execute((rootPath) => {
       const input =
         document.querySelector<HTMLInputElement>(".directory-address");
       if (!input) throw new Error("directory address is missing");
-      input.value = "/etc";
+      input.value = rootPath;
       document
         .querySelector<HTMLFormElement>(".directory-address-form")
         ?.dispatchEvent(
           new SubmitEvent("submit", { bubbles: true, cancelable: true }),
         );
-    });
+    }, targetSpaceRoot);
     const useFolder = await $(".directory-use");
     await browser.waitUntil(async () => useFolder.isEnabled(), {
       timeout: 15_000,
       interval: 200,
-      timeoutMsg: "/etc did not become selectable",
+      timeoutMsg: `${targetSpaceRoot} did not become selectable`,
     });
     recordStep("directory path selected");
     await useFolder.click();
@@ -179,17 +214,23 @@ describe("Linux Space workflow", () => {
     await nameDialog.waitForDisplayed();
     recordStep("Space name dialog opened");
     const nameInput = await $(".app-dialog-field input");
-    await nameInput.setValue("ETC E2E");
+    await nameInput.setValue(targetSpaceName);
     recordStep("submit Space creation");
     await $("[data-dialog-action='submit']").click();
     recordStep("Space creation click returned");
     await nameDialog.waitForDisplayed({ reverse: true });
     recordStep("Space name dialog closed");
 
-    await waitForActiveSpace("ETC E2E");
+    await waitForActiveSpace(targetSpaceName);
     await waitForActiveRuntime();
     await waitForBrowserReady();
     const created = await spaceUiState();
+    const hiddenGitCache = gitCacheCounts();
+    expect(hiddenGitCache).toEqual({ repositories: 0, statuses: 0 });
+    writeFileSync(
+      join(artifactDirectory, "git-cache-hidden.json"),
+      `${JSON.stringify(hiddenGitCache, null, 2)}\n`,
+    );
     writeFileSync(
       join(artifactDirectory, "space-created.json"),
       `${JSON.stringify(created, null, 2)}\n`,
@@ -219,13 +260,13 @@ describe("Linux Space workflow", () => {
     expect(switchedBack.activeRuntimeId).toBe(initial.activeRuntimeId);
 
     const createdSpace = switchedBack.spaces.find(
-      (space) => space.name === "ETC E2E",
+      (space) => space.name === targetSpaceName,
     );
     expect(createdSpace).toBeDefined();
     await $(
       `.space-row[data-space-id="${createdSpace!.id}"] .space-item`,
     ).click();
-    await waitForActiveSpace("ETC E2E");
+    await waitForActiveSpace(targetSpaceName);
     await waitForActiveRuntime();
     await waitForBrowserReady();
     recordStep("new Space active again");
@@ -238,7 +279,32 @@ describe("Linux Space workflow", () => {
       join(artifactDirectory, "space-switched-again-renderer.png"),
     );
     captureWslgWindow("space-switched-again-composited.png");
-    expect(switchedAgain.activeRoot).toBe("/etc");
+    expect(switchedAgain.activeRoot).toBe(targetSpaceRoot);
     expect(switchedAgain.activeRuntimeId).toBe(created.activeRuntimeId);
+
+    recordStep("activate Git Tab");
+    await $(".ccsm-tab[data-tab-kind='git']").click();
+    await $(".git-panel").waitForDisplayed();
+    await browser.waitUntil(
+      async () => /\d+ repos/.test(await visibleGitStatus()),
+      {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: "visible Git scan did not finish",
+      },
+    );
+    const visibleGitCache = gitCacheCounts();
+    expect(visibleGitCache.repositories).toBeGreaterThan(0);
+    writeFileSync(
+      join(artifactDirectory, "git-cache-visible.json"),
+      `${JSON.stringify(
+        { ...visibleGitCache, status: await visibleGitStatus() },
+        null,
+        2,
+      )}\n`,
+    );
+    recordStep("visible Git scan completed");
+    captureWslgWindow("git-visible-composited.png");
+    recordStep("visible Git screenshot captured");
   });
 });
