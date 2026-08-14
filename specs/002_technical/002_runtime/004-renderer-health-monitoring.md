@@ -166,7 +166,7 @@ window blur / focus
 
 ## Recovery policy
 
-Windows首版提供独立Rust/Win32 `Reload UI`按钮。按钮使用main窗口拥有的native tool window覆盖在右下角，并跟随owner的可见性与z-order；main窗口visible、focused且非minimized时显示，因此renderer无响应时仍可点击。
+Windows首版提供独立Rust/Win32 `Reload UI`按钮。按钮使用main窗口拥有的native tool window覆盖在右下角，并跟随owner的可见性与z-order；main窗口visible、focused且非minimized时显示，拖动或缩放期间隐藏并在操作结束后按最终位置显示，因此renderer无响应时仍可点击。
 
 手动按钮与自动恢复调用同一个Rust recovery path。手动恢复不受dirty editor guard和自动reload预算限制；执行reload前先写入`diagnostic.captured`，记录trigger、前一状态、pending/missed probe、dirty editor、live CLI和最近input ACK现场，再追加`recovery.requested`。
 

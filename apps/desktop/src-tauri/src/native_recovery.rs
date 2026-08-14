@@ -50,11 +50,13 @@ mod windows {
         System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
         UI::WindowsAndMessaging::{
             BN_CLICKED, BS_PUSHBUTTON, CreateWindowExW, DefWindowProcW, DestroyWindow,
-            DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowRect, HMENU, KillTimer,
-            MSG, PostQuitMessage, PostThreadMessageW, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE,
-            SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SendMessageW, SetTimer, SetWindowPos,
-            ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_QUIT, WM_SETFONT,
-            WM_TIMER, WNDCLASSW, WS_CHILD, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+            DispatchMessageW, GUI_INMOVESIZE, GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo,
+            GetMessageW, GetWindowRect, GetWindowThreadProcessId, HMENU, IsIconic, IsWindowVisible,
+            KillTimer, MSG, PostQuitMessage, PostThreadMessageW, RegisterClassW, SW_HIDE,
+            SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SendMessageW,
+            SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_DESTROY,
+            WM_QUIT, WM_SETFONT, WM_TIMER, WNDCLASSW, WS_CHILD, WS_EX_TOOLWINDOW, WS_POPUP,
+            WS_VISIBLE,
         },
     };
 
@@ -66,6 +68,7 @@ mod windows {
     const BUTTON_HEIGHT: i32 = 32;
     const RIGHT_MARGIN: i32 = 16;
     const BOTTOM_MARGIN: i32 = 44;
+    const POSITION_TIMER_MS: u32 = 50;
     const CLASS_NAME: &str = "CCSMRendererRecoveryButtonWindow";
 
     struct ButtonContext {
@@ -211,7 +214,7 @@ mod windows {
         let font = unsafe { GetStockObject(DEFAULT_GUI_FONT) };
         unsafe {
             SendMessageW(button, WM_SETFONT, font as WPARAM, 1);
-            SetTimer(overlay, TIMER_ID, 200, None);
+            SetTimer(overlay, TIMER_ID, POSITION_TIMER_MS, None);
         }
         let _ = ready.send(Ok(thread_id));
         let mut message: MSG = unsafe { zeroed() };
@@ -277,7 +280,9 @@ mod windows {
             unsafe { ShowWindow(window, SW_HIDE) };
             return;
         };
-        if !monitor.manual_button_window_visible()
+        // Keep this timer on Win32-only reads. Tauri window getters wait for the main event-loop
+        // thread and can deadlock with synchronous owned-window messages during move/size loops.
+        if !root_window_allows_overlay(root)
             || (!always_visible && !recovery_button_owner_is_foreground(window, root, &monitor))
         {
             unsafe { ShowWindow(window, SW_HIDE) };
@@ -302,6 +307,22 @@ mod windows {
             );
             ShowWindow(window, SW_SHOWNOACTIVATE);
         }
+    }
+
+    fn root_window_allows_overlay(root: HWND) -> bool {
+        if unsafe { IsWindowVisible(root) } == 0 || unsafe { IsIconic(root) } != 0 {
+            return false;
+        }
+        let root_thread_id = unsafe { GetWindowThreadProcessId(root, ptr::null_mut()) };
+        if root_thread_id == 0 {
+            return false;
+        }
+        let mut thread_info: GUITHREADINFO = unsafe { zeroed() };
+        thread_info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
+        if unsafe { GetGUIThreadInfo(root_thread_id, &mut thread_info) } == 0 {
+            return false;
+        }
+        thread_info.flags & GUI_INMOVESIZE == 0
     }
 
     fn recovery_button_owner_is_foreground(

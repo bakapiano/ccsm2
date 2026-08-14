@@ -448,12 +448,6 @@ impl RendererHealthMonitor {
         Ok(incident_id)
     }
 
-    pub fn manual_button_window_visible(&self) -> bool {
-        self.main_window.get().is_some_and(|window| {
-            window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true)
-        })
-    }
-
     pub fn native_main_browser_pid(&self) -> u32 {
         self.native_main_browser_pid.load(Ordering::Acquire)
     }
