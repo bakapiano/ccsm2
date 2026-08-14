@@ -5,6 +5,9 @@ Acceptance was performed on 2026-08-13 from source commit
 The host and toolchain versions are recorded in [environment.txt](environment.txt).
 A Space create/switch regression follow-up was performed on 2026-08-14 on the
 same branch and environment.
+A second 2026-08-14 L4 expansion exercised Space Folder management, File
+Explorer, File Editor, Git, restart recovery, and the Agent sidebar against an
+isolated Linux Release build.
 
 ## Ubuntu release archive
 
@@ -63,6 +66,73 @@ The final SQLite rows are captured in
 in [steps.txt](space-flow/steps.txt), and the complete gate summary in
 [result.txt](space-flow/result.txt).
 
+## Workspace, File Editor, and Git workflows
+
+The workspace L4 scenario used an isolated Git repository and completed three
+passing tests. It created, renamed, collapsed, expanded, and deleted Space
+Folders; dragged a Space into a Folder, back to Unfiled, and into the Folder
+again; opened the same file twice through File Explorer and retained one Editor
+Tab; edited Unicode text; exercised Dirty close Cancel; saved CRLF bytes; and
+refreshed Git to `1 repos · 1 changes`.
+
+| State                                      | Evidence                                                               |
+| ------------------------------------------ | ---------------------------------------------------------------------- |
+| Space nested in renamed Folder             | [screenshot](workspace-flow/space-inside-folder.png)                   |
+| Folder delete confirmation                 | [screenshot](workspace-flow/folder-delete-confirmation.png)            |
+| Folder collapsed after persisted move      | [screenshot](workspace-flow/space-folder-collapsed.png)                 |
+| CodeMirror Unicode edit is Dirty           | [screenshot](workspace-flow/editor-dirty.png)                           |
+| Dirty close offers Save/Discard/Cancel      | [screenshot](workspace-flow/editor-close-cancel.png)                    |
+| Saved Editor retains Unicode and CRLF       | [screenshot](workspace-flow/editor-saved.png)                           |
+| Git renders `acceptance.md` as modified     | [screenshot](workspace-flow/git-change.png)                             |
+| Final restorable renderer and runtime state | [workspace-before-restart.json](workspace-flow/workspace-before-restart.json) |
+
+The complete runner result is in
+[result.txt](workspace-flow/result.txt), with the raw WDIO output in
+[workflow-wdio.txt](workspace-flow/workflow-wdio.txt).
+
+## Workspace restart recovery
+
+The first restart probe restored the active Space, Folder placement, File
+Editor contents, word-wrap state, and native Browser, while the hidden Shell
+reported `shellRuntimeId: null` after 45 seconds despite persisted
+`desired_state=running`. The exact six-part state is retained in
+[before-fix.json](workspace-recovery/before-fix.json) and the corresponding
+[screenshot](workspace-recovery/before-fix.png).
+
+`shouldAutoStartCliRuntime` now starts persisted running Sessions before their
+restored terminal Tab becomes visible. The terminal uses its default 80×24 grid
+until a visible viewport supplies the final fit. Re-running the same persisted
+workspace completed in 2.2 seconds with a new Shell runtime ID while preserving
+the active File Editor and Browser:
+
+- [restored desktop screenshot](workspace-recovery/workspace-after-restart.png)
+- [restored state](workspace-recovery/workspace-after-restart.json)
+- [runner result](workspace-recovery/result.txt)
+
+## Agent cross-Space focus and deletion
+
+The Agent L4 scenario launched the installed Codex CLI without submitting a
+model turn, switched to another Space while its runtime remained alive, clicked
+the Agent sidebar entry to return to the owning Space and Tab, and exercised the
+two-stage close flow.
+
+| State                                         | Evidence                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| Codex Agent appears and is foreground         | [screenshot](agent-flow/agent-running.png)                        |
+| Agent remains listed from another Space       | [screenshot](agent-flow/agent-from-other-space.png)               |
+| Agent click restores owning Space and Tab      | [screenshot](agent-flow/agent-cross-space-focused.png)            |
+| Close confirmation keeps Panel/runtime mounted | [screenshot](agent-flow/agent-close-confirmation.png)             |
+| Confirmed deletion removes the Agent           | [screenshot](agent-flow/agent-closed.png)                          |
+
+Cancel retained the Tab, Session, Agent item, and original runtime ID. Confirm
+deleted the Codex Tab and CLI Session from `data.db`; process group `18670` and
+its watchdog went from the recorded tree in
+[agent-processes-before-close.txt](agent-flow/agent-processes-before-close.txt)
+to the header-only
+[agent-processes-after-close.txt](agent-flow/agent-processes-after-close.txt).
+The final UI/process identity state is in
+[agent-after-close.json](agent-flow/agent-after-close.json).
+
 ## Real CLI turn and resume
 
 Each provider completed a first GUI turn, stopped, resumed the same native CLI
@@ -110,6 +180,9 @@ The following gates completed successfully:
 - Ubuntu: abnormal desktop-exit WebDriver scenario (one passing scenario)
 - Ubuntu: extracted release browser WebDriver scenario (one passing scenario)
 - Ubuntu: `/etc` Space create and bidirectional switch WebDriver scenario (one passing scenario)
+- Ubuntu: Space Folder/File Explorer/File Editor/Git WebDriver workflow (three passing scenarios)
+- Ubuntu: persisted workspace restart recovery WebDriver scenario (one passing scenario)
+- Ubuntu: Codex Agent cross-Space focus, close Cancel, deletion, and process cleanup WebDriver scenario (one passing scenario)
 - Ubuntu: Space activation rollback integration tests (two passing scenarios)
 - Windows: `cargo check --workspace`
 - Formatting: `cargo fmt --all -- --check` and Prettier checks

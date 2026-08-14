@@ -1,0 +1,35 @@
+
+> @ccsm/desktop@0.1.0-beta.2 test:desktop:linux /mnt/d/ccsmv2-linux/apps/desktop
+> wdio run wdio.linux.conf.ts --spec ./e2e/linux/workspace-recovery.spec.ts
+
+
+Execution of 1 workers started at 2026-08-14T04:31:38.729Z
+
+[0-0] RUNNING in undefined - file:///e2e/linux/workspace-recovery.spec.ts
+[0-0] Error in "Linux workspace recovery.restores Space, Folder, Editor state, Shell, and Browser after restart"
+Error: Persisted workspace did not recover
+    at async Context.<anonymous> (/mnt/d/ccsmv2-linux/apps/desktop/e2e/linux/workspace-recovery.spec.ts:96:7)
+[0-0] FAILED in undefined - file:///e2e/linux/workspace-recovery.spec.ts
+
+ "spec" Reporter:
+------------------------------------------------------------------
+[wry 0.55.1 linux #0-0] Running: wry (v0.55.1) on linux
+[wry 0.55.1 linux #0-0] Session ID: f16b107f-d684-43ca-85d9-d4049424d9d7
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] » e2e/linux/workspace-recovery.spec.ts
+[wry 0.55.1 linux #0-0] Linux workspace recovery
+[wry 0.55.1 linux #0-0]    ✖ restores Space, Folder, Editor state, Shell, and Browser after restart
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] 1 failing (47.3s)
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] 1) Linux workspace recovery restores Space, Folder, Editor state, Shell, and Browser after restart
+[wry 0.55.1 linux #0-0] Persisted workspace did not recover
+[wry 0.55.1 linux #0-0] Error: Persisted workspace did not recover
+[wry 0.55.1 linux #0-0]     at async Context.<anonymous> (/mnt/d/ccsmv2-linux/apps/desktop/e2e/linux/workspace-recovery.spec.ts:96:7)
+
+
+Spec Files:	 0 passed, 1 failed, 1 total (100% completed) in 00:01:27  
+
+/mnt/d/ccsmv2-linux/apps/desktop:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @ccsm/desktop@0.1.0-beta.2 test:desktop:linux: `wdio run wdio.linux.conf.ts --spec ./e2e/linux/workspace-recovery.spec.ts`
+Exit status 1

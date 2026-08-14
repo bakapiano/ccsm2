@@ -204,7 +204,7 @@ export function shouldAutoStartCliRuntime(
   manualStopBlocked: boolean,
 ): boolean {
   if (session.nativeBindingState === "unavailable") return false;
-  if (!activeVisible) return false;
   if (session.desiredState === "running") return true;
+  if (!activeVisible) return false;
   return session.nativeBindingState === "bound" && !manualStopBlocked;
 }

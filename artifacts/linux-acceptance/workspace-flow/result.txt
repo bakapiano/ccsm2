@@ -1,0 +1,17 @@
+PASS: Linux Workspace, Space Folder, File Editor, and Git L4 workflow
+
+Desktop result:
+- 3 passing (13.9s)
+
+Verified:
+- created, renamed, collapsed, expanded, and deleted Space Folders
+- dragged one Space into a Folder, to Unfiled, and back into the Folder
+- renamed the active Space while preserving its root and runtimes
+- opened acceptance.md twice through File Explorer with one File Editor Tab
+- mounted CodeMirror 6, edited Unicode text, and rendered the Dirty marker
+- kept the Editor mounted and unchanged after close Cancel
+- saved the Unicode content while retaining CRLF bytes
+- persisted word-wrap and the active Editor layout
+- refreshed Git to one repository and one modified acceptance.md
+
+Runner output: workflow-wdio.txt
