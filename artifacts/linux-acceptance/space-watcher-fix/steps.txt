@@ -1,0 +1,10 @@
+1. Reproduced the old Release from the full /mnt/d/ccsmv2-linux root.
+2. Captured the renderer at Opening Space and inspected open process handles.
+3. Observed recursive traversal inside node_modules/.pnpm and eventual recovery after about five minutes.
+4. Changed Linux activation to a shallow root watch with bounded materialized scopes.
+5. Added watcher adapter and backend scope-routing regressions.
+6. Built an embedded debug desktop and cold-started it from the same full repository root.
+7. Created lib.user-is-merged with /mnt/d/ccsmv2-linux as its root.
+8. Switched to desktop and back to lib.user-is-merged twice.
+9. Verified ready UI, visible Browser, stable runtime identity, SQLite state, process handles, and clean screenshots.
+10. Ran Rust workspace, TypeScript, frontend, formatting, and diff gates.

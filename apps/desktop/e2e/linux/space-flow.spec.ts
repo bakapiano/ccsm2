@@ -4,6 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const artifactDirectory = process.env.CCSM_E2E_ARTIFACT_DIR!;
+const targetSpaceRoot = process.env.CCSM_E2E_TARGET_SPACE_ROOT ?? "/etc";
+const targetSpaceName = process.env.CCSM_E2E_TARGET_SPACE_NAME ?? "ETC E2E";
 const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../../..",
@@ -155,22 +157,22 @@ describe("Linux Space workflow", () => {
     const picker = await $(".directory-dialog");
     await picker.waitForDisplayed();
     recordStep("directory picker opened");
-    await browser.execute(() => {
+    await browser.execute((rootPath) => {
       const input =
         document.querySelector<HTMLInputElement>(".directory-address");
       if (!input) throw new Error("directory address is missing");
-      input.value = "/etc";
+      input.value = rootPath;
       document
         .querySelector<HTMLFormElement>(".directory-address-form")
         ?.dispatchEvent(
           new SubmitEvent("submit", { bubbles: true, cancelable: true }),
         );
-    });
+    }, targetSpaceRoot);
     const useFolder = await $(".directory-use");
     await browser.waitUntil(async () => useFolder.isEnabled(), {
       timeout: 15_000,
       interval: 200,
-      timeoutMsg: "/etc did not become selectable",
+      timeoutMsg: `${targetSpaceRoot} did not become selectable`,
     });
     recordStep("directory path selected");
     await useFolder.click();
@@ -179,14 +181,14 @@ describe("Linux Space workflow", () => {
     await nameDialog.waitForDisplayed();
     recordStep("Space name dialog opened");
     const nameInput = await $(".app-dialog-field input");
-    await nameInput.setValue("ETC E2E");
+    await nameInput.setValue(targetSpaceName);
     recordStep("submit Space creation");
     await $("[data-dialog-action='submit']").click();
     recordStep("Space creation click returned");
     await nameDialog.waitForDisplayed({ reverse: true });
     recordStep("Space name dialog closed");
 
-    await waitForActiveSpace("ETC E2E");
+    await waitForActiveSpace(targetSpaceName);
     await waitForActiveRuntime();
     await waitForBrowserReady();
     const created = await spaceUiState();
@@ -219,13 +221,13 @@ describe("Linux Space workflow", () => {
     expect(switchedBack.activeRuntimeId).toBe(initial.activeRuntimeId);
 
     const createdSpace = switchedBack.spaces.find(
-      (space) => space.name === "ETC E2E",
+      (space) => space.name === targetSpaceName,
     );
     expect(createdSpace).toBeDefined();
     await $(
       `.space-row[data-space-id="${createdSpace!.id}"] .space-item`,
     ).click();
-    await waitForActiveSpace("ETC E2E");
+    await waitForActiveSpace(targetSpaceName);
     await waitForActiveRuntime();
     await waitForBrowserReady();
     recordStep("new Space active again");
@@ -238,7 +240,7 @@ describe("Linux Space workflow", () => {
       join(artifactDirectory, "space-switched-again-renderer.png"),
     );
     captureWslgWindow("space-switched-again-composited.png");
-    expect(switchedAgain.activeRoot).toBe("/etc");
+    expect(switchedAgain.activeRoot).toBe(targetSpaceRoot);
     expect(switchedAgain.activeRuntimeId).toBe(created.activeRuntimeId);
   });
 });

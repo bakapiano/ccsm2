@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{
     dto::{
@@ -108,7 +111,11 @@ pub struct FileWatchEvent {
 
 pub type FileWatchEventSink = Arc<dyn Fn(FileWatchEvent) + Send + Sync + 'static>;
 
-pub trait FileWatchHandle: Send + Sync {}
+pub trait FileWatchHandle: Send + Sync {
+    fn add_scopes(&self, _relative_paths: &[PathBuf]) -> BackendResult<()> {
+        Ok(())
+    }
+}
 
 pub trait FileWatchBackend: Send + Sync {
     fn watch(

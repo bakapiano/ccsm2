@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     dto::{
@@ -93,6 +96,7 @@ impl ActiveRootContext {
         request: ListDirectoryRequest,
     ) -> BackendResult<DirectoryListingDto> {
         let root = self.active_root(&request.space_id)?;
+        self.materialize_watch_scopes(&root, &[PathBuf::from(&request.relative_path)]);
         let entries = self
             .filesystem
             .list_directory(&root, &request.relative_path)?;
@@ -105,6 +109,7 @@ impl ActiveRootContext {
 
     pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {
         let root = self.store.space_root(&request.space_id)?;
+        self.materialize_watch_scopes(&root, &[parent_directory(&request.relative_path)]);
         self.filesystem.read_file(&root, &request.relative_path)
     }
 
@@ -118,6 +123,7 @@ impl ActiveRootContext {
 
     pub fn write_file(&self, request: WriteFileRequest) -> BackendResult<WriteFileResultDto> {
         let root = self.store.space_root(&request.space_id)?;
+        self.materialize_watch_scopes(&root, &[parent_directory(&request.relative_path)]);
         self.filesystem.write_file(&root, &request)
     }
 
@@ -143,8 +149,42 @@ impl ActiveRootContext {
             (root, state.scan_generation)
         };
         let snapshot = self.git.scan(&root, generation)?;
+        let repository_scopes = snapshot
+            .repositories
+            .iter()
+            .flat_map(|repository| {
+                let repository_path = match repository.relative_path.as_str() {
+                    "." => PathBuf::new(),
+                    relative_path => PathBuf::from(relative_path),
+                };
+                [repository_path.clone(), repository_path.join(".git")]
+            })
+            .collect::<Vec<_>>();
+        self.materialize_watch_scopes(&root, &repository_scopes);
         self.store.save_git_cache(&snapshot)?;
         Ok(snapshot)
+    }
+
+    fn materialize_watch_scopes(&self, root: &RootDescriptor, relative_paths: &[PathBuf]) {
+        let result = self.lock_state().and_then(|state| {
+            let active = state
+                .root
+                .as_ref()
+                .is_some_and(|active| active.root_id == root.root_id);
+            if active && let Some(watcher) = state.watcher.as_ref() {
+                watcher.add_scopes(relative_paths)?;
+            }
+            Ok(())
+        });
+        if result.is_err() {
+            (self.event_sink)(AppEvent::FilesystemChanged {
+                payload: FileChangeHintDto {
+                    root_id: root.root_id.clone(),
+                    relative_paths: Vec::new(),
+                    overflow: true,
+                },
+            });
+        }
     }
 
     fn active_root(&self, space_id: &str) -> BackendResult<RootDescriptor> {
@@ -162,4 +202,11 @@ impl ActiveRootContext {
             .lock()
             .map_err(|_| BackendError::Platform("active root context lock poisoned".into()))
     }
+}
+
+fn parent_directory(relative_path: &str) -> PathBuf {
+    Path::new(relative_path)
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_path_buf()
 }
