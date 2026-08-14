@@ -185,6 +185,8 @@ start buffering desktop events
 
 AppBackend、PTY process trees、HookEndpoint和`data.db`保持存活。main WebView reload重新创建TypeScript Providers并恢复已提交布局。
 
+`renderer.ready`确认恢复完成后，main WebView显示`UI recovered`提示5秒；连续恢复从最新一次重新计时，用户也可立即关闭提示。
+
 Renderer拥有的未提交状态具有恢复风险：
 
 - dirty File Editor buffer。

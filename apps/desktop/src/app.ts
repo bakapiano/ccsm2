@@ -60,6 +60,7 @@ import { describeError, desktopClient } from "./transport/desktop-client";
 import { bindWindowChrome } from "./window-chrome";
 import type { RendererHealthAppSnapshot } from "./renderer-health";
 import type { RendererReadyResponse } from "./generated/RendererReadyResponse";
+import { RendererRecoveryNotice } from "./renderer-recovery-notice";
 
 const DOCKVIEW_POPOVER_SELECTOR =
   ".dv-context-menu, .dv-tabs-overflow-container";
@@ -99,11 +100,13 @@ export class CcsmApp {
   readonly #pendingTabCloseRequests = new Set<string>();
   readonly #pendingTabDeletions = new Set<string>();
   readonly #approvedPanelRemovals = new Set<string>();
+  readonly #rendererRecoveryNotice: RendererRecoveryNotice;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly theme: ThemeController,
   ) {
+    this.#rendererRecoveryNotice = new RendererRecoveryNotice(root);
     bindWindowChrome(root, desktopClient.windowChrome, () => {
       void this.#requestWindowClose();
     });
@@ -284,6 +287,7 @@ export class CcsmApp {
       this.#terminalProvider.destroyAll();
       this.#fileEditorProvider.destroyAll();
       this.#browserProvider.destroy();
+      this.#rendererRecoveryNotice.dispose();
       void this.flushLayout();
     });
   }
@@ -923,23 +927,7 @@ export class CcsmApp {
   }
 
   showRendererRecoveryNotice(response: RendererReadyResponse): void {
-    this.root.querySelector(".renderer-recovery-notice")?.remove();
-    const notice = document.createElement("aside");
-    notice.className = "renderer-recovery-notice";
-    notice.dataset.testid = "renderer-recovery-notice";
-    const title = document.createElement("strong");
-    title.textContent = "UI recovered";
-    const detail = document.createElement("span");
-    detail.textContent = response.incidentId
-      ? `Input path restored · incident ${response.incidentId.slice(0, 8)}`
-      : "Input path restored";
-    const dismiss = document.createElement("button");
-    dismiss.type = "button";
-    dismiss.setAttribute("aria-label", "Dismiss recovery notice");
-    dismiss.textContent = "×";
-    dismiss.addEventListener("click", () => notice.remove());
-    notice.append(title, detail, dismiss);
-    this.root.append(notice);
+    this.#rendererRecoveryNotice.show(response);
   }
 
   async #activateSnapshot(snapshot: SpaceSnapshotDto): Promise<void> {
