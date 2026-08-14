@@ -515,6 +515,16 @@ export_ts! {
 export_ts! {
     #[derive(Debug, Clone, Serialize, Deserialize, TS)]
     #[serde(rename_all = "camelCase")]
+    pub struct ReadGitDiffRequest {
+        pub space_id: String,
+        pub repository_id: String,
+        pub path: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
     pub struct GitFileChangeDto {
         pub path: String,
         pub original_path: Option<String>,
@@ -546,6 +556,56 @@ export_ts! {
         pub root_id: String,
         pub scan_generation: u32,
         pub repositories: Vec<GitRepositoryStatusDto>,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum GitDiffLineKind {
+        Context,
+        Added,
+        Deleted,
+        Meta,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GitDiffLineDto {
+        pub kind: GitDiffLineKind,
+        pub old_line: Option<u32>,
+        pub new_line: Option<u32>,
+        pub content: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GitDiffHunkDto {
+        pub header: String,
+        pub old_start: u32,
+        pub old_lines: u32,
+        pub new_start: u32,
+        pub new_lines: u32,
+        pub lines: Vec<GitDiffLineDto>,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GitFileDiffDto {
+        pub repository_id: String,
+        pub path: String,
+        pub original_path: Option<String>,
+        pub additions: u32,
+        pub deletions: u32,
+        pub binary: bool,
+        pub truncated: bool,
+        pub hunks: Vec<GitDiffHunkDto>,
     }
 }
 

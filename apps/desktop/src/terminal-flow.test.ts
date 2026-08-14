@@ -181,6 +181,20 @@ describe("terminal flow control", () => {
     );
   });
 
+  test("preserves split dynamic-color queries for the terminal responder", () => {
+    const stripper = new OscSequenceStripper({
+      preserveDynamicColorQueries: true,
+    });
+    const encode = (value: string) => new TextEncoder().encode(value);
+    const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+    expect(decode(stripper.push(encode("a\x1b]11;")))).toBe("a");
+    expect(decode(stripper.push(encode("?\x1b\\b")))).toBe("\x1b]11;?\x1b\\b");
+    expect(
+      decode(stripper.push(encode("c\x1b]8;;https://example.test\x07d"))),
+    ).toBe("cd");
+  });
+
   test("strips Codex CSI sequences that ghostty-vt does not support", () => {
     const stripper = new OscSequenceStripper();
     const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);

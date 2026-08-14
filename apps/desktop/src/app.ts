@@ -31,6 +31,7 @@ import {
   findSourceBrowserTab,
   findVisibleDockPanelIds,
   shouldDeleteRemovedTab,
+  syncDockPanelTitles,
 } from "./dock-behavior";
 import type { ProviderKind } from "./generated/ProviderKind";
 import type { SpaceSnapshotDto } from "./generated/SpaceSnapshotDto";
@@ -726,7 +727,7 @@ export class CcsmApp {
       this.#focusTab(existing);
       return;
     }
-    this.#setGlobalStatus("starting", "creating Git Tab");
+    this.#setGlobalStatus("starting", "creating Changes Tab");
     try {
       const tab = await desktopClient.backend.createGitTab({
         spaceId: snapshot.space.id,
@@ -960,6 +961,7 @@ export class CcsmApp {
       }
       this.#addMissingPanels(snapshot.tabs);
       if (this.#dockview.groups.length === 0) this.#dockview.addGroup();
+      syncDockPanelTitles(this.#dockview.panels, this.#tabs);
       this.#refreshFileEditorTitles();
       const restoredActivePanel = findRestoredActivePanel(
         this.#dockview.panels,

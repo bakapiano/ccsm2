@@ -25,6 +25,7 @@ import type { DeleteSpaceRequest } from "../generated/DeleteSpaceRequest";
 import type { DeleteTabRequest } from "../generated/DeleteTabRequest";
 import type { DirectoryListingDto } from "../generated/DirectoryListingDto";
 import type { FileDocumentDto } from "../generated/FileDocumentDto";
+import type { GitFileDiffDto } from "../generated/GitFileDiffDto";
 import type { GitSnapshotDto } from "../generated/GitSnapshotDto";
 import type { HostDirectoryEntryDto } from "../generated/HostDirectoryEntryDto";
 import type { HostDirectoryListingDto } from "../generated/HostDirectoryListingDto";
@@ -35,6 +36,7 @@ import type { RenameFolderRequest } from "../generated/RenameFolderRequest";
 import type { RenameSpaceRequest } from "../generated/RenameSpaceRequest";
 import type { RefreshGitRequest } from "../generated/RefreshGitRequest";
 import type { ReadFileRequest } from "../generated/ReadFileRequest";
+import type { ReadGitDiffRequest } from "../generated/ReadGitDiffRequest";
 import type { RendererHealthDebugSnapshot } from "../generated/RendererHealthDebugSnapshot";
 import type { RendererInputAckRequest } from "../generated/RendererInputAckRequest";
 import type { RendererInputProbe } from "../generated/RendererInputProbe";
@@ -78,6 +80,7 @@ export interface AppBackendClient {
   writeFile(request: WriteFileRequest): Promise<WriteFileResultDto>;
   cachedGit(spaceId: string): Promise<GitSnapshotDto>;
   refreshGit(request: RefreshGitRequest): Promise<GitSnapshotDto>;
+  readGitDiff(request: ReadGitDiffRequest): Promise<GitFileDiffDto>;
   saveLayout(request: SaveLayoutRequest): Promise<SpaceLayoutDto>;
   updateTabState(request: UpdateTabStateRequest): Promise<TabDto>;
   deleteTab(request: DeleteTabRequest): Promise<TabDto>;
@@ -244,6 +247,10 @@ class TauriBackendClient implements AppBackendClient {
 
   refreshGit(request: RefreshGitRequest): Promise<GitSnapshotDto> {
     return invoke("refresh_git", { request });
+  }
+
+  readGitDiff(request: ReadGitDiffRequest): Promise<GitFileDiffDto> {
+    return invoke("read_git_diff", { request });
   }
 
   saveLayout(request: SaveLayoutRequest): Promise<SpaceLayoutDto> {

@@ -168,7 +168,9 @@ class TerminalPanel implements IContentRenderer {
   #resizePresentationCount = 0;
   #lastResizePresentationCompletion: string | null = null;
   readonly #outputQueue: Uint8Array[] = [];
-  readonly #oscStripper = new OscSequenceStripper();
+  readonly #oscStripper = new OscSequenceStripper({
+    preserveDynamicColorQueries: true,
+  });
   #outputRaf = 0;
   #outputWriteInFlight = false;
   #renderFailureCount = 0;

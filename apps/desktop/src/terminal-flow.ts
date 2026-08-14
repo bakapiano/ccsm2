@@ -1,3 +1,5 @@
+import { isDynamicColorQuerySequence } from "../vendor/ghostty-web/lib/dynamic-color-query";
+
 export class LatestValue<T> {
   #value: T | undefined;
 
@@ -59,6 +61,14 @@ export class OscSequenceStripper {
   #inCsi = false;
   #pendingEsc = false;
   #csiBytes: number[] = [];
+  #oscBytes: number[] | null = null;
+
+  private readonly preserveDynamicColorQueries: boolean;
+
+  constructor(options: { preserveDynamicColorQueries?: boolean } = {}) {
+    this.preserveDynamicColorQueries =
+      options.preserveDynamicColorQueries ?? false;
+  }
 
   push(buffer: Uint8Array): Uint8Array {
     const output: number[] = [];
@@ -75,15 +85,16 @@ export class OscSequenceStripper {
         continue;
       }
       if (this.#inOsc) {
+        this.#trackOscByte(byte);
         if (this.#pendingEsc) {
           this.#pendingEsc = false;
           if (byte === 0x5c) {
-            this.#inOsc = false;
+            this.#finishOsc(output);
             continue;
           }
         }
         if (byte === 0x07) {
-          this.#inOsc = false;
+          this.#finishOsc(output);
           continue;
         }
         if (byte === 0x1b) {
@@ -96,6 +107,9 @@ export class OscSequenceStripper {
         this.#pendingEsc = false;
         if (byte === 0x5d) {
           this.#inOsc = true;
+          this.#oscBytes = this.preserveDynamicColorQueries
+            ? [0x1b, 0x5d]
+            : null;
           continue;
         }
         if (byte === 0x5b) {
@@ -113,6 +127,21 @@ export class OscSequenceStripper {
       output.push(byte);
     }
     return new Uint8Array(output);
+  }
+
+  #trackOscByte(byte: number): void {
+    if (!this.#oscBytes) return;
+    this.#oscBytes.push(byte);
+    if (this.#oscBytes.length > 16) this.#oscBytes = null;
+  }
+
+  #finishOsc(output: number[]): void {
+    if (this.#oscBytes && isDynamicColorQuerySequence(this.#oscBytes)) {
+      output.push(...this.#oscBytes);
+    }
+    this.#oscBytes = null;
+    this.#inOsc = false;
+    this.#pendingEsc = false;
   }
 
   flush(): Uint8Array {
