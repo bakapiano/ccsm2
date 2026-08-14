@@ -8,7 +8,7 @@ CCSM桌面版由Rust主进程监督可信主WebView renderer。监控协议区�
 ccsm-desktop (Rust)
 ├─ RendererHealthMonitor
 ├─ native input observer
-├─ native recovery notification
+├─ native Reload UI button
 ├─ bounded diagnostic log writer
 └─ reload coordinator
 
@@ -148,7 +148,7 @@ window blur / focus
 
 `renderer_health_log`的schema、8 MiB容量预算、2048行限制和7天TTL由[持久化规格](../005_data/000-persistence-ipc.md#bounded-operational-log)定义。
 
-`event_kind`覆盖`input.timeout`、`input.lateAck`、`input.correlationFailed`、`state.changed`、`recovery.requested`、`recovery.completed`和`recovery.failed`。正常匹配的点击保留在内存ring buffer；incident开始时一并写入上下文。
+`event_kind`覆盖`input.timeout`、`input.lateAck`、`input.correlationFailed`、`state.changed`、`diagnostic.captured`、`recovery.requested`、`recovery.completed`和`recovery.failed`。正常匹配的点击保留在内存ring buffer；incident开始时一并写入上下文。
 
 诊断details包含：
 
@@ -166,7 +166,9 @@ window blur / focus
 
 ## Recovery policy
 
-首版提供native托盘项或原生快捷键`Reload UI`。该入口由Rust拥有，因此renderer无响应时仍可使用。
+Windows首版提供独立Rust/Win32 `Reload UI`按钮。按钮使用main窗口拥有的native tool window覆盖在右下角，并跟随owner的可见性与z-order；main窗口visible、focused且非minimized时显示，因此renderer无响应时仍可点击。
+
+手动按钮与自动恢复调用同一个Rust recovery path。手动恢复不受dirty editor guard和自动reload预算限制；执行reload前先写入`diagnostic.captured`，记录trigger、前一状态、pending/missed probe、dirty editor、live CLI和最近input ACK现场，再追加`recovery.requested`。
 
 Soft reload顺序：
 
@@ -235,6 +237,7 @@ L4 Desktop Scenario覆盖：
 - native点击与DOM click形成匹配ACK并保持Healthy。
 - renderer持续阻塞时，两个真实点击无ACK并触发soft reload。
 - OS→WebView输入中断时，ACK报告`domClickObserved=false`。
+- native `Reload UI`按钮在renderer无响应时仍可触发同一soft reload，并在DB保存manual trigger现场。
 - minimized、lock/sleep和debugger pause不产生误恢复。
 - dirty editor阻止静默reload并显示native提示。
 - pointer capture和Dock drag异常产生`InputPathSuspect`。

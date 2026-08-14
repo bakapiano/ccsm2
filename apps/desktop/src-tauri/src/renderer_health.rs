@@ -129,6 +129,7 @@ struct MonitorState {
     last_failure_at_ms: Option<u64>,
     incident_id: Option<String>,
     last_snapshot: RendererRiskSnapshot,
+    last_ack_details: Option<serde_json::Value>,
     recovery_deadline_ms: Option<u64>,
     recovery_times_ms: VecDeque<u64>,
     reload_count: u32,
@@ -144,6 +145,7 @@ impl Default for MonitorState {
             last_failure_at_ms: None,
             incident_id: None,
             last_snapshot: RendererRiskSnapshot::default(),
+            last_ack_details: None,
             recovery_deadline_ms: None,
             recovery_times_ms: VecDeque::new(),
             reload_count: 0,
@@ -308,6 +310,7 @@ impl RendererHealthMonitor {
                 dirty_editor_count: request.dirty_editor_count,
                 live_cli_runtime_count: request.live_cli_runtime_count,
             };
+            state.last_ack_details = Some(ack_details.clone());
             match state.pending.remove(&request.input_seq) {
                 None => (Vec::new(), state.incident_id.clone()),
                 Some(pending) => {
@@ -371,6 +374,11 @@ impl RendererHealthMonitor {
                 dirty_editor_count: request.dirty_editor_count,
                 live_cli_runtime_count: request.live_cli_runtime_count,
             };
+            state.last_ack_details = Some(json!({
+                "rendererReady": true,
+                "dirtyEditorCount": request.dirty_editor_count,
+                "liveCliRuntimeCount": request.live_cli_runtime_count,
+            }));
             let recovered = state.phase == HealthPhase::Recovering;
             let incident_id = recovered.then(|| state.incident_id.clone()).flatten();
             let mut actions = Vec::new();
@@ -417,6 +425,37 @@ impl RendererHealthMonitor {
             self.native_target_click_count.load(Ordering::Relaxed),
             self.native_main_browser_pid.load(Ordering::Acquire),
         ))
+    }
+
+    pub fn request_manual_recovery(&self) -> Result<String, String> {
+        let now_ms = self.now_ms();
+        let (incident_id, actions) = {
+            let mut state = self.lock_state()?;
+            if state.phase == HealthPhase::Recovering {
+                return state
+                    .incident_id
+                    .clone()
+                    .ok_or_else(|| "renderer recovery incident is unavailable".into());
+            }
+            let actions = begin_recovery_locked(&mut state, now_ms, "manualButton", None, None);
+            let incident_id = state
+                .incident_id
+                .clone()
+                .ok_or_else(|| "manual renderer recovery did not create an incident".to_string())?;
+            (incident_id, actions)
+        };
+        self.process_actions(actions);
+        Ok(incident_id)
+    }
+
+    pub fn manual_button_window_visible(&self) -> bool {
+        self.main_window.get().is_some_and(|window| {
+            window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true)
+        })
+    }
+
+    pub fn native_main_browser_pid(&self) -> u32 {
+        self.native_main_browser_pid.load(Ordering::Acquire)
     }
 
     fn check_deadlines(&self) {
@@ -585,24 +624,63 @@ fn record_failure_locked(
         }
         if state.recovery_times_ms.len() < RECOVERY_BUDGET {
             state.recovery_times_ms.push_back(now_ms);
-            state.reload_count = state.reload_count.saturating_add(1);
-            state.phase = HealthPhase::Recovering;
-            state.recovery_deadline_ms = Some(now_ms.saturating_add(READY_TIMEOUT_MS));
-            actions.push(log_action(
-                incident_id.clone(),
-                "recovery.requested",
+            actions.extend(begin_recovery_locked(
+                state,
+                now_ms,
+                "automaticInputTimeout",
                 Some(input_seq),
-                HealthPhase::Recovering,
                 latency_ms,
-                json!({
-                    "reloadCount": state.reload_count,
-                    "liveCliRuntimeCount": state.last_snapshot.live_cli_runtime_count
-                }),
             ));
-            actions.push(MonitorAction::Reload { incident_id });
         }
     }
     actions
+}
+
+fn begin_recovery_locked(
+    state: &mut MonitorState,
+    now_ms: u64,
+    trigger: &'static str,
+    input_seq: Option<u32>,
+    latency_ms: Option<u64>,
+) -> Vec<MonitorAction> {
+    let incident_id = state
+        .incident_id
+        .get_or_insert_with(|| Uuid::new_v4().to_string())
+        .clone();
+    let previous_state = state.phase;
+    let pending_probe_count = state.pending.len();
+    state.reload_count = state.reload_count.saturating_add(1);
+    state.phase = HealthPhase::Recovering;
+    state.pending.clear();
+    state.recovery_deadline_ms = Some(now_ms.saturating_add(READY_TIMEOUT_MS));
+    let scene = json!({
+        "trigger": trigger,
+        "previousState": previous_state.as_str(),
+        "pendingProbeCount": pending_probe_count,
+        "missedProbeCount": state.missed_probe_count,
+        "dirtyEditorCount": state.last_snapshot.dirty_editor_count,
+        "liveCliRuntimeCount": state.last_snapshot.live_cli_runtime_count,
+        "lastAck": state.last_ack_details.clone(),
+    });
+    vec![
+        log_action(
+            incident_id.clone(),
+            "diagnostic.captured",
+            input_seq,
+            HealthPhase::Recovering,
+            latency_ms,
+            scene,
+        ),
+        log_action(
+            incident_id.clone(),
+            "recovery.requested",
+            input_seq,
+            HealthPhase::Recovering,
+            latency_ms,
+            json!({ "trigger": trigger, "reloadCount": state.reload_count }),
+        ),
+        MonitorAction::Reload { incident_id },
+    ]
 }
 
 fn log_action(
@@ -749,6 +827,52 @@ mod tests {
         assert_eq!(state.phase, HealthPhase::InputPathUnresponsive);
         assert!(
             !second
+                .iter()
+                .any(|action| matches!(action, MonitorAction::Reload { .. }))
+        );
+    }
+
+    #[test]
+    fn manual_recovery_records_scene_and_overrides_dirty_guard() {
+        let mut state = MonitorState {
+            phase: HealthPhase::Healthy,
+            last_snapshot: RendererRiskSnapshot {
+                dirty_editor_count: 2,
+                live_cli_runtime_count: 3,
+            },
+            last_ack_details: Some(json!({ "targetClass": "terminal-host" })),
+            ..MonitorState::default()
+        };
+
+        let actions = begin_recovery_locked(&mut state, 4_000, "manualButton", None, None);
+
+        assert_eq!(state.phase, HealthPhase::Recovering);
+        assert_eq!(state.reload_count, 1);
+        let diagnostic = actions
+            .iter()
+            .find_map(|action| match action {
+                MonitorAction::Log {
+                    event_kind: "diagnostic.captured",
+                    details_json,
+                    ..
+                } => serde_json::from_str::<serde_json::Value>(details_json).ok(),
+                _ => None,
+            })
+            .expect("manual recovery diagnostic");
+        assert_eq!(diagnostic["trigger"], "manualButton");
+        assert_eq!(diagnostic["previousState"], "Healthy");
+        assert_eq!(diagnostic["dirtyEditorCount"], 2);
+        assert_eq!(diagnostic["liveCliRuntimeCount"], 3);
+        assert_eq!(diagnostic["lastAck"]["targetClass"], "terminal-host");
+        assert!(actions.iter().any(|action| matches!(
+            action,
+            MonitorAction::Log {
+                event_kind: "recovery.requested",
+                ..
+            }
+        )));
+        assert!(
+            actions
                 .iter()
                 .any(|action| matches!(action, MonitorAction::Reload { .. }))
         );

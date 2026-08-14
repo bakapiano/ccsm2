@@ -2,6 +2,7 @@ mod browser;
 mod commands;
 mod directory_browser;
 mod native_input;
+mod native_recovery;
 mod renderer_health;
 
 use std::{
@@ -21,6 +22,7 @@ use ccsm_platform::{
 use tauri::{Emitter, Manager, RunEvent};
 
 use native_input::NativeInputObserver;
+use native_recovery::NativeRecoveryButton;
 use renderer_health::RendererHealthMonitor;
 
 pub struct DesktopState {
@@ -31,6 +33,7 @@ pub struct DesktopState {
     hook_endpoint: LocalHookEndpoint,
     renderer_health: Arc<RendererHealthMonitor>,
     native_input: Mutex<Option<NativeInputObserver>>,
+    native_recovery: Mutex<Option<NativeRecoveryButton>>,
     shim_root: PathBuf,
     shutdown_started: AtomicBool,
 }
@@ -39,6 +42,11 @@ impl DesktopState {
     fn shutdown(&self, app: &tauri::AppHandle) {
         if self.shutdown_started.swap(true, Ordering::AcqRel) {
             return;
+        }
+        if let Ok(button) = self.native_recovery.lock()
+            && let Some(button) = button.as_ref()
+        {
+            button.shutdown();
         }
         if let Ok(observer) = self.native_input.lock()
             && let Some(observer) = observer.as_ref()
@@ -54,6 +62,8 @@ impl DesktopState {
 }
 
 pub fn run() {
+    let debug_native_reload_button_visible =
+        cfg!(debug_assertions) && has_argument("--ccsm-debug-native-reload-button-visible");
     let data_dir_override = argument_value("--ccsm-data-dir")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("CCSM_DATA_DIR").map(PathBuf::from))
@@ -148,6 +158,7 @@ pub fn run() {
                 hook_endpoint,
                 renderer_health: Arc::clone(&renderer_health),
                 native_input: Mutex::new(None),
+                native_recovery: Mutex::new(None),
                 shim_root,
                 shutdown_started: AtomicBool::new(false),
             });
@@ -179,6 +190,18 @@ pub fn run() {
                         }
                     }
                     Err(error) => eprintln!("CCSM native input observer unavailable: {error}"),
+                }
+                match NativeRecoveryButton::start(
+                    &main_window,
+                    Arc::clone(&renderer_health),
+                    debug_native_reload_button_visible,
+                ) {
+                    Ok(button) => {
+                        if let Ok(mut slot) = app.state::<DesktopState>().native_recovery.lock() {
+                            *slot = Some(button);
+                        }
+                    }
+                    Err(error) => eprintln!("CCSM native reload button unavailable: {error}"),
                 }
             } else {
                 return Err("CCSM main WebView is unavailable after setup".into());
@@ -258,6 +281,10 @@ fn argument_value(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn has_argument(name: &str) -> bool {
+    std::env::args().skip(1).any(|argument| argument == name)
 }
 
 fn runtime_shim_root(executable: &std::path::Path, data_dir: &std::path::Path) -> PathBuf {

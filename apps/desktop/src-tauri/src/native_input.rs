@@ -40,6 +40,16 @@ impl NativeInputObserver {
             Ok(())
         }
     }
+
+    pub fn main_webview_is_foreground(monitor: &RendererHealthMonitor) -> bool {
+        #[cfg(windows)]
+        return windows::main_webview_is_foreground(monitor);
+        #[cfg(not(windows))]
+        {
+            let _ = monitor;
+            true
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -63,9 +73,9 @@ mod windows {
             Threading::GetCurrentThreadId,
         },
         UI::WindowsAndMessaging::{
-            CallNextHookEx, GetClientRect, GetMessageW, GetWindowThreadProcessId, MSLLHOOKSTRUCT,
-            PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL, WM_LBUTTONUP,
-            WM_QUIT, WindowFromPoint,
+            CallNextHookEx, GetClientRect, GetForegroundWindow, GetMessageW,
+            GetWindowThreadProcessId, MSLLHOOKSTRUCT, PostThreadMessageW, SetWindowsHookExW,
+            UnhookWindowsHookEx, WH_MOUSE_LL, WM_LBUTTONUP, WM_QUIT, WindowFromPoint,
         },
     };
 
@@ -232,6 +242,22 @@ mod windows {
                 }
             })
             .map_err(|error| format!("bind main WebView process failed: {error}"))
+    }
+
+    pub fn main_webview_is_foreground(monitor: &RendererHealthMonitor) -> bool {
+        let main_browser_pid = monitor.native_main_browser_pid();
+        if main_browser_pid == 0 {
+            return false;
+        }
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_null() {
+            return false;
+        }
+        let mut foreground_pid = 0;
+        unsafe {
+            GetWindowThreadProcessId(foreground, &mut foreground_pid);
+        }
+        foreground_pid != 0 && process_descends_from(foreground_pid, main_browser_pid)
     }
 
     fn process_descends_from(mut process_id: u32, ancestor_id: u32) -> bool {

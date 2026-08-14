@@ -52,7 +52,7 @@ renderer_health_log
 - Hook确认后直接更新`cli_sessions.native_session_id/native_binding_state`；ID冲突时拒绝更新并返回domain error。
 - `settings`仅保存非敏感应用设置。CCSM首版不持久化credential或secret。
 - `_cache`表通过foreign keys引用durable IDs，并在对应资源删除时cascade清理。
-- `renderer_health_log`保存native input probe、状态转换和soft reload结果，并执行固定byte预算与TTL裁剪。
+- `renderer_health_log`保存native input probe、状态转换、manual/automatic recovery现场和soft reload结果，并执行固定byte预算与TTL裁剪。
 - `data.db`使用`synchronous=FULL`；cache更新使用debounce和批量transaction减少同步写入。
 
 ## Schema compatibility
