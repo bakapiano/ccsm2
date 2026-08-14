@@ -363,7 +363,10 @@ fn run_command(
     stream_limit_bytes: usize,
 ) -> BackendResult<Output> {
     control.check()?;
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
