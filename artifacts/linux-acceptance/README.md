@@ -23,6 +23,31 @@ The archive checksum, executable modes, runtime library resolution, and `run.sh`
 layout were checked after extraction. The extracted release binary completed the
 WebDriver browser/menu/geometry/overlay scenario with one passing test.
 
+### Current PR Release rebuild
+
+The follow-up Release archive was rebuilt from source `v0.1.0-beta.2-9-g8062082`
+after the Space and hidden-runtime fixes:
+
+- Archive bytes: `3,192,823`
+- Archive SHA-256: `ea9e7413fad87e2dac31351bdc227db0f5dbe31c1a57745512499e382c776974`
+- Binary SHA-256: `6a6f5870cefa613f767c70d03139d1c063eded1a51efc8e3ef234309a995fb99`
+- [build metadata](release-current/BUILD-INFO.txt)
+- [archive and binary hashes](release-current/archive-info.txt)
+- [runtime library resolution](release-current/ldd.txt)
+
+The archive checksum, `0755` binary/launcher modes, and dynamic libraries were
+verified after extraction. That extracted binary completed the `/etc` Space
+create and bidirectional switch scenario with one passing test:
+
+| State                         | Screenshot                                                               | Renderer state                                                     |
+| ----------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| New `/etc` Space active       | [renderer](release-current/space-flow/space-created-renderer.png)        | [state](release-current/space-flow/space-created.json)              |
+| Initial Space active again    | [renderer](release-current/space-flow/space-switched-back-renderer.png)  | [state](release-current/space-flow/space-switched-back.json)        |
+| New `/etc` Space active again | [renderer](release-current/space-flow/space-switched-again-renderer.png) | [state](release-current/space-flow/space-switched-again.json)       |
+
+The same binary SHA produced the final Workspace, restart recovery, and Agent
+evidence below.
+
 ## WSLg browser bridge
 
 | Scenario                                                                   | Evidence                                                          |
@@ -102,7 +127,7 @@ reported `shellRuntimeId: null` after 45 seconds despite persisted
 `shouldAutoStartCliRuntime` now starts persisted running Sessions before their
 restored terminal Tab becomes visible. The terminal uses its default 80×24 grid
 until a visible viewport supplies the final fit. Re-running the same persisted
-workspace completed in 2.2 seconds with a new Shell runtime ID while preserving
+workspace completed in 2.7 seconds with a new Shell runtime ID while preserving
 the active File Editor and Browser:
 
 - [restored desktop screenshot](workspace-recovery/workspace-after-restart.png)
@@ -180,6 +205,7 @@ The following gates completed successfully:
 - Ubuntu: abnormal desktop-exit WebDriver scenario (one passing scenario)
 - Ubuntu: extracted release browser WebDriver scenario (one passing scenario)
 - Ubuntu: `/etc` Space create and bidirectional switch WebDriver scenario (one passing scenario)
+- Ubuntu: final extracted Release `/etc` Space create and bidirectional switch (one passing scenario)
 - Ubuntu: Space Folder/File Explorer/File Editor/Git WebDriver workflow (three passing scenarios)
 - Ubuntu: persisted workspace restart recovery WebDriver scenario (one passing scenario)
 - Ubuntu: Codex Agent cross-Space focus, close Cancel, deletion, and process cleanup WebDriver scenario (one passing scenario)

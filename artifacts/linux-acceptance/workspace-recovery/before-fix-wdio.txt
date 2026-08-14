@@ -28,7 +28,7 @@ Error: Persisted workspace did not recover
 [wry 0.55.1 linux #0-0]     at async Context.<anonymous> (/mnt/d/ccsmv2-linux/apps/desktop/e2e/linux/workspace-recovery.spec.ts:96:7)
 
 
-Spec Files:	 0 passed, 1 failed, 1 total (100% completed) in 00:01:27  
+Spec Files:	 0 passed, 1 failed, 1 total (100% completed) in 00:01:27
 
 /mnt/d/ccsmv2-linux/apps/desktop:
  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @ccsm/desktop@0.1.0-beta.2 test:desktop:linux: `wdio run wdio.linux.conf.ts --spec ./e2e/linux/workspace-recovery.spec.ts`

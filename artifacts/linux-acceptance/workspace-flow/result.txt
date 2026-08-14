@@ -1,7 +1,7 @@
 PASS: Linux Workspace, Space Folder, File Editor, and Git L4 workflow
 
 Desktop result:
-- 3 passing (13.9s)
+- 3 passing (13.6s)
 
 Verified:
 - created, renamed, collapsed, expanded, and deleted Space Folders

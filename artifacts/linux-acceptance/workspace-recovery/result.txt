@@ -10,7 +10,7 @@ Fix:
 - hidden terminals start at the default 80x24 grid and fit when shown
 
 After fix:
-- 1 passing (2.2s)
+- 1 passing (2.7s)
 - restored the same active Space and Folder placement
 - restored one visible clean File Editor with Unicode content and word-wrap
 - restored a visible, ready WebKitGTK Browser

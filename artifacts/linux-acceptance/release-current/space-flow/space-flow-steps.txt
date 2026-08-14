@@ -1,0 +1,10 @@
+2026-08-14T05:11:40.850Z open directory picker
+2026-08-14T05:11:40.968Z directory picker opened
+2026-08-14T05:11:41.014Z directory path selected
+2026-08-14T05:11:41.126Z Space name dialog opened
+2026-08-14T05:11:41.174Z submit Space creation
+2026-08-14T05:11:41.206Z Space creation click returned
+2026-08-14T05:11:41.404Z Space name dialog closed
+2026-08-14T05:11:45.401Z new Space active
+2026-08-14T05:11:55.204Z initial Space active again
+2026-08-14T05:11:57.244Z new Space active again

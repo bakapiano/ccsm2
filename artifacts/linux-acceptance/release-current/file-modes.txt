@@ -1,0 +1,2 @@
+-rwxr-xr-x 755 /home/bakapiano/.cache/ccsm-release-8062082/CCSM-0.1.0-beta.2-ubuntu-24.04-x86_64/ccsm-desktop
+-rwxr-xr-x 755 /home/bakapiano/.cache/ccsm-release-8062082/CCSM-0.1.0-beta.2-ubuntu-24.04-x86_64/run.sh
