@@ -877,7 +877,7 @@ button.primary:hover {
   min-width: 0;
   overflow: hidden;
   border-top: 1px solid var(--accent-deep);
-  padding: 0 10px;
+  padding: 0 88px 0 10px;
   color: #ffffff;
   background: var(--accent);
   user-select: none;
