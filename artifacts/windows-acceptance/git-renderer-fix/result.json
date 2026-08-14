@@ -1,0 +1,25 @@
+{
+  "testedCommit": "9c5e22fd3e89a74566feef0adca00d485adf3502",
+  "platform": "Windows",
+  "binarySha256": "EB858F30A78751EDAB7FDDA3C49BDD68887CD87BE5015137E881CB489E0AB5A2",
+  "spaceFlow": {
+    "createdName": "lib.user-is-merged",
+    "createMs": 556,
+    "switchToInitialMs": 147,
+    "switchBackMs": 133,
+    "nativeChildWebViewVisible": true
+  },
+  "gitWhileHidden": {
+    "repositories": 0,
+    "statuses": 0
+  },
+  "gitAfterVisible": {
+    "repositories": 1,
+    "statuses": 1,
+    "status": "1 repos · 30 changes",
+    "scanMs": 299,
+    "diffTextCharacters": 3154,
+    "navigationTextCharacters": 2782
+  },
+  "browserConsoleErrors": 0
+}
