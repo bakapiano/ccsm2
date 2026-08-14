@@ -77,14 +77,42 @@ impl AppBackend {
     }
 
     pub fn switch_space(&self, space_id: &str) -> BackendResult<BootstrapDto> {
+        let previous_space_id = self.store.workspace_state()?.active_space_id;
         let state = self.store.switch_space(space_id)?;
-        self.root_context.activate(&state.active_space_id)?;
+        if let Err(activation_error) = self.root_context.activate(&state.active_space_id) {
+            let rollback = self
+                .store
+                .switch_space(&previous_space_id)
+                .and_then(|_| self.root_context.activate(&previous_space_id));
+            return Err(activation_error_after_rollback(
+                "switch Space",
+                activation_error,
+                rollback,
+            ));
+        }
         Ok(state)
     }
 
     pub fn create_space(&self, request: CreateSpaceRequest) -> BackendResult<BootstrapDto> {
+        let previous_space_id = self.store.workspace_state()?.active_space_id;
         let state = self.store.create_space(request)?;
-        self.root_context.activate(&state.active_space_id)?;
+        if let Err(activation_error) = self.root_context.activate(&state.active_space_id) {
+            let created_space_id = state.active_space_id.clone();
+            let rollback = self
+                .store
+                .switch_space(&previous_space_id)
+                .and_then(|_| {
+                    self.store.delete_space(DeleteSpaceRequest {
+                        space_id: created_space_id,
+                    })
+                })
+                .and_then(|_| self.root_context.activate(&previous_space_id));
+            return Err(activation_error_after_rollback(
+                "create Space",
+                activation_error,
+                rollback,
+            ));
+        }
         Ok(state)
     }
 
@@ -367,6 +395,19 @@ impl AppBackend {
     pub fn shutdown(&self) {
         self.runtimes.shutdown();
         self.root_context.shutdown();
+    }
+}
+
+fn activation_error_after_rollback(
+    operation: &str,
+    activation_error: BackendError,
+    rollback: BackendResult<()>,
+) -> BackendError {
+    match rollback {
+        Ok(()) => activation_error,
+        Err(rollback_error) => BackendError::Platform(format!(
+            "{activation_error}; {operation} rollback failed: {rollback_error}"
+        )),
     }
 }
 

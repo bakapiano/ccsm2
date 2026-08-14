@@ -7,7 +7,7 @@ mod shim;
 mod store;
 mod watch;
 
-pub use containment::install_process_tree_guard;
+pub use containment::{install_process_tree_guard, run_process_watchdog};
 pub use filesystem::{
     HostDirectoryEntry, HostDirectoryListing, HostDirectoryStart, LocalFileSystemBackend,
 };

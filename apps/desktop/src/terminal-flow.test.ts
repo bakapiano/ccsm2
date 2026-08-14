@@ -245,7 +245,7 @@ describe("terminal flow control", () => {
     expect(runtimeStartCanCommit(new Set(), "runtime-1")).toBe(true);
   });
 
-  test("auto-starts visible resumable CLI sessions", () => {
+  test("auto-starts desired runtimes before their restored Tab is visible", () => {
     expect(
       shouldAutoStartCliRuntime(
         { desiredState: "running", nativeBindingState: "pending" },
@@ -259,7 +259,7 @@ describe("terminal flow control", () => {
         false,
         false,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldAutoStartCliRuntime(
         { desiredState: "stopped", nativeBindingState: "bound" },

@@ -34,3 +34,18 @@ Build a release archive locally with:
 ```powershell
 pnpm package:windows
 ```
+
+## Ubuntu 24.04 preview
+
+CCSM runs on Ubuntu 24.04 x86_64 and WSLg with the WebKitGTK, GTK, AppIndicator,
+SVG, and xdo runtime libraries installed. Claude Code, Codex, and GitHub Copilot
+tabs use their authenticated Linux CLI installations from `PATH`.
+
+Build the tested `tar.gz` archive from Ubuntu or WSL Ubuntu with:
+
+```bash
+pnpm package:ubuntu
+```
+
+The archive and its SHA-256 file are written to `target/release/`. Its packaged
+`README-UBUNTU.md` contains the runtime dependency and launch commands.

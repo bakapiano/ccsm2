@@ -1,0 +1,12 @@
+22118 22101 22081 22081 S+               tau                  \_ tauri-driver --port 4444 --native-port 4445 --native-driver /usr/bin/WebKitWebDriver
+22119 22118 22081 22081 Sl+              Web                  |   \_ /usr/bin/WebKitWebDriver --port=4445 --host=127.0.0.1
+22148 22119 22081 22081 Sl+              ccs                  |       \_ /home/bakapiano/.cache/ccsm-target/debug/ccsm-desktop
+22172 22148 22081 22081 SLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess 1 21
+22263 22148 22081 22081 RLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess 4 29
+22368 22148 22081 22081 SLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess 5 47
+22369 22148 22081 22081 SLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess 7 45
+22459 22148 22081 22081 S+               ccs                  |           \_ /home/bakapiano/.cache/ccsm-target/debug/ccsm-desktop process-watchdog 22458
+22476 22148 22476 22476 Ssl+             cla                  |           \_ /usr/local/bin/claude --session-id 98bc44c4-d177-4f5f-8468-b15faa70dfb1 --settings {"hooks":{"PermissionRequest":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}],"PreToolUse":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}],"SessionEnd":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}],"SessionStart":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}],"Stop":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}],"StopFailure":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}],"UserPromptSubmit":[{"hooks":[{"command":"ccsm-hook hook report","timeout":10,"type":"command"}],"matcher":""}]}}
+22589 22476 22589 22589 Ss               sh                   |           |   \_ /bin/sh -c node ~/.claude/statusline-command.js
+22590 22589 22589 22589 Dl               Mai                  |           |       \_ node /home/bakapiano/.claude/statusline-command.js
+22477 22148 22081 22081 S+               ccs                  |           \_ /home/bakapiano/.cache/ccsm-target/debug/ccsm-desktop process-watchdog 22476

@@ -1,0 +1,17 @@
+{
+  "spaces": [
+    {
+      "active": true,
+      "name": "desktop",
+      "id": "bf962b8f-1c58-450b-8c2a-0131d57a2719",
+      "root": "/mnt/d/ccsmv2-linux/apps/desktop"
+    }
+  ],
+  "browserNativeVisible": true,
+  "activeRoot": "/mnt/d/ccsmv2-linux/apps/desktop",
+  "activeRuntimeId": "1025cc8a-6d82-4f83-ae19-c855c471cac0",
+  "globalStatus": "ready",
+  "browserStatus": "WebKitGTK · ready",
+  "activeName": "desktop",
+  "globalStatusState": "running"
+}

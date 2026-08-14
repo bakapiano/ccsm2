@@ -1,0 +1,25 @@
+
+> @ccsm/desktop@0.1.0-beta.2 test:desktop:linux /mnt/d/ccsmv2-linux/apps/desktop
+> wdio run wdio.linux.conf.ts --spec ./e2e/linux/space-flow.spec.ts
+
+
+Execution of 1 workers started at 2026-08-14T05:10:55.181Z
+
+[0-0] RUNNING in undefined - file:///e2e/linux/space-flow.spec.ts
+[0-0] 2026-08-14T05:11:41.324Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:11:41.327Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] PASSED in undefined - file:///e2e/linux/space-flow.spec.ts
+
+ "spec" Reporter:
+------------------------------------------------------------------
+[wry 0.55.1 linux #0-0] Running: wry (v0.55.1) on linux
+[wry 0.55.1 linux #0-0] Session ID: 9eb5ff9b-9178-46e6-8cd2-6126c4d287db
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] » e2e/linux/space-flow.spec.ts
+[wry 0.55.1 linux #0-0] Linux Space workflow
+[wry 0.55.1 linux #0-0]    ✓ creates a Space and switches both directions
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] 1 passing (26.7s)
+
+
+Spec Files:	 1 passed, 1 total (100% completed) in 00:01:03

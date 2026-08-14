@@ -1,0 +1,60 @@
+{
+  "globalStatus": "ready",
+  "unfiledSpaces": [
+    "desktop"
+  ],
+  "editor": {
+    "status": "Saved",
+    "engine": "codemirror6",
+    "state": "clean",
+    "content": "BaselineLinux L4 中文编辑 ✓",
+    "wordWrap": true
+  },
+  "theme": "light",
+  "folders": [
+    {
+      "name": "Acceptance Folder",
+      "expanded": true,
+      "id": "6cdb9ad4-b7a8-4ca2-9191-32c3e6541147",
+      "spaces": [
+        "L4 Workspace"
+      ]
+    }
+  ],
+  "browserNativeVisible": true,
+  "git": {
+    "status": "1 repos · 0 changes",
+    "files": []
+  },
+  "activeRoot": "/home/bakapiano/.cache/ccsm-final-workspace-8062082",
+  "browserStatus": "WebKitGTK · ready",
+  "activeName": "L4 Workspace",
+  "tabs": [
+    {
+      "title": "Shell",
+      "kind": "cli-session",
+      "active": false
+    },
+    {
+      "title": "Files",
+      "kind": "file-explorer",
+      "active": false
+    },
+    {
+      "title": "Git",
+      "kind": "git",
+      "active": false
+    },
+    {
+      "title": "acceptance.md",
+      "kind": "file-editor",
+      "active": true
+    },
+    {
+      "title": "Example Domain",
+      "kind": "browser",
+      "active": true
+    }
+  ],
+  "shellRuntimeId": "681fee38-0bc3-4d93-a7c6-d4e7e687e277"
+}

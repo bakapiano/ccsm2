@@ -1,0 +1,23 @@
+{
+  "spaces": [
+    {
+      "active": true,
+      "name": "desktop",
+      "id": "6c475ae6-92e3-4786-a4a4-eec80e6729c9",
+      "root": "/mnt/d/ccsmv2-linux/apps/desktop"
+    },
+    {
+      "active": false,
+      "name": "ETC E2E",
+      "id": "ec95fe34-7307-433a-b128-96b3fbaa6c3a",
+      "root": "/etc"
+    }
+  ],
+  "browserNativeVisible": true,
+  "activeRoot": "/mnt/d/ccsmv2-linux/apps/desktop",
+  "activeRuntimeId": "59263f4b-5381-444f-9297-39e774ec76b7",
+  "globalStatus": "ready",
+  "browserStatus": "WebKitGTK · ready",
+  "activeName": "desktop",
+  "globalStatusState": "running"
+}

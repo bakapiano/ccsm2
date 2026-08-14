@@ -119,7 +119,7 @@ impl BrowserSurfaceManager {
         let source_surface_id = surface_id.to_string();
         let title_app_handle = window.app_handle().clone();
         let title_surface_id = surface_id.to_string();
-        let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed_url.clone()))
+        let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed_url.clone()))
             .on_navigation(|url| matches!(url.scheme(), "http" | "https" | "about"))
             .on_new_window(move |url, _features| {
                 if matches!(url.scheme(), "http" | "https" | "about") {
@@ -149,19 +149,19 @@ impl BrowserSurfaceManager {
             .data_directory(self.profile_dir.clone());
 
         #[cfg(all(target_os = "windows", debug_assertions))]
-        {
-            builder = builder.additional_browser_args(
+        let builder = builder.additional_browser_args(
                 "--remote-debugging-port=9227 --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
             );
-        }
 
-        window
+        let _browser = window
             .add_child(
                 builder,
                 LogicalPosition::new(bounds.x, bounds.y),
                 LogicalSize::new(bounds.width, bounds.height),
             )
             .map_err(|error| format!("create child WebView failed: {error}"))?;
+        #[cfg(target_os = "linux")]
+        configure_linux_child(&_browser, bounds)?;
         self.labels
             .lock()
             .map_err(|_| "browser surface lock poisoned".to_string())?
@@ -181,7 +181,11 @@ impl BrowserSurfaceManager {
         bounds: BrowserBounds,
     ) -> Result<(), String> {
         let bounds = bounds.validated()?;
-        self.get(app, surface_id)?
+        let browser = self.get(app, surface_id)?;
+        #[cfg(target_os = "linux")]
+        return set_linux_child_bounds(&browser, bounds);
+        #[cfg(not(target_os = "linux"))]
+        browser
             .set_bounds(bounds.rect())
             .map_err(|error| format!("set browser bounds failed: {error}"))
     }
@@ -295,6 +299,124 @@ impl BrowserSurfaceManager {
 
 type CaptureSender = mpsc::SyncSender<Result<Vec<u8>, String>>;
 
+#[cfg(target_os = "linux")]
+fn configure_linux_child(browser: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String> {
+    run_on_linux_webview(browser, move |child| {
+        use gtk::prelude::*;
+
+        let parent = child
+            .parent()
+            .ok_or_else(|| "Linux child WebView has no GTK parent".to_string())?;
+        let vbox = parent
+            .downcast::<gtk::Box>()
+            .map_err(|_| "Linux child WebView parent is not the Tauri GtkBox".to_string())?;
+        let existing_fixed = vbox.children().into_iter().find_map(|widget| {
+            widget
+                .downcast::<gtk::Fixed>()
+                .ok()
+                .filter(|fixed| fixed.widget_name() == "ccsm-webview-fixed")
+        });
+        let fixed = if let Some(fixed) = existing_fixed {
+            vbox.remove(&child);
+            fixed.put(&child, 0, 0);
+            child.show();
+            fixed
+        } else {
+            install_linux_fixed_host(&vbox, &child)?
+        };
+        place_linux_child(&fixed, &child, bounds);
+        Ok(())
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn set_linux_child_bounds(browser: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String> {
+    run_on_linux_webview(browser, move |child| {
+        use gtk::prelude::*;
+
+        let fixed = child
+            .parent()
+            .and_then(|parent| parent.downcast::<gtk::Fixed>().ok())
+            .filter(|fixed| fixed.widget_name() == "ccsm-webview-fixed")
+            .ok_or_else(|| {
+                "Linux child WebView is not attached to the CCSM GtkFixed".to_string()
+            })?;
+        place_linux_child(&fixed, &child, bounds);
+        Ok(())
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn run_on_linux_webview(
+    browser: &tauri::Webview,
+    operation: impl FnOnce(gtk::Widget) -> Result<(), String> + Send + 'static,
+) -> Result<(), String> {
+    use gtk::prelude::*;
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    browser
+        .with_webview(move |webview| {
+            let child = webview.inner().upcast::<gtk::Widget>();
+            let _ = sender.send(operation(child));
+        })
+        .map_err(|error| format!("schedule Linux child WebView layout failed: {error}"))?;
+    receiver
+        .recv_timeout(Duration::from_secs(2))
+        .map_err(|error| format!("Linux child WebView layout timed out: {error}"))?
+}
+
+#[cfg(target_os = "linux")]
+fn install_linux_fixed_host(vbox: &gtk::Box, child: &gtk::Widget) -> Result<gtk::Fixed, String> {
+    use gtk::prelude::*;
+
+    let main = vbox
+        .children()
+        .into_iter()
+        .find(|widget| widget != child && widget.type_().name() == "WebKitWebView")
+        .ok_or_else(|| "Tauri main WebView was not found in the Linux GtkBox".to_string())?;
+    vbox.remove(&main);
+    vbox.remove(child);
+
+    let fixed = gtk::Fixed::new();
+    fixed.set_widget_name("ccsm-webview-fixed");
+    fixed.set_hexpand(true);
+    fixed.set_vexpand(true);
+    vbox.pack_start(&fixed, true, true, 0);
+    fixed.put(&main, 0, 0);
+    fixed.put(child, 0, 0);
+
+    let allocation = vbox.allocation();
+    main.set_size_request(allocation.width(), allocation.height());
+    let main_for_resize = main.clone();
+    fixed.connect_size_allocate(move |_fixed, allocation| {
+        main_for_resize.set_size_request(allocation.width(), allocation.height());
+    });
+    main.show();
+    child.show();
+    fixed.show();
+    Ok(fixed)
+}
+
+#[cfg(target_os = "linux")]
+fn place_linux_child(fixed: &gtk::Fixed, child: &gtk::Widget, bounds: BrowserBounds) {
+    use gtk::prelude::*;
+
+    let (x, y, width, height) = linux_allocation(bounds);
+    fixed.move_(child, x, y);
+    child.set_size_request(width, height);
+    fixed.queue_resize();
+}
+
+#[cfg(target_os = "linux")]
+fn linux_allocation(bounds: BrowserBounds) -> (i32, i32, i32, i32) {
+    (
+        bounds.x.round() as i32,
+        bounds.y.round() as i32,
+        bounds.width.round().max(1.0) as i32,
+        bounds.height.round().max(1.0) as i32,
+    )
+}
+
 #[cfg(target_os = "windows")]
 fn capture_platform_webview(webview: tauri::webview::PlatformWebview, sender: CaptureSender) {
     use webview2_com::{
@@ -373,7 +495,33 @@ fn capture_platform_webview(webview: tauri::webview::PlatformWebview, sender: Ca
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+fn capture_platform_webview(webview: tauri::webview::PlatformWebview, sender: CaptureSender) {
+    use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
+
+    webview.inner().snapshot(
+        SnapshotRegion::Visible,
+        SnapshotOptions::NONE,
+        None::<&gio::Cancellable>,
+        move |result| {
+            let captured = result
+                .map_err(|error| format!("capture WebKitGTK browser preview failed: {error}"))
+                .and_then(|surface| {
+                    let mut png = Vec::new();
+                    surface.write_to_png(&mut png).map_err(|error| {
+                        format!("encode WebKitGTK browser preview failed: {error}")
+                    })?;
+                    if png.is_empty() {
+                        return Err("WebKitGTK browser preview returned an empty image".into());
+                    }
+                    Ok(png)
+                });
+            let _ = sender.send(captured);
+        },
+    );
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn capture_platform_webview(_webview: tauri::webview::PlatformWebview, sender: CaptureSender) {
     let _ = sender.send(Err(
         "browser preview capture is not implemented on this platform".into(),
@@ -412,5 +560,32 @@ fn parse_browser_url(value: &str) -> Result<tauri::Url, String> {
     match url.scheme() {
         "http" | "https" | "about" => Ok(url),
         scheme => Err(format!("browser URL scheme is not allowed: {scheme}")),
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::*;
+
+    #[test]
+    fn browser_bounds_round_to_stable_gtk_allocation() {
+        assert_eq!(
+            linux_allocation(BrowserBounds {
+                x: 780.49,
+                y: 102.51,
+                width: 539.6,
+                height: 674.5,
+            }),
+            (780, 103, 540, 675)
+        );
+        assert_eq!(
+            linux_allocation(BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 0.1,
+                height: 0.1,
+            }),
+            (0, 0, 1, 1)
+        );
     }
 }

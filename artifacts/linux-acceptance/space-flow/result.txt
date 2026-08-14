@@ -1,0 +1,22 @@
+PASS: Linux Space create and bidirectional switch regression
+
+Desktop command:
+pnpm test:desktop:linux --spec ./e2e/linux/space-flow.spec.ts
+
+Desktop result:
+1 passing (34.6s)
+
+Verified:
+- created ETC E2E with /etc as the root despite /etc/ssl/private permissions
+- switched from ETC E2E to desktop and back to ETC E2E
+- kept each Space's Shell runtime ID stable across detach and remount
+- restored a visible, ready WebKitGTK Browser after each switch
+- committed both layouts and the final active Space to SQLite
+- released every test desktop, driver, WebKit, runtime, and watchdog process
+
+Lower-layer gates:
+- create/switch activation rollback integration tests: 2 passed
+- filesystem watcher adapter tests: 4 passed
+- Rust workspace and frontend suite: passed; frontend 252 passed
+- TypeScript and Rust workspace checks: passed
+- Rustfmt and Prettier checks: passed

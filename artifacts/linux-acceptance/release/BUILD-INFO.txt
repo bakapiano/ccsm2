@@ -1,0 +1,5 @@
+Package: CCSM-0.1.0-beta.2-ubuntu-24.04-x86_64
+Source: v0.1.0-beta.2-6-g60e623a
+Built on: Ubuntu 24.04
+Architecture: x86_64
+ccsm-desktop SHA256: a8a3f7945afdfd9c9bb213d228f37166e4d82267084720579764a24df3da97b5

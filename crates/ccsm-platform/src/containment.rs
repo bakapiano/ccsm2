@@ -148,26 +148,119 @@ mod windows {
 
 #[cfg(not(windows))]
 mod unix {
-    use super::BackendResult;
+    use std::{io::Read, thread, time::Duration};
 
-    pub struct ProcessContainment;
+    use super::{BackendError, BackendResult};
+
+    pub struct ProcessContainment {
+        pgid: i32,
+    }
 
     impl ProcessContainment {
-        pub fn attach(_pid: Option<u32>) -> BackendResult<Self> {
-            Ok(Self)
+        pub fn attach(pid: Option<u32>) -> BackendResult<Self> {
+            let pid =
+                pid.ok_or_else(|| BackendError::Platform("spawned process has no PID".into()))?;
+            let pgid = i32::try_from(pid)
+                .map_err(|_| BackendError::Platform(format!("process PID {pid} exceeds i32")))?;
+            Ok(Self { pgid })
         }
 
         pub fn terminate(&self) -> BackendResult<()> {
-            Ok(())
+            signal_group(self.pgid, libc::SIGTERM)?;
+            for _ in 0..25 {
+                if !process_group_exists(self.pgid) {
+                    return Ok(());
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            signal_group(self.pgid, libc::SIGKILL)
         }
     }
 
     pub fn install_process_tree_guard() -> BackendResult<()> {
         Ok(())
     }
+
+    pub fn run_process_watchdog(pgid: i32) -> i32 {
+        if pgid <= 0 {
+            eprintln!("ccsm process watchdog requires a positive process group ID");
+            return 2;
+        }
+        let mut input = std::io::stdin().lock();
+        let mut buffer = [0_u8; 64];
+        loop {
+            match input.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
+        }
+        let _ = signal_group(pgid, libc::SIGKILL);
+        0
+    }
+
+    fn process_group_exists(pgid: i32) -> bool {
+        let result = unsafe { libc::kill(-pgid, 0) };
+        result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+
+    fn signal_group(pgid: i32, signal: i32) -> BackendResult<()> {
+        let result = unsafe { libc::kill(-pgid, signal) };
+        if result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(BackendError::Platform(format!(
+                "signal process group {pgid} with {signal}: {}",
+                std::io::Error::last_os_error()
+            )))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::{os::unix::process::CommandExt, process::Command, time::Instant};
+
+        use super::*;
+
+        #[test]
+        fn containment_terminates_the_unix_process_group() {
+            let mut command = Command::new("/bin/sh");
+            command.args(["-c", "sleep 60 & wait"]);
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let mut child = command.spawn().expect("spawn process group fixture");
+            let pgid = child.id() as i32;
+            let containment = ProcessContainment::attach(Some(child.id())).unwrap();
+            containment.terminate().unwrap();
+
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                if child.try_wait().unwrap().is_some() {
+                    assert!(!process_group_exists(pgid));
+                    return;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            let _ = child.kill();
+            panic!("contained Unix process group did not exit");
+        }
+    }
 }
 
 #[cfg(not(windows))]
-pub use unix::{ProcessContainment, install_process_tree_guard};
+pub use unix::{ProcessContainment, install_process_tree_guard, run_process_watchdog};
 #[cfg(windows)]
 pub use windows::{ProcessContainment, install_process_tree_guard};
+
+#[cfg(windows)]
+pub fn run_process_watchdog(_pgid: i32) -> i32 {
+    eprintln!("ccsm process watchdog mode is only available on Unix");
+    2
+}

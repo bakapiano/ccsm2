@@ -43,3 +43,9 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Console",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cairo-rs = { version = "0.18.5", features = ["png"] }
+gio = "0.18.4"
+gtk = "0.18.2"
+webkit2gtk = "2.0.2"

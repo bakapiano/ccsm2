@@ -1,0 +1,39 @@
+
+> @ccsm/desktop@0.1.0-beta.2 test:desktop:linux /mnt/d/ccsmv2-linux/apps/desktop
+> wdio run wdio.linux.conf.ts --spec ./e2e/linux/workspace-flow.spec.ts
+
+
+Execution of 1 workers started at 2026-08-14T05:13:28.812Z
+
+[0-0] RUNNING in undefined - file:///e2e/linux/workspace-flow.spec.ts
+[0-0] 2026-08-14T05:14:15.961Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:15.965Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:16.220Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:16.221Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:16.375Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:16.376Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:17.268Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:17.270Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:17.738Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:17.740Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:18.368Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:18.371Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:19.818Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] 2026-08-14T05:14:19.820Z WARN webdriver: Request encountered a stale element - terminating request
+[0-0] PASSED in undefined - file:///e2e/linux/workspace-flow.spec.ts
+
+ "spec" Reporter:
+------------------------------------------------------------------
+[wry 0.55.1 linux #0-0] Running: wry (v0.55.1) on linux
+[wry 0.55.1 linux #0-0] Session ID: 5c853b8d-1874-44db-8166-a039d0fba9da
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] » e2e/linux/workspace-flow.spec.ts
+[wry 0.55.1 linux #0-0] Linux workspace workflows
+[wry 0.55.1 linux #0-0]    ✓ manages folders and moves a Space to Folder and Unfiled
+[wry 0.55.1 linux #0-0]    ✓ opens, deduplicates, edits, protects, and saves a Unicode file
+[wry 0.55.1 linux #0-0]    ✓ refreshes Git and leaves a restorable workspace
+[wry 0.55.1 linux #0-0]
+[wry 0.55.1 linux #0-0] 3 passing (13.6s)
+
+
+Spec Files:	 1 passed, 1 total (100% completed) in 00:00:52

@@ -1,0 +1,19 @@
+PASS: Linux persisted Workspace restart recovery
+
+Before fix:
+- Space, Folder, File Editor, Unicode content, word-wrap, and Browser restored
+- persisted Shell desired_state was running
+- shellRuntimeId remained null after 45 seconds while File Editor was active
+
+Fix:
+- persisted running CLI Sessions auto-start before a restored terminal Tab is visible
+- hidden terminals start at the default 80x24 grid and fit when shown
+
+After fix:
+- 1 passing (2.7s)
+- restored the same active Space and Folder placement
+- restored one visible clean File Editor with Unicode content and word-wrap
+- restored a visible, ready WebKitGTK Browser
+- started a new Shell runtime without focusing the Shell Tab
+
+Runner output: recovery-wdio.txt

@@ -1,0 +1,15 @@
+PASS: Linux Agent cross-Space focus and deletion workflow
+
+Desktop result:
+- 1 passing (23.8s)
+
+Verified:
+- launched the installed Codex CLI and rendered one idle Agent sidebar item
+- kept the Codex runtime process group alive while another Space was active
+- clicked the Agent item and restored its owning Space, Tab, and runtime ID
+- kept the Panel, Tab, Session, Agent item, and runtime mounted during confirmation
+- Cancel retained every Agent resource
+- Close and Delete removed the Codex Tab and CLI Session from data.db
+- released process group 18670 and its process watchdog
+
+Runner output: agent-wdio.txt

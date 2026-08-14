@@ -1,0 +1,14 @@
+{
+  "globalStatusState": "error",
+  "spaces": [
+    {
+      "active": true,
+      "name": "desktop",
+      "id": "b0989e36-0a41-401a-913d-133b913121e5",
+      "root": "/mnt/d/ccsmv2-linux/apps/desktop"
+    }
+  ],
+  "activeRoot": "/mnt/d/ccsmv2-linux/apps/desktop",
+  "globalStatus": "platform_error: platform error: watch Space root: Permission denied (os error 13) about [\"/etc/ssl/private\"]",
+  "activeName": "desktop"
+}

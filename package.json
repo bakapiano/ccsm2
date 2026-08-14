@@ -12,6 +12,7 @@
     "desktop:dev": "pnpm --filter @ccsm/desktop dev:desktop",
     "desktop:build:debug": "pnpm --filter @ccsm/desktop build:desktop:debug",
     "desktop:build:release": "pnpm --filter @ccsm/desktop tauri build --no-bundle --config src-tauri/tauri.release.conf.json",
+    "package:ubuntu": "bash scripts/package-ubuntu.sh",
     "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
     "contracts": "cargo test -p ccsm-core export_bindings && cargo test -p ccsm-desktop export_bindings"
   }
