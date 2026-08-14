@@ -6,12 +6,13 @@ use ccsm_core::{
         AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest,
         CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
         CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
-        DeleteSpaceRequest, DeleteTabRequest, DirectoryListingDto, FileDocumentDto, GitSnapshotDto,
-        ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, ReadFileRequest,
-        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, ReplaceCliSessionRequest,
-        ResolveFileReferenceRequest, ResolvedFileReferenceDto, RuntimeEvent, RuntimeStartedDto,
-        SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto,
-        StartRuntimeRequest, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
+        DeleteSpaceRequest, DeleteTabRequest, DirectoryListingDto, FileDocumentDto, GitFileDiffDto,
+        GitSnapshotDto, ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, ReadFileRequest,
+        ReadGitDiffRequest, RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest,
+        ReplaceCliSessionRequest, ResolveFileReferenceRequest, ResolvedFileReferenceDto,
+        RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest,
+        SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto, UpdateTabStateRequest,
+        WriteFileRequest, WriteFileResultDto,
     },
     error::{ApiErrorDto, BackendError},
 };
@@ -364,6 +365,15 @@ pub async fn refresh_git(
 ) -> CommandResult<GitSnapshotDto> {
     let backend = Arc::clone(&state.backend);
     on_blocking_worker(move || backend.refresh_git(request).map_err(ApiErrorDto::from)).await
+}
+
+#[tauri::command]
+pub async fn read_git_diff(
+    request: ReadGitDiffRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<GitFileDiffDto> {
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || backend.read_git_diff(request).map_err(ApiErrorDto::from)).await
 }
 
 #[tauri::command]

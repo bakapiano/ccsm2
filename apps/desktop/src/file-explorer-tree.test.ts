@@ -6,6 +6,7 @@ import {
   fileTreeKeyboardAction,
   flattenFileTree,
 } from "./file-explorer-tree";
+import { fileResourceIconKind } from "./file-resource-icon";
 
 function entry(relativePath: string, kind: FileEntryDto["kind"]): FileEntryDto {
   return {
@@ -48,6 +49,8 @@ describe("VS Code-style File Explorer tree", () => {
     expect(fileExplorerIconKind(entry("src/main.ts", "file"), false)).toBe(
       "code",
     );
+    expect(fileResourceIconKind("docs/README.md")).toBe("markdown");
+    expect(fileResourceIconKind("nested/.gitignore")).toBe("config");
   });
 
   test("implements VS Code-style arrow and enter navigation", () => {

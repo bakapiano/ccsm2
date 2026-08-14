@@ -20,6 +20,20 @@ export function findDockPanelById<T extends { id: string }>(
   return panels.find((panel) => panel.id === panelId);
 }
 
+export function syncDockPanelTitles<
+  TPanel extends {
+    id: string;
+    title?: string;
+    api: { setTitle(title: string): void };
+  },
+  TTab extends { title: string },
+>(panels: readonly TPanel[], tabs: ReadonlyMap<string, TTab>): void {
+  for (const panel of panels) {
+    const tab = tabs.get(panel.id);
+    if (tab && panel.title !== tab.title) panel.api.setTitle(tab.title);
+  }
+}
+
 export function findNearestRightAlignedDockGroup<
   TGroup extends {
     id: string;

@@ -142,9 +142,11 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 ### Files 与 Git
 
-- Files采用VS Code Explorer风格的22px紧凑行、16px twistie/indent和资源类型图标。
-- Git repository 使用轻边框 section，header 高度为 32px。
-- 文件状态通过短代码和语义色表达。
+- Files采用VS Code Explorer风格的22px紧凑行、16px twistie/indent和资源类型图标；Changes文件导航与diff header复用同一套资源图标。
+- Changes主体使用内容优先的双栏布局，右侧文件导航默认宽度为220px并以细边框分隔。
+- Git repository 与file diff使用轻边框section，header高度为32px；file header在diff滚动区内保持sticky。
+- 文件状态通过行尾无边框短代码和语义色表达。
+- Diff使用双行号gutter与单字符增删marker。added/deleted背景保持低饱和度，token高亮沿用File Editor配色。
 - loading、empty 和 error 状态保持在原布局内，避免大面积占位卡片。
 
 ## 菜单与弹窗

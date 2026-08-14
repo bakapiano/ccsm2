@@ -1,16 +1,23 @@
 use std::{
     collections::HashSet,
+    ffi::OsStr,
     path::{Path, PathBuf},
     process::{Command, Output},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use ccsm_core::{
-    dto::{GitFileChangeDto, GitRepositoryStatusDto, GitSnapshotDto},
+    dto::{
+        GitDiffHunkDto, GitDiffLineDto, GitDiffLineKind, GitFileChangeDto, GitFileDiffDto,
+        GitRepositoryStatusDto, GitSnapshotDto,
+    },
     error::{BackendError, BackendResult},
     ports::{GitBackend, RootDescriptor},
 };
 use uuid::Uuid;
+
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const MAX_RENDERED_DIFF_BYTES: usize = 4 * 1024 * 1024;
 
 pub struct CommandGitBackend;
 
@@ -74,6 +81,357 @@ impl GitBackend for CommandGitBackend {
             repositories,
         })
     }
+
+    fn diff(
+        &self,
+        root: &RootDescriptor,
+        repository: &GitRepositoryStatusDto,
+        change: &GitFileChangeDto,
+    ) -> BackendResult<GitFileDiffDto> {
+        let repository_root = validated_repository_root(root, repository)?;
+        validated_relative_path(&change.path)?;
+        if let Some(original_path) = change.original_path.as_deref() {
+            validated_relative_path(original_path)?;
+        }
+        if change.kind == "untracked" {
+            untracked_file_diff(repository, change, &repository_root)
+        } else {
+            tracked_file_diff(repository, change, &repository_root)
+        }
+    }
+}
+
+fn validated_repository_root(
+    root: &RootDescriptor,
+    repository: &GitRepositoryStatusDto,
+) -> BackendResult<PathBuf> {
+    let space_root = PathBuf::from(&root.root_path)
+        .canonicalize()
+        .map_err(|error| BackendError::Platform(format!("canonicalize Space root: {error}")))?;
+    let repository_root = PathBuf::from(&repository.root_path)
+        .canonicalize()
+        .map_err(|error| BackendError::Platform(format!("canonicalize Git root: {error}")))?;
+    if !repository_root.starts_with(&space_root) {
+        return Err(BackendError::Invalid(
+            "Git repository is outside the Space root".into(),
+        ));
+    }
+    let confirmed = confirmed_repository_root(&repository_root)?
+        .ok_or_else(|| BackendError::NotFound(repository.root_path.clone()))?;
+    if confirmed != repository_root || repository_id(&repository_root) != repository.repository_id {
+        return Err(BackendError::Conflict(
+            "Git repository identity changed; refresh Changes".into(),
+        ));
+    }
+    Ok(repository_root)
+}
+
+fn validated_relative_path(value: &str) -> BackendResult<&Path> {
+    let path = Path::new(value);
+    if value.is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(BackendError::Invalid(format!(
+            "invalid repository-relative Git path: {value}"
+        )));
+    }
+    Ok(path)
+}
+
+fn tracked_file_diff(
+    repository: &GitRepositoryStatusDto,
+    change: &GitFileChangeDto,
+    repository_root: &Path,
+) -> BackendResult<GitFileDiffDto> {
+    let baseline = if repository_has_head(repository_root)? {
+        "HEAD"
+    } else {
+        EMPTY_TREE
+    };
+    let mut arguments = vec![
+        "diff".to_string(),
+        "--no-ext-diff".to_string(),
+        "--no-textconv".to_string(),
+        "--no-color".to_string(),
+        "--unified=3".to_string(),
+        "--find-renames".to_string(),
+        "--find-copies".to_string(),
+        baseline.to_string(),
+        "--".to_string(),
+    ];
+    if let Some(original_path) = change
+        .original_path
+        .as_deref()
+        .filter(|original_path| *original_path != change.path)
+    {
+        arguments.push(original_path.to_string());
+    }
+    arguments.push(change.path.clone());
+    let output = git_output(repository_root, &arguments)?;
+    if !output.status.success() {
+        return Err(BackendError::Platform(format!(
+            "read Git diff for {}: {}",
+            change.path,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(diff_from_patch(repository, change, &output.stdout))
+}
+
+fn repository_has_head(repository_root: &Path) -> BackendResult<bool> {
+    Ok(
+        git_output(repository_root, &["rev-parse", "--verify", "HEAD^{tree}"])?
+            .status
+            .success(),
+    )
+}
+
+fn untracked_file_diff(
+    repository: &GitRepositoryStatusDto,
+    change: &GitFileChangeDto,
+    repository_root: &Path,
+) -> BackendResult<GitFileDiffDto> {
+    let relative_path = validated_relative_path(&change.path)?;
+    let file_path = repository_root.join(relative_path);
+    let metadata = std::fs::symlink_metadata(&file_path)
+        .map_err(|error| BackendError::Platform(format!("read {}: {error}", change.path)))?;
+    if metadata.is_file() && metadata.len() > MAX_RENDERED_DIFF_BYTES as u64 {
+        return Ok(GitFileDiffDto {
+            repository_id: repository.repository_id.clone(),
+            path: change.path.clone(),
+            original_path: change.original_path.clone(),
+            additions: 0,
+            deletions: 0,
+            binary: false,
+            truncated: true,
+            hunks: Vec::new(),
+        });
+    }
+    let bytes = if metadata.file_type().is_symlink() {
+        std::fs::read_link(&file_path)
+            .map_err(|error| {
+                BackendError::Platform(format!("read symlink {}: {error}", change.path))
+            })?
+            .to_string_lossy()
+            .into_owned()
+            .into_bytes()
+    } else {
+        let canonical_file = file_path.canonicalize().map_err(|error| {
+            BackendError::Platform(format!("canonicalize {}: {error}", change.path))
+        })?;
+        if !canonical_file.starts_with(repository_root) {
+            return Err(BackendError::Invalid(format!(
+                "Git file is outside the repository: {}",
+                change.path
+            )));
+        }
+        std::fs::read(&canonical_file)
+            .map_err(|error| BackendError::Platform(format!("read {}: {error}", change.path)))?
+    };
+    let truncated = bytes.len() > MAX_RENDERED_DIFF_BYTES;
+    let binary = bytes.contains(&0);
+    let additions = physical_line_count(&bytes);
+    let mut diff = GitFileDiffDto {
+        repository_id: repository.repository_id.clone(),
+        path: change.path.clone(),
+        original_path: change.original_path.clone(),
+        additions,
+        deletions: 0,
+        binary,
+        truncated,
+        hunks: Vec::new(),
+    };
+    if binary || truncated || bytes.is_empty() {
+        return Ok(diff);
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let mut lines = Vec::new();
+    let mut new_line = 1_u32;
+    for raw_line in text.split_terminator('\n') {
+        lines.push(GitDiffLineDto {
+            kind: GitDiffLineKind::Added,
+            old_line: None,
+            new_line: Some(new_line),
+            content: raw_line.strip_suffix('\r').unwrap_or(raw_line).to_string(),
+        });
+        new_line = new_line.saturating_add(1);
+    }
+    if !text.ends_with('\n') {
+        lines.push(GitDiffLineDto {
+            kind: GitDiffLineKind::Meta,
+            old_line: None,
+            new_line: None,
+            content: "No newline at end of file".into(),
+        });
+    }
+    diff.hunks.push(GitDiffHunkDto {
+        header: format!("@@ -0,0 +1,{} @@", diff.additions),
+        old_start: 0,
+        old_lines: 0,
+        new_start: 1,
+        new_lines: diff.additions,
+        lines,
+    });
+    Ok(diff)
+}
+
+fn physical_line_count(bytes: &[u8]) -> u32 {
+    if bytes.is_empty() {
+        return 0;
+    }
+    let newlines = bytes.iter().filter(|byte| **byte == b'\n').count();
+    let count = newlines + usize::from(bytes.last() != Some(&b'\n'));
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+fn diff_from_patch(
+    repository: &GitRepositoryStatusDto,
+    change: &GitFileChangeDto,
+    bytes: &[u8],
+) -> GitFileDiffDto {
+    let text = String::from_utf8_lossy(bytes);
+    let binary = text.lines().any(|line| {
+        line.starts_with("Binary files ")
+            || line == "GIT binary patch"
+            || line.starts_with("Submodule ")
+    });
+    let truncated = bytes.len() > MAX_RENDERED_DIFF_BYTES;
+    if binary || truncated {
+        let (additions, deletions) = count_patch_changes(&text);
+        return GitFileDiffDto {
+            repository_id: repository.repository_id.clone(),
+            path: change.path.clone(),
+            original_path: change.original_path.clone(),
+            additions,
+            deletions,
+            binary,
+            truncated,
+            hunks: Vec::new(),
+        };
+    }
+
+    let mut hunks = Vec::new();
+    let mut current: Option<GitDiffHunkDto> = None;
+    let mut old_line = 0_u32;
+    let mut new_line = 0_u32;
+    let mut additions = 0_u32;
+    let mut deletions = 0_u32;
+
+    for raw_line in text.split_terminator('\n') {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        if let Some((old_start, old_lines, new_start, new_lines)) = parse_hunk_header(line) {
+            if let Some(hunk) = current.take() {
+                hunks.push(hunk);
+            }
+            old_line = old_start;
+            new_line = new_start;
+            current = Some(GitDiffHunkDto {
+                header: line.to_string(),
+                old_start,
+                old_lines,
+                new_start,
+                new_lines,
+                lines: Vec::new(),
+            });
+            continue;
+        }
+        if line.starts_with("diff --git ") {
+            if let Some(hunk) = current.take() {
+                hunks.push(hunk);
+            }
+            continue;
+        }
+        let Some(hunk) = current.as_mut() else {
+            continue;
+        };
+        if let Some(content) = line.strip_prefix('+') {
+            hunk.lines.push(GitDiffLineDto {
+                kind: GitDiffLineKind::Added,
+                old_line: None,
+                new_line: Some(new_line),
+                content: content.to_string(),
+            });
+            additions = additions.saturating_add(1);
+            new_line = new_line.saturating_add(1);
+        } else if let Some(content) = line.strip_prefix('-') {
+            hunk.lines.push(GitDiffLineDto {
+                kind: GitDiffLineKind::Deleted,
+                old_line: Some(old_line),
+                new_line: None,
+                content: content.to_string(),
+            });
+            deletions = deletions.saturating_add(1);
+            old_line = old_line.saturating_add(1);
+        } else if let Some(content) = line.strip_prefix(' ') {
+            hunk.lines.push(GitDiffLineDto {
+                kind: GitDiffLineKind::Context,
+                old_line: Some(old_line),
+                new_line: Some(new_line),
+                content: content.to_string(),
+            });
+            old_line = old_line.saturating_add(1);
+            new_line = new_line.saturating_add(1);
+        } else if let Some(content) = line.strip_prefix("\\ ") {
+            hunk.lines.push(GitDiffLineDto {
+                kind: GitDiffLineKind::Meta,
+                old_line: None,
+                new_line: None,
+                content: content.to_string(),
+            });
+        }
+    }
+    if let Some(hunk) = current {
+        hunks.push(hunk);
+    }
+
+    GitFileDiffDto {
+        repository_id: repository.repository_id.clone(),
+        path: change.path.clone(),
+        original_path: change.original_path.clone(),
+        additions,
+        deletions,
+        binary,
+        truncated,
+        hunks,
+    }
+}
+
+fn parse_hunk_header(line: &str) -> Option<(u32, u32, u32, u32)> {
+    let ranges = line.strip_prefix("@@ ")?.split_once(" @@")?.0;
+    let mut parts = ranges.split_whitespace();
+    let (old_start, old_lines) = parse_hunk_range(parts.next()?, '-')?;
+    let (new_start, new_lines) = parse_hunk_range(parts.next()?, '+')?;
+    Some((old_start, old_lines, new_start, new_lines))
+}
+
+fn parse_hunk_range(value: &str, prefix: char) -> Option<(u32, u32)> {
+    let value = value.strip_prefix(prefix)?;
+    let (start, count) = value
+        .split_once(',')
+        .map(|(start, count)| (start, count))
+        .unwrap_or((value, "1"));
+    Some((start.parse().ok()?, count.parse().ok()?))
+}
+
+fn count_patch_changes(text: &str) -> (u32, u32) {
+    let mut in_hunk = false;
+    let mut additions = 0_u32;
+    let mut deletions = 0_u32;
+    for line in text.lines() {
+        if parse_hunk_header(line).is_some() {
+            in_hunk = true;
+        } else if line.starts_with("diff --git ") {
+            in_hunk = false;
+        } else if in_hunk && line.starts_with('+') {
+            additions = additions.saturating_add(1);
+        } else if in_hunk && line.starts_with('-') {
+            deletions = deletions.saturating_add(1);
+        }
+    }
+    (additions, deletions)
 }
 
 fn confirmed_repository_root(candidate: &Path) -> BackendResult<Option<PathBuf>> {
@@ -99,7 +457,7 @@ fn repository_status(space_root: &Path, repository_root: &Path) -> GitRepository
         .map(path_to_slashes)
         .unwrap_or_else(|| ".".into());
     let root_path = repository_root.to_string_lossy().to_string();
-    let repository_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, root_path.as_bytes()).to_string();
+    let repository_id = repository_id(repository_root);
     let captured_at = now_timestamp();
     match git_output(
         repository_root,
@@ -258,11 +616,13 @@ fn change_kind(xy: &[u8]) -> &'static str {
     }
 }
 
-fn git_output(cwd: &Path, arguments: &[&str]) -> BackendResult<Output> {
+fn git_output<S: AsRef<OsStr>>(cwd: &Path, arguments: &[S]) -> BackendResult<Output> {
     let mut command = Command::new("git");
     command
         .current_dir(cwd)
         .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
         .args(arguments);
     #[cfg(windows)]
     {
@@ -272,6 +632,14 @@ fn git_output(cwd: &Path, arguments: &[&str]) -> BackendResult<Output> {
     command
         .output()
         .map_err(|error| BackendError::Platform(format!("run Git: {error}")))
+}
+
+fn repository_id(repository_root: &Path) -> String {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        repository_root.to_string_lossy().as_bytes(),
+    )
+    .to_string()
 }
 
 fn path_to_slashes(path: &Path) -> String {

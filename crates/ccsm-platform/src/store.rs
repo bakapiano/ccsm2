@@ -200,6 +200,13 @@ impl SqliteStateStore {
                 [now_timestamp()],
             )
             .map_err(storage_error)?;
+        connection
+            .execute(
+                "UPDATE tabs SET title = 'Changes', updated_at = ?1
+                 WHERE kind = 'git' AND title = 'Git'",
+                [now_timestamp()],
+            )
+            .map_err(storage_error)?;
         normalize_stored_windows_paths(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -901,7 +908,7 @@ impl StateStore for SqliteStateStore {
                 "INSERT INTO tabs(
                     id, space_id, kind, title, resource_id, state_version, state_json,
                     created_at, updated_at
-                 ) VALUES (?1, ?2, 'git', 'Git', ?2, 1, ?3, ?4, ?4)",
+                 ) VALUES (?1, ?2, 'git', 'Changes', ?2, 1, ?3, ?4, ?4)",
                 params![
                     tab_id,
                     request.space_id,
@@ -1219,7 +1226,7 @@ fn insert_space_graph(
         .execute(
             "INSERT INTO tabs(
                 id, space_id, kind, title, resource_id, state_version, state_json, created_at, updated_at
-             ) VALUES (?1, ?2, 'git', 'Git', ?2, 1, ?3, ?4, ?4)",
+             ) VALUES (?1, ?2, 'git', 'Changes', ?2, 1, ?3, ?4, ?4)",
             params![
                 git_tab_id,
                 space_id,

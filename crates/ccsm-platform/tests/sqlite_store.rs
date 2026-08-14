@@ -131,6 +131,31 @@ fn deleted_git_tab_stays_deleted_and_can_be_created_again() {
         .unwrap();
     assert_eq!(recreated.kind, ccsm_core::dto::TabKind::Git);
     assert_eq!(recreated.space_id, space_id);
+    assert_eq!(recreated.title, "Changes");
+}
+
+#[test]
+fn legacy_git_tab_title_migrates_to_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("data.db");
+    {
+        let store = SqliteStateStore::open(&database).unwrap();
+        store.bootstrap(directory.path()).unwrap();
+    }
+    rusqlite::Connection::open(&database)
+        .unwrap()
+        .execute("UPDATE tabs SET title = 'Git' WHERE kind = 'git'", [])
+        .unwrap();
+
+    let store = SqliteStateStore::open(&database).unwrap();
+    let reopened = store.bootstrap(directory.path()).unwrap();
+    let changes = reopened
+        .active_snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.kind == ccsm_core::dto::TabKind::Git)
+        .unwrap();
+    assert_eq!(changes.title, "Changes");
 }
 
 #[test]
