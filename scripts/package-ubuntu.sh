@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version="${1:-0.1.0-beta.2}"
+version="${1:-0.1.0-beta.3}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_root="${CARGO_TARGET_DIR:-${repo_root}/target}"
 release_root="${target_root}/release"
