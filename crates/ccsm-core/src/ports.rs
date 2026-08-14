@@ -100,6 +100,14 @@ pub trait FileSystemBackend: Send + Sync {
 }
 
 pub trait GitBackend: Send + Sync {
+    /// Selects the root whose scans may continue. Implementations cancel work
+    /// that belongs to a previously selected root.
+    fn activate_root(&self, _root_id: &str) -> BackendResult<()> {
+        Ok(())
+    }
+
+    fn cancel_pending(&self) {}
+
     fn scan(&self, root: &RootDescriptor, scan_generation: u32) -> BackendResult<GitSnapshotDto>;
 }
 

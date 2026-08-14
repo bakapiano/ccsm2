@@ -78,6 +78,7 @@ impl ActiveRootContext {
         });
         let watcher = self.file_watch.watch(&root, watcher_sink)?;
         let mut state = self.lock_state()?;
+        self.git.activate_root(&root.root_id)?;
         state.root = Some(root);
         state.scan_generation = 0;
         state.watcher = Some(watcher);
@@ -85,6 +86,7 @@ impl ActiveRootContext {
     }
 
     pub fn shutdown(&self) {
+        self.git.cancel_pending();
         if let Ok(mut state) = self.state.lock() {
             state.watcher = None;
             state.root = None;
