@@ -23,5 +23,8 @@ describe("New Tab menu", () => {
         (action) => action.tabKind,
       ),
     ).toEqual(["browser", "file-explorer", "git"]);
+    expect(NEW_TAB_ACTIONS.find((action) => action.id === "git")?.label).toBe(
+      "Changes",
+    );
   });
 });

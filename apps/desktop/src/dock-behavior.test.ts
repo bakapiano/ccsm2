@@ -10,6 +10,7 @@ import {
   findSourceBrowserTab,
   findVisibleDockPanelIds,
   shouldDeleteRemovedTab,
+  syncDockPanelTitles,
 } from "./dock-behavior";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -127,6 +128,32 @@ describe("Dockview regressions", () => {
     expect(
       findRestoredActivePanel([files, shell], groups, null, "bottom"),
     ).toBe(shell);
+  });
+
+  test("refreshes serialized panel titles from authoritative Tabs", () => {
+    const applied: string[] = [];
+    const panels = [
+      {
+        id: "changes",
+        title: "Git",
+        api: { setTitle: (title: string) => applied.push(title) },
+      },
+      {
+        id: "files",
+        title: "Files",
+        api: { setTitle: (title: string) => applied.push(title) },
+      },
+    ];
+
+    syncDockPanelTitles(
+      panels,
+      new Map([
+        ["changes", { title: "Changes" }],
+        ["files", { title: "Files" }],
+      ]),
+    );
+
+    expect(applied).toEqual(["Changes"]);
   });
 
   test("tracks the active visible panel in every split group", () => {

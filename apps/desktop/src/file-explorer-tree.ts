@@ -1,16 +1,10 @@
 import type { FileEntryDto } from "./generated/FileEntryDto";
+import {
+  fileResourceIconKind,
+  type FileResourceIconKind,
+} from "./file-resource-icon";
 
-export type FileExplorerIconKind =
-  | "archive"
-  | "code"
-  | "config"
-  | "document"
-  | "folder"
-  | "folder-open"
-  | "image"
-  | "json"
-  | "markdown"
-  | "symlink";
+export type FileExplorerIconKind = FileResourceIconKind;
 
 export interface VisibleFileRow {
   entry: FileEntryDto;
@@ -47,48 +41,7 @@ export function fileExplorerIconKind(
   entry: FileEntryDto,
   expanded: boolean,
 ): FileExplorerIconKind {
-  if (entry.kind === "directory") return expanded ? "folder-open" : "folder";
-  if (entry.kind === "symlink") return "symlink";
-  const name = entry.name.toLowerCase();
-  const extension = name.includes(".") ? name.split(".").at(-1) : "";
-  if (
-    [
-      "ts",
-      "tsx",
-      "js",
-      "jsx",
-      "rs",
-      "py",
-      "go",
-      "java",
-      "c",
-      "cc",
-      "cpp",
-      "h",
-      "hpp",
-      "cs",
-      "swift",
-      "kt",
-      "kts",
-    ].includes(extension ?? "")
-  )
-    return "code";
-  if (extension === "json" || name.endsWith(".code-workspace")) return "json";
-  if (["md", "mdx", "rst"].includes(extension ?? "")) return "markdown";
-  if (
-    ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"].includes(
-      extension ?? "",
-    )
-  )
-    return "image";
-  if (["zip", "tar", "gz", "tgz", "7z", "rar"].includes(extension ?? ""))
-    return "archive";
-  if (
-    ["yaml", "yml", "toml", "ini", "env", "lock"].includes(extension ?? "") ||
-    [".gitignore", ".gitattributes", "dockerfile", "makefile"].includes(name)
-  )
-    return "config";
-  return "document";
+  return fileResourceIconKind(entry.name, entry.kind, expanded);
 }
 
 export function fileTreeKeyboardAction(

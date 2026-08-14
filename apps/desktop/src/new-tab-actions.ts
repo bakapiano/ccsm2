@@ -22,5 +22,5 @@ export const NEW_TAB_ACTIONS: readonly NewTabAction[] = [
     type: "tab",
     tabKind: "file-explorer",
   },
-  { id: "git", label: "Git", type: "tab", tabKind: "git" },
+  { id: "git", label: "Changes", type: "tab", tabKind: "git" },
 ];

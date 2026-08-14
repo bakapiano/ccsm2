@@ -9,9 +9,10 @@ use crate::{
         CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
         CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
         CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
-        DirectoryListingDto, FileDocumentDto, GitSnapshotDto, HookReport, ListDirectoryRequest,
-        MoveFolderRequest, MoveSpaceRequest, NativeBindingDto, NativeBindingState, ReadFileRequest,
-        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, ResolveFileReferenceRequest,
+        DirectoryListingDto, FileDocumentDto, GitFileDiffDto, GitSnapshotDto, HookReport,
+        ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, NativeBindingDto,
+        NativeBindingState, ReadFileRequest, ReadGitDiffRequest, RefreshGitRequest,
+        RenameFolderRequest, RenameSpaceRequest, ResolveFileReferenceRequest,
         ResolvedFileReferenceDto, RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest,
         SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto,
         TabKind, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
@@ -295,6 +296,10 @@ impl AppBackend {
 
     pub fn refresh_git(&self, request: RefreshGitRequest) -> BackendResult<GitSnapshotDto> {
         self.root_context.refresh_git(request)
+    }
+
+    pub fn read_git_diff(&self, request: ReadGitDiffRequest) -> BackendResult<GitFileDiffDto> {
+        self.root_context.read_git_diff(request)
     }
 
     pub fn start_runtime(

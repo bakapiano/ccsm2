@@ -1,6 +1,5 @@
 import { indentWithTab, redo } from "@codemirror/commands";
 import {
-  HighlightStyle,
   indentUnit,
   LanguageDescription,
   syntaxHighlighting,
@@ -20,7 +19,6 @@ import {
   type KeyBinding,
   type ViewUpdate,
 } from "@codemirror/view";
-import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
@@ -28,6 +26,7 @@ import {
   showFileEditorDialog,
   type FileEditorDialogOptions,
 } from "../file-editor-dialog";
+import { codeHighlightStyle } from "../code-highlighting";
 import {
   fileChangeAffectsPath,
   fileName,
@@ -613,30 +612,6 @@ const codeMirrorTheme = EditorView.theme({
   },
 });
 
-const codeMirrorHighlightStyle = HighlightStyle.define([
-  {
-    tag: [tags.comment, tags.lineComment, tags.blockComment],
-    color: "var(--green)",
-  },
-  { tag: [tags.string, tags.special(tags.string)], color: "var(--orange)" },
-  { tag: [tags.number, tags.bool, tags.null], color: "var(--blue)" },
-  {
-    tag: [tags.keyword, tags.modifier, tags.operatorKeyword],
-    color: "var(--accent)",
-    fontWeight: "600",
-  },
-  {
-    tag: [tags.typeName, tags.className, tags.namespace],
-    color: "var(--yellow)",
-  },
-  {
-    tag: [tags.function(tags.variableName), tags.definition(tags.variableName)],
-    color: "var(--blue)",
-  },
-  { tag: [tags.propertyName, tags.attributeName], color: "var(--ink-mid)" },
-  { tag: tags.invalid, color: "var(--red)" },
-]);
-
 class FileEditorPanel implements IContentRenderer {
   readonly element = document.createElement("section");
   readonly #host: HTMLElement;
@@ -786,7 +761,7 @@ class FileEditorPanel implements IContentRenderer {
         basicSetup,
         indentUnit.of("  "),
         codeMirrorTheme,
-        syntaxHighlighting(codeMirrorHighlightStyle),
+        syntaxHighlighting(codeHighlightStyle),
         this.#languageCompartment.of(this.#languageSupport),
         this.#wrapCompartment.of(
           snapshot.state.wordWrap ? EditorView.lineWrapping : [],

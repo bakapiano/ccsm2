@@ -6,10 +6,10 @@ use crate::{
         CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
         CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
         DeleteSpaceRequest, DeleteTabRequest, DesiredState, FileDocumentDto, FileEntryDto,
-        GitSnapshotDto, MoveFolderRequest, MoveSpaceRequest, ProviderKind, RenameFolderRequest,
-        RenameSpaceRequest, ResolvedFileReferenceDto, SaveLayoutRequest, SetFolderCollapsedRequest,
-        SpaceLayoutDto, SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest,
-        WriteFileResultDto,
+        GitFileChangeDto, GitFileDiffDto, GitRepositoryStatusDto, GitSnapshotDto,
+        MoveFolderRequest, MoveSpaceRequest, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
+        ResolvedFileReferenceDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
+        SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
     },
     error::BackendResult,
 };
@@ -98,6 +98,12 @@ pub trait FileSystemBackend: Send + Sync {
 
 pub trait GitBackend: Send + Sync {
     fn scan(&self, root: &RootDescriptor, scan_generation: u32) -> BackendResult<GitSnapshotDto>;
+    fn diff(
+        &self,
+        root: &RootDescriptor,
+        repository: &GitRepositoryStatusDto,
+        change: &GitFileChangeDto,
+    ) -> BackendResult<GitFileDiffDto>;
 }
 
 #[derive(Debug, Clone)]

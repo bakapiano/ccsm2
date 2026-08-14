@@ -217,6 +217,7 @@ pub fn run() {
             commands::create_host_directory,
             commands::cached_git,
             commands::refresh_git,
+            commands::read_git_diff,
             commands::start_runtime,
             commands::write_runtime,
             commands::resize_runtime,

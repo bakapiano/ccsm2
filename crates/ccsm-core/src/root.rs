@@ -2,9 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     dto::{
-        AppEvent, DirectoryListingDto, FileChangeHintDto, FileDocumentDto, GitSnapshotDto,
-        ListDirectoryRequest, ReadFileRequest, RefreshGitRequest, ResolveFileReferenceRequest,
-        ResolvedFileReferenceDto, WriteFileRequest, WriteFileResultDto,
+        AppEvent, DirectoryListingDto, FileChangeHintDto, FileDocumentDto, GitFileDiffDto,
+        GitSnapshotDto, ListDirectoryRequest, ReadFileRequest, ReadGitDiffRequest,
+        RefreshGitRequest, ResolveFileReferenceRequest, ResolvedFileReferenceDto, WriteFileRequest,
+        WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
     ports::{
@@ -145,6 +146,26 @@ impl ActiveRootContext {
         let snapshot = self.git.scan(&root, generation)?;
         self.store.save_git_cache(&snapshot)?;
         Ok(snapshot)
+    }
+
+    pub fn read_git_diff(&self, request: ReadGitDiffRequest) -> BackendResult<GitFileDiffDto> {
+        let root = self.store.space_root(&request.space_id)?;
+        let snapshot = self
+            .store
+            .load_git_cache(&request.space_id, &root.root_id)?;
+        let repository = snapshot
+            .repositories
+            .iter()
+            .find(|repository| repository.repository_id == request.repository_id)
+            .ok_or_else(|| {
+                BackendError::NotFound(format!("Git repository {}", request.repository_id))
+            })?;
+        let change = repository
+            .files
+            .iter()
+            .find(|change| change.path == request.path)
+            .ok_or_else(|| BackendError::NotFound(format!("Git change {}", request.path)))?;
+        self.git.diff(&root, repository, change)
     }
 
     fn active_root(&self, space_id: &str) -> BackendResult<RootDescriptor> {
