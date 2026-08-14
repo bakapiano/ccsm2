@@ -87,6 +87,52 @@ fn watcher_reports_space_relative_paths() {
     assert!(observed, "watcher did not report watched.txt");
 }
 
+#[cfg(unix)]
+#[test]
+fn watcher_keeps_accessible_files_live_with_an_inaccessible_descendant() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let blocked = directory.path().join("blocked");
+    std::fs::create_dir(&blocked).unwrap();
+    std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let root = descriptor(directory.path());
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let handle = NotifyFileWatchBackend::new()
+        .watch(
+            &root,
+            Arc::new(move |event| {
+                let _ = sender.send(event);
+            }),
+        )
+        .unwrap();
+
+    std::fs::write(directory.path().join("accessible.txt"), "changed").unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut observed = false;
+    while std::time::Instant::now() < deadline {
+        let Ok(event) = receiver.recv_timeout(Duration::from_millis(500)) else {
+            continue;
+        };
+        if event
+            .relative_paths
+            .iter()
+            .any(|path| path == "accessible.txt")
+        {
+            observed = true;
+            break;
+        }
+    }
+
+    drop(handle);
+    std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(
+        observed,
+        "watcher did not report accessible.txt after its recursive fallback"
+    );
+}
+
 fn descriptor(path: &Path) -> RootDescriptor {
     RootDescriptor {
         space_id: "space".into(),

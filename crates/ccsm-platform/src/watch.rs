@@ -1,6 +1,8 @@
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 
 use ccsm_core::{
@@ -9,7 +11,11 @@ use ccsm_core::{
         FileWatchBackend, FileWatchEvent, FileWatchEventSink, FileWatchHandle, RootDescriptor,
     },
 };
-use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher, event::ModifyKind};
+use notify::{
+    Config, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher, event::ModifyKind,
+};
+
+const POLLING_FALLBACK_INTERVAL: Duration = Duration::from_secs(2);
 
 pub struct NotifyFileWatchBackend {
     ignored_paths: Vec<PathBuf>,
@@ -35,7 +41,8 @@ impl Default for NotifyFileWatchBackend {
 }
 
 struct NotifyWatchHandle {
-    _watcher: RecommendedWatcher,
+    _native_watcher: Option<RecommendedWatcher>,
+    _polling_watcher: Option<PollWatcher>,
 }
 
 impl FileWatchHandle for NotifyWatchHandle {}
@@ -49,51 +56,84 @@ impl FileWatchBackend for NotifyFileWatchBackend {
         let root_path = std::path::PathBuf::from(&root.root_path)
             .canonicalize()
             .map_err(|error| BackendError::Platform(format!("canonicalize watch root: {error}")))?;
-        let callback_root = root_path.clone();
         let ignored_paths = self
             .ignored_paths
             .iter()
             .filter_map(|path| path.canonicalize().ok())
             .filter(|path| path != &root_path && path.starts_with(&root_path))
             .collect::<Vec<_>>();
-        let mut watcher = RecommendedWatcher::new(
-            move |result: notify::Result<notify::Event>| match result {
-                Ok(event) => {
-                    let relative_paths = event
-                        .paths
-                        .iter()
-                        .filter(|path| {
-                            !ignored_paths
-                                .iter()
-                                .any(|ignored| path.starts_with(ignored))
-                        })
-                        .filter(|path| !is_redundant_directory_modify(event.kind, path))
-                        .filter_map(|path| path.strip_prefix(&callback_root).ok())
-                        .map(path_to_slashes)
-                        .filter(|path| !is_transient_git_scan_path(path))
-                        .collect::<BTreeSet<_>>()
-                        .into_iter()
-                        .collect::<Vec<_>>();
-                    if relative_paths.is_empty() {
-                        return;
-                    }
-                    sink(FileWatchEvent {
-                        relative_paths,
-                        overflow: false,
-                    });
-                }
-                Err(_) => sink(FileWatchEvent {
-                    relative_paths: Vec::new(),
-                    overflow: true,
-                }),
-            },
+        let mut native_watcher = RecommendedWatcher::new(
+            watch_event_handler(root_path.clone(), ignored_paths.clone(), Arc::clone(&sink)),
             Config::default(),
         )
         .map_err(|error| BackendError::Platform(format!("create filesystem watcher: {error}")))?;
-        watcher
-            .watch(&root_path, RecursiveMode::Recursive)
-            .map_err(|error| BackendError::Platform(format!("watch Space root: {error}")))?;
-        Ok(Box::new(NotifyWatchHandle { _watcher: watcher }))
+        match native_watcher.watch(&root_path, RecursiveMode::Recursive) {
+            Ok(()) => Ok(Box::new(NotifyWatchHandle {
+                _native_watcher: Some(native_watcher),
+                _polling_watcher: None,
+            })),
+            Err(native_error) => {
+                drop(native_watcher);
+                let config = Config::default().with_poll_interval(POLLING_FALLBACK_INTERVAL);
+                let mut polling_watcher = PollWatcher::new(
+                    watch_event_handler(root_path.clone(), ignored_paths, sink),
+                    config,
+                )
+                .map_err(|error| {
+                    BackendError::Platform(format!(
+                        "watch Space root: {native_error}; create polling fallback: {error}"
+                    ))
+                })?;
+                polling_watcher
+                    .watch(&root_path, RecursiveMode::Recursive)
+                    .map_err(|error| {
+                        BackendError::Platform(format!(
+                            "watch Space root: {native_error}; polling fallback: {error}"
+                        ))
+                    })?;
+                Ok(Box::new(NotifyWatchHandle {
+                    _native_watcher: None,
+                    _polling_watcher: Some(polling_watcher),
+                }))
+            }
+        }
+    }
+}
+
+fn watch_event_handler(
+    callback_root: PathBuf,
+    ignored_paths: Vec<PathBuf>,
+    sink: FileWatchEventSink,
+) -> impl FnMut(notify::Result<notify::Event>) + Send + 'static {
+    move |result| match result {
+        Ok(event) => {
+            let relative_paths = event
+                .paths
+                .iter()
+                .filter(|path| {
+                    !ignored_paths
+                        .iter()
+                        .any(|ignored| path.starts_with(ignored))
+                })
+                .filter(|path| !is_redundant_directory_modify(event.kind, path))
+                .filter_map(|path| path.strip_prefix(&callback_root).ok())
+                .map(path_to_slashes)
+                .filter(|path| !is_transient_git_scan_path(path))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            if relative_paths.is_empty() {
+                return;
+            }
+            sink(FileWatchEvent {
+                relative_paths,
+                overflow: false,
+            });
+        }
+        Err(_) => sink(FileWatchEvent {
+            relative_paths: Vec::new(),
+            overflow: true,
+        }),
     }
 }
 

@@ -3,6 +3,8 @@
 Acceptance was performed on 2026-08-13 from source commit
 `60e623af8e120fa52880e7d023bb4ef48e573bda` (`feat/linux-desktop-support`).
 The host and toolchain versions are recorded in [environment.txt](environment.txt).
+A Space create/switch regression follow-up was performed on 2026-08-14 on the
+same branch and environment.
 
 ## Ubuntu release archive
 
@@ -30,6 +32,36 @@ WebDriver browser/menu/geometry/overlay scenario with one passing test.
 
 The recorded renderer viewport is 1320 x 800 at device pixel ratio 1. The native
 Browser allocation is x=776, y=103, width=544, height=675.
+
+## Space create and switch permission regression
+
+The reproduced path created a Space rooted at `/etc`. The native recursive
+watcher reached `/etc/ssl/private` and returned `Permission denied` after SQLite
+had already selected the new Space. The pre-fix UI stayed on `desktop` while the
+database selected the new `/etc` Space. The exact renderer state and error are
+recorded in [before-fix-ui.json](space-flow/before-fix-ui.json), with the
+corresponding [renderer screenshot](space-flow/before-fix-renderer.png).
+
+The fix falls back to a recursive polling watcher for roots containing
+inaccessible descendants. AppBackend also restores the prior active Space when
+root activation fails and removes a partially created Space graph. Integration
+tests force watcher rejection and verify both rollback paths.
+
+The Linux desktop regression then completed `create -> switch back -> switch
+again` with `/etc`:
+
+| State                         | WSLg composite                                                          | Renderer state                                                   |
+| ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| New `/etc` Space active       | [screenshot](space-flow/after-created-composited.png)                   | [after-created.json](space-flow/after-created.json)               |
+| Initial Space active again    | [screenshot](space-flow/after-switched-back-composited.png)             | [after-switched-back.json](space-flow/after-switched-back.json)   |
+| New `/etc` Space active again | [screenshot](space-flow/after-switched-again-composited.png)            | [after-switched-again.json](space-flow/after-switched-again.json) |
+
+Both state pairs retain their original Shell runtime ID. Every state records
+`browserNativeVisible: true`, `WebKitGTK · ready`, and global status `ready`.
+The final SQLite rows are captured in
+[database-state.txt](space-flow/database-state.txt), the interaction timestamps
+in [steps.txt](space-flow/steps.txt), and the complete gate summary in
+[result.txt](space-flow/result.txt).
 
 ## Real CLI turn and resume
 
@@ -77,6 +109,8 @@ The following gates completed successfully:
 - Ubuntu: provider WebDriver scenarios for Claude, Codex, and Copilot (one passing scenario per provider)
 - Ubuntu: abnormal desktop-exit WebDriver scenario (one passing scenario)
 - Ubuntu: extracted release browser WebDriver scenario (one passing scenario)
+- Ubuntu: `/etc` Space create and bidirectional switch WebDriver scenario (one passing scenario)
+- Ubuntu: Space activation rollback integration tests (two passing scenarios)
 - Windows: `cargo check --workspace`
 - Formatting: `cargo fmt --all -- --check` and Prettier checks
 - Packaging scripts: Bash syntax, ShellCheck when available, and PowerShell parser checks
