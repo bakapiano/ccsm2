@@ -76,6 +76,12 @@ pub struct RootDescriptor {
     pub root_path: String,
 }
 
+#[derive(Debug)]
+pub struct DirectoryPage {
+    pub entries: Vec<FileEntryDto>,
+    pub next_offset: Option<u32>,
+}
+
 pub trait FileSystemBackend: Send + Sync {
     fn resolve_file_reference(
         &self,
@@ -86,7 +92,11 @@ pub trait FileSystemBackend: Send + Sync {
         &self,
         root: &RootDescriptor,
         relative_path: &str,
-    ) -> BackendResult<Vec<FileEntryDto>>;
+        operation_id: &str,
+        offset: u32,
+        limit: u32,
+    ) -> BackendResult<DirectoryPage>;
+    fn cancel_directory_operation(&self, _operation_id: &str) {}
     fn read_file(
         &self,
         root: &RootDescriptor,

@@ -3,11 +3,13 @@ import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 import type { CliSessionDto } from "../generated/CliSessionDto";
 import type { RuntimeEvent } from "../generated/RuntimeEvent";
 import type { TabDto } from "../generated/TabDto";
+import { FrameTaskScheduler } from "../frame-task-scheduler";
 import { focusWhenPanelActive } from "../panel-visibility";
 import { RetainedRendererCache } from "../retained-renderer-cache";
 import {
   LatestValue,
   OscSequenceStripper,
+  type QueuedByteChunk,
   runtimeStartCanCommit,
   shouldAutoStartCliRuntime,
   takeByteBatch,
@@ -68,6 +70,24 @@ const CLAUDE_REPAINT_TIMEOUT_MS = 12_000;
 const TUI_REPAINT_QUIET_MS = 200;
 const TUI_REPAINT_TIMEOUT_MS = 1_000;
 const OUTPUT_DRAIN_TIMEOUT_MS = 8_000;
+const FRAME_FALLBACK_MS = 100;
+
+function waitForAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let frame: number | null = null;
+    let fallback: number | null = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (fallback !== null) window.clearTimeout(fallback);
+      resolve();
+    };
+    frame = requestAnimationFrame(finish);
+    if (!settled) fallback = window.setTimeout(finish, FRAME_FALLBACK_MS);
+  });
+}
 
 function loadIsolatedGhostty(): Promise<Ghostty> {
   // Each retained renderer owns its WASM allocator and RenderState arena.
@@ -144,8 +164,8 @@ class TerminalPanel implements IContentRenderer {
   #dimensionSubscription: { dispose(): void } | null = null;
   #visibilitySubscription: { dispose(): void } | null = null;
   #activeSubscription: { dispose(): void } | null = null;
-  #resizeRaf = 0;
-  #fitRaf = 0;
+  readonly #resizeScheduler = new FrameTaskScheduler(1);
+  readonly #fitFrameScheduler = new FrameTaskScheduler(1);
   readonly #fitSettler = new TerminalFitSettler(FIT_DEBOUNCE_MS, () =>
     this.#requestFitFrame(),
   );
@@ -167,12 +187,16 @@ class TerminalPanel implements IContentRenderer {
   #resizeOutputSettler: ResizeOutputSettler | null = null;
   #resizePresentationCount = 0;
   #lastResizePresentationCompletion: string | null = null;
-  readonly #outputQueue: Uint8Array[] = [];
+  readonly #outputQueue: QueuedByteChunk[] = [];
   readonly #oscStripper = new OscSequenceStripper({
     preserveDynamicColorQueries: true,
   });
-  #outputRaf = 0;
+  readonly #outputFrameScheduler = new FrameTaskScheduler(1);
   #outputWriteInFlight = false;
+  #outputWriteCredits: Array<{ runtimeId: string; bytes: number }> = [];
+  readonly #pendingOutputAcks = new Map<string, number>();
+  #outputAckInFlight = false;
+  #outputAckBytesInFlight = 0;
   #renderFailureCount = 0;
   #pendingExitCode: number | null = null;
   readonly #exitedRuntimeIds = new Set<string>();
@@ -278,11 +302,9 @@ class TerminalPanel implements IContentRenderer {
     this.#visibilitySubscription = null;
     this.#activeSubscription = null;
     this.#panelApi = null;
-    if (this.#resizeRaf) cancelAnimationFrame(this.#resizeRaf);
-    if (this.#fitRaf) cancelAnimationFrame(this.#fitRaf);
+    this.#resizeScheduler.clear();
+    this.#fitFrameScheduler.clear();
     this.#fitSettler.cancel();
-    this.#resizeRaf = 0;
-    this.#fitRaf = 0;
     this.#frameSwap.release();
     this.#pendingResize.clear();
     this.#repaintCapture?.cancel();
@@ -296,10 +318,10 @@ class TerminalPanel implements IContentRenderer {
     if (this.#destroyed) return;
     this.#destroyed = true;
     this.dispose();
-    if (this.#outputRaf) cancelAnimationFrame(this.#outputRaf);
-    this.#outputRaf = 0;
+    this.#outputFrameScheduler.clear();
     this.#outputWriteInFlight = false;
-    this.#outputQueue.length = 0;
+    this.#releaseOutputWriteCredit();
+    this.#dropOutputQueue();
     this.#unlisten?.();
     this.#unlisten = null;
     this.#inputFollowDispose?.();
@@ -515,9 +537,19 @@ class TerminalPanel implements IContentRenderer {
       this.#runtimeId ??= event.runtimeId;
       const rawOutput = new Uint8Array(event.data);
       this.#resizeOutputSettler?.push(event.runtimeId, rawOutput);
-      if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) return;
+      if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) {
+        this.#queueOutputAck(event.runtimeId, rawOutput.byteLength);
+        return;
+      }
       const output = this.#sanitizeTerminalOutput(rawOutput);
-      this.#outputQueue.push(output);
+      if (output.byteLength === 0) {
+        this.#queueOutputAck(event.runtimeId, rawOutput.byteLength);
+        return;
+      }
+      this.#outputQueue.push({
+        data: output,
+        credit: { runtimeId: event.runtimeId, bytes: rawOutput.byteLength },
+      });
       this.#scheduleOutputFlush();
       return;
     }
@@ -580,9 +612,8 @@ class TerminalPanel implements IContentRenderer {
   #scheduleResize(cols: number, rows: number): void {
     if (!this.#runtimeId) return;
     this.#pendingResize.set({ cols, rows });
-    if (this.#resizeInFlight || this.#resizeRaf) return;
-    this.#resizeRaf = requestAnimationFrame(() => {
-      this.#resizeRaf = 0;
+    if (this.#resizeInFlight) return;
+    this.#resizeScheduler.enqueue("terminal-resize", () => {
       void this.#pumpResize();
     });
   }
@@ -639,9 +670,7 @@ class TerminalPanel implements IContentRenderer {
         const settled = await outputSettler.result;
         this.#lastResizePresentationCompletion = settled.completion;
         await this.#waitForOutputDrain();
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => resolve()),
-        );
+        await waitForAnimationFrame();
         this.#resizePresentationCount += 1;
       }
     } finally {
@@ -743,7 +772,9 @@ class TerminalPanel implements IContentRenderer {
           this.#historyRepaintFastCount += 1;
         }
       } else {
-        for (const chunk of captured.chunks) this.#outputQueue.push(chunk);
+        for (const chunk of captured.chunks) {
+          this.#outputQueue.push({ data: chunk });
+        }
         this.#scheduleOutputFlush();
         this.#historyRepaintFailureCount += 1;
       }
@@ -782,30 +813,31 @@ class TerminalPanel implements IContentRenderer {
       (this.#outputQueue.length > 0 || this.#outputWriteInFlight) &&
       performance.now() < deadline
     ) {
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve()),
-      );
+      await waitForAnimationFrame();
     }
     return this.#outputQueue.length === 0 && !this.#outputWriteInFlight;
   }
 
   #scheduleOutputFlush(): void {
-    if (this.#outputRaf || this.#outputWriteInFlight || this.#destroyed) return;
-    this.#outputRaf = requestAnimationFrame(() => {
-      this.#outputRaf = 0;
+    if (this.#outputWriteInFlight || this.#destroyed) return;
+    this.#outputFrameScheduler.enqueue("terminal-output", () => {
+      if (this.#outputWriteInFlight || this.#destroyed) return;
       const batch = takeByteBatch(this.#outputQueue, OUTPUT_BUDGET_PER_FRAME);
       if (batch && this.#terminal) {
         this.#outputWriteInFlight = true;
+        this.#outputWriteCredits = batch.credits;
         try {
-          this.#terminal.write(batch, () => {
+          this.#terminal.write(batch.data, () => {
             this.#renderFailureCount = 0;
             this.#outputWriteInFlight = false;
+            this.#releaseOutputWriteCredit();
             this.#scheduleOutputFlush();
           });
         } catch (error) {
           this.#outputWriteInFlight = false;
+          this.#releaseOutputWriteCredit();
           this.#renderFailureCount += 1;
-          this.#outputQueue.length = 0;
+          this.#dropOutputQueue();
           if (this.#renderFailureCount >= 3)
             this.#setStatus(
               "error",
@@ -832,6 +864,68 @@ class TerminalPanel implements IContentRenderer {
     return this.#oscStripper.push(output);
   }
 
+  #dropOutputQueue(): void {
+    const credits = new Map<string, number>();
+    for (const chunk of this.#outputQueue) {
+      if (!chunk.credit) continue;
+      credits.set(
+        chunk.credit.runtimeId,
+        (credits.get(chunk.credit.runtimeId) ?? 0) + chunk.credit.bytes,
+      );
+    }
+    this.#outputQueue.length = 0;
+    for (const [runtimeId, bytes] of credits) {
+      this.#queueOutputAck(runtimeId, bytes);
+    }
+  }
+
+  #releaseOutputWriteCredit(): void {
+    const credits = this.#outputWriteCredits;
+    this.#outputWriteCredits = [];
+    for (const credit of credits) {
+      this.#queueOutputAck(credit.runtimeId, credit.bytes);
+    }
+  }
+
+  #queueOutputAck(runtimeId: string, bytes: number): void {
+    if (bytes <= 0) return;
+    this.#pendingOutputAcks.set(
+      runtimeId,
+      (this.#pendingOutputAcks.get(runtimeId) ?? 0) + bytes,
+    );
+    if (!this.#outputAckInFlight) void this.#pumpOutputAcks();
+  }
+
+  async #pumpOutputAcks(): Promise<void> {
+    if (this.#outputAckInFlight) return;
+    this.#outputAckInFlight = true;
+    try {
+      while (this.#pendingOutputAcks.size > 0) {
+        const pending = [...this.#pendingOutputAcks.entries()];
+        this.#pendingOutputAcks.clear();
+        for (const [runtimeId, bytes] of pending) {
+          try {
+            this.#outputAckBytesInFlight += bytes;
+            await this.#client.backend.acknowledgeRuntimeOutput(
+              runtimeId,
+              bytes,
+            );
+          } catch {
+            // Runtime exit closes the native flow gate and releases its credits.
+          } finally {
+            this.#outputAckBytesInFlight = Math.max(
+              0,
+              this.#outputAckBytesInFlight - bytes,
+            );
+          }
+        }
+      }
+    } finally {
+      this.#outputAckInFlight = false;
+      if (this.#pendingOutputAcks.size > 0) void this.#pumpOutputAcks();
+    }
+  }
+
   #scheduleFit(immediate = false): void {
     if (!this.#attached || this.#destroyed || !this.#panelApi?.isVisible) {
       return;
@@ -841,18 +935,10 @@ class TerminalPanel implements IContentRenderer {
   }
 
   #requestFitFrame(): void {
-    if (
-      !this.#attached ||
-      this.#destroyed ||
-      !this.#panelApi?.isVisible ||
-      this.#fitRaf
-    ) {
+    if (!this.#attached || this.#destroyed || !this.#panelApi?.isVisible) {
       return;
     }
-    this.#fitRaf = requestAnimationFrame(() => {
-      this.#fitRaf = 0;
-      this.#fit();
-    });
+    this.#fitFrameScheduler.enqueue("terminal-fit", () => this.#fit(), true);
   }
 
   #fit(): boolean {
@@ -1018,6 +1104,20 @@ class TerminalPanel implements IContentRenderer {
       scrollbackLength: terminal?.getScrollbackLength() ?? null,
       viewportY: terminal?.getViewportY() ?? null,
       queuedOutputChunks: this.#outputQueue.length,
+      queuedOutputBytes: this.#outputQueue.reduce(
+        (total, chunk) => total + (chunk.credit?.bytes ?? 0),
+        0,
+      ),
+      outputWriteCreditBytes: this.#outputWriteCredits.reduce(
+        (total, credit) => total + credit.bytes,
+        0,
+      ),
+      pendingOutputAckBytes:
+        this.#outputAckBytesInFlight +
+        [...this.#pendingOutputAcks.values()].reduce(
+          (total, bytes) => total + bytes,
+          0,
+        ),
       fitCount: this.#fitCount,
       fitDebouncePending: this.#fitSettler.pending,
       resizeGestureActive: this.#fitSettler.gestureActive,

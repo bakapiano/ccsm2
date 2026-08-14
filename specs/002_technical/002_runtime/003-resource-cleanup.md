@@ -43,6 +43,8 @@ enter the idempotent shutdown gate
 
 重复调用`shutdown()`加入同一个future。每个步骤记录结果并继续执行后续cleanup。
 
+单个PTY cleanup使用从stop开始计算的3秒共享deadline。process-tree terminate、reader/waiter watchdog和thread join共同消耗该预算；deadline到达时返回明确cleanup error并释放调用线程，后台OS cleanup guard继续持有process-group终止职责。
+
 ## CLI process trees
 
 每个runtime使用平台`ProcessTree`执行：

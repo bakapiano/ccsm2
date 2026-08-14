@@ -94,6 +94,7 @@ export class CcsmTabRenderer implements ITabRenderer {
     requestClose: (tabId: string) => void,
   ) {
     this.element.className = "ccsm-tab";
+    this.element.dataset.tabId = tab.id;
     this.element.dataset.tabKind = tab.kind;
     this.#tooltip =
       tab.kind === "file-editor" &&

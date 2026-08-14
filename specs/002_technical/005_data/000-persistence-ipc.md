@@ -185,6 +185,8 @@ ccsm-desktop adapter
 - Tauri invoke承载command及其committed response。
 - Tauri events承载generated `DesktopEvent`。
 - Tauri binary Channel承载forward-only PTY bytes。
+- `acknowledge_runtime_output(runtime_id, bytes)` command在renderer消费PTY bytes后归还RuntimeManager byte credit；每个runtime累计未确认bytes上限为512 KiB。
+- 目录分页request携带`operation_id + offset + limit`，response携带`next_offset`；`cancel_directory_operation(operation_id)`终止对应platform枚举。
 - desktop adapter执行DTO转换和domain error mapping。
 
 ```ts

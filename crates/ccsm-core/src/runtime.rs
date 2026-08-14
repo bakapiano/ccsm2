@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, Weak, mpsc},
+    sync::{Arc, Condvar, Mutex, Weak, mpsc},
     thread,
 };
 
@@ -17,11 +17,92 @@ use crate::{
 
 pub type RuntimeEventSink = Arc<dyn Fn(RuntimeEvent) + Send + Sync + 'static>;
 
+const RUNTIME_EVENT_QUEUE_CAPACITY: usize = 64;
+const RUNTIME_OUTPUT_CREDIT_BYTES: usize = 512 * 1024;
+
+#[derive(Debug, Default)]
+struct OutputFlowState {
+    in_flight_bytes: usize,
+    closed: bool,
+}
+
+#[derive(Debug)]
+struct OutputFlow {
+    state: Mutex<OutputFlowState>,
+    changed: Condvar,
+    capacity_bytes: usize,
+}
+
+impl OutputFlow {
+    fn new(capacity_bytes: usize) -> Self {
+        Self {
+            state: Mutex::new(OutputFlowState::default()),
+            changed: Condvar::new(),
+            capacity_bytes,
+        }
+    }
+
+    fn reserve(&self, bytes: usize) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        while !state.closed
+            && state.in_flight_bytes > 0
+            && state.in_flight_bytes.saturating_add(bytes) > self.capacity_bytes
+        {
+            let Ok(next) = self.changed.wait(state) else {
+                return false;
+            };
+            state = next;
+        }
+        if state.closed {
+            return false;
+        }
+        state.in_flight_bytes = state.in_flight_bytes.saturating_add(bytes);
+        true
+    }
+
+    fn acknowledge(&self, bytes: usize) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        state.in_flight_bytes = state.in_flight_bytes.saturating_sub(bytes);
+        self.changed.notify_all();
+    }
+
+    fn reset(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        state.in_flight_bytes = 0;
+        state.closed = false;
+        self.changed.notify_all();
+    }
+
+    fn close(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        state.closed = true;
+        state.in_flight_bytes = 0;
+        self.changed.notify_all();
+    }
+
+    #[cfg(test)]
+    fn in_flight_bytes(&self) -> usize {
+        self.state
+            .lock()
+            .map(|state| state.in_flight_bytes)
+            .unwrap_or_default()
+    }
+}
+
 struct RuntimeEntry {
     cli_session_id: String,
     provider: ProviderKind,
     process: Arc<dyn PtyProcess>,
     sink: Arc<Mutex<RuntimeEventSink>>,
+    output_flow: Arc<OutputFlow>,
 }
 
 struct HookRegistration {
@@ -93,6 +174,7 @@ impl RuntimeManager {
                     .lock()
                     .map_err(|_| BackendError::Platform("runtime sink lock poisoned".into()))? =
                     sink;
+                entry.output_flow.reset();
                 return Ok(runtime_started(
                     runtime_id,
                     entry,
@@ -135,7 +217,8 @@ impl RuntimeManager {
         }
 
         let sink = Arc::new(Mutex::new(sink));
-        let (pty_event_tx, pty_event_rx) = mpsc::channel();
+        let output_flow = Arc::new(OutputFlow::new(RUNTIME_OUTPUT_CREDIT_BYTES));
+        let (pty_event_tx, pty_event_rx) = mpsc::sync_channel(RUNTIME_EVENT_QUEUE_CAPACITY);
         let queued_event_sink: PtyEventSink = Arc::new(move |event| {
             let _ = pty_event_tx.send(event);
         });
@@ -183,6 +266,7 @@ impl RuntimeManager {
                     provider: session.provider,
                     process: Arc::clone(&process),
                     sink: Arc::clone(&sink),
+                    output_flow: Arc::clone(&output_flow),
                 },
             );
             let entry = state
@@ -200,15 +284,21 @@ impl RuntimeManager {
                 while let Ok(event) = pty_event_rx.recv() {
                     let is_exit = matches!(event, PtyEvent::Exit(_));
                     let runtime_event = match event {
-                        PtyEvent::Output(data) => RuntimeEvent::Output {
-                            runtime_id: event_runtime_id.clone(),
-                            data,
-                        },
+                        PtyEvent::Output(data) => {
+                            if !output_flow.reserve(data.len()) {
+                                continue;
+                            }
+                            RuntimeEvent::Output {
+                                runtime_id: event_runtime_id.clone(),
+                                data,
+                            }
+                        }
                         PtyEvent::Error(message) => RuntimeEvent::Error {
                             runtime_id: event_runtime_id.clone(),
                             message,
                         },
                         PtyEvent::Exit(code) => {
+                            output_flow.close();
                             if let Some(manager) = Weak::upgrade(&weak) {
                                 manager.remove_if_current(&event_session_id, &event_runtime_id);
                             }
@@ -324,12 +414,23 @@ impl RuntimeManager {
         self.process(runtime_id)?.resize(cols.max(2), rows.max(1))
     }
 
+    pub fn acknowledge_output(&self, runtime_id: &str, bytes: usize) -> BackendResult<()> {
+        let state = self.lock_state()?;
+        let entry = state
+            .entries
+            .get(runtime_id)
+            .ok_or_else(|| BackendError::NotFound(format!("runtime {runtime_id}")))?;
+        entry.output_flow.acknowledge(bytes);
+        Ok(())
+    }
+
     pub fn stop(&self, runtime_id: &str) -> BackendResult<String> {
         let state = self.lock_state()?;
         let entry = state
             .entries
             .get(runtime_id)
             .ok_or_else(|| BackendError::NotFound(format!("runtime {runtime_id}")))?;
+        entry.output_flow.close();
         entry.process.stop()?;
         Ok(entry.cli_session_id.clone())
     }
@@ -340,10 +441,10 @@ impl RuntimeManager {
             let Some(runtime_id) = state.session_runtime.get(cli_session_id) else {
                 return Ok(());
             };
-            state
-                .entries
-                .get(runtime_id)
-                .map(|entry| Arc::clone(&entry.process))
+            state.entries.get(runtime_id).map(|entry| {
+                entry.output_flow.close();
+                Arc::clone(&entry.process)
+            })
         };
         if let Some(process) = process {
             process.stop()?;
@@ -357,7 +458,10 @@ impl RuntimeManager {
                 let processes = state
                     .entries
                     .values()
-                    .map(|entry| Arc::clone(&entry.process))
+                    .map(|entry| {
+                        entry.output_flow.close();
+                        Arc::clone(&entry.process)
+                    })
                     .collect::<Vec<_>>();
                 state.entries.clear();
                 state.session_runtime.clear();
@@ -457,7 +561,48 @@ mod tests {
         dto::DesiredState,
         ports::{PtyEventSink, PtyProcess, PtySpawnSpec},
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    #[test]
+    fn output_flow_blocks_at_the_credit_limit_and_resumes_after_ack() {
+        let flow = Arc::new(OutputFlow::new(8));
+        assert!(flow.reserve(8));
+        assert_eq!(flow.in_flight_bytes(), 8);
+
+        let waiting_flow = Arc::clone(&flow);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx.send(waiting_flow.reserve(1)).unwrap();
+        });
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(finished_rx.recv_timeout(Duration::from_millis(40)).is_err());
+
+        flow.acknowledge(1);
+        assert!(finished_rx.recv_timeout(Duration::from_secs(1)).unwrap());
+        worker.join().unwrap();
+        assert_eq!(flow.in_flight_bytes(), 8);
+    }
+
+    #[test]
+    fn output_flow_close_releases_waiting_dispatchers() {
+        let flow = Arc::new(OutputFlow::new(1));
+        assert!(flow.reserve(1));
+        let waiting_flow = Arc::clone(&flow);
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            finished_tx.send(waiting_flow.reserve(1)).unwrap();
+        });
+
+        flow.close();
+        assert!(!finished_rx.recv_timeout(Duration::from_secs(1)).unwrap());
+        worker.join().unwrap();
+        assert_eq!(flow.in_flight_bytes(), 0);
+    }
 
     struct FakePtyBackend;
 

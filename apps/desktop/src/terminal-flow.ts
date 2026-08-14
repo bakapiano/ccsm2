@@ -184,20 +184,45 @@ export function stripOscSequencesStateless(buffer: Uint8Array): Uint8Array {
   return new Uint8Array(output);
 }
 
+export interface QueuedByteChunk {
+  data: Uint8Array;
+  credit?: { runtimeId: string; bytes: number };
+}
+
+export interface ByteBatch {
+  data: Uint8Array;
+  credits: Array<{ runtimeId: string; bytes: number }>;
+}
+
 export function takeByteBatch(
-  queue: Uint8Array[],
+  queue: QueuedByteChunk[],
   budget: number,
-): Uint8Array | undefined {
+): ByteBatch | undefined {
   if (queue.length === 0) return undefined;
   const chunks: Uint8Array[] = [];
   let length = 0;
+  const credits = new Map<string, number>();
   while (queue.length > 0 && (length < budget || chunks.length === 0)) {
     const chunk = queue.shift()!;
-    chunks.push(chunk);
-    length += chunk.byteLength;
+    chunks.push(chunk.data);
+    length += chunk.data.byteLength;
+    if (chunk.credit) {
+      credits.set(
+        chunk.credit.runtimeId,
+        (credits.get(chunk.credit.runtimeId) ?? 0) + chunk.credit.bytes,
+      );
+    }
   }
-  if (chunks.length === 1) return chunks[0];
-  return mergeChunks(chunks, length);
+  const data = chunks.length === 1 ? chunks[0] : mergeChunks(chunks, length);
+  return data
+    ? {
+        data,
+        credits: [...credits].map(([runtimeId, bytes]) => ({
+          runtimeId,
+          bytes,
+        })),
+      }
+    : undefined;
 }
 
 function mergeChunks(

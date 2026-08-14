@@ -7,9 +7,11 @@ load last active Space
 → load TabRecords and referenced resources
 → create Dockview groups/panels
 → restore active/focused state
-→ each TabProvider restores its resource
+→ restore visible TabProvider resources in bounded frame batches
 → publish Space health
 ```
+
+Tab headers与布局在启动时完整恢复。当前可见Panel优先可用；后台Panel在用户选中时恢复对应资源。每个渲染帧最多开始两个Provider renderer初始化；WebView暂停渲染帧时以有界watchdog批次继续恢复，使包含大量终端、编辑器和历史Tab的Space持续响应输入。
 
 Tab 恢复状态：`restoring | live | degraded | failed`。Space health 汇总状态并保留完整布局。
 

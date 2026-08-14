@@ -58,6 +58,16 @@ Space tree tests覆盖File Explorer风格的twistie、无前置图标的Space叶
 
 File Editor tests固定CodeMirror 6依赖边界，并验证Provider不重新引入自制textarea、高亮、搜索或history实现。Desktop scenario覆盖CodeMirror DOM挂载、Unicode编辑、保存、Dirty关闭确认和Space切换后的EditorState保留。
 
+Hang-resilience回归使用隔离Linux Tauri profile分阶段运行，并将每项指标写入JSON artifact：
+
+- 1,200目录fixture验证host picker每页200行、快速导航取消，以及Explorer加载完整模型后DOM row window保持有界。
+- 40,000行untracked TypeScript diff验证后端行数上限、按视口读取和diff DOM row window。
+- `yes`连续PTY输出验证未确认bytes保持在512 KiB credit附近、renderer heartbeat推进，以及忽略TERM的process在3秒shared cleanup deadline内返回。
+- 近5 MiB文件执行256次增量transaction，验证文档长度、renderer heartbeat和输入耗时。
+- 持久化61个File Editor Tabs并冷启动，验证首屏mounted renderer与每帧materialization上限，再通过overflow菜单按需实例化目标Tab。
+
+WDIO使用`prepare → setup → editor-tabs → recovery`四个独立应用生命周期；各阶段复用同一隔离`CCSM_DATA_DIR`并将截图、driver日志和`stress-*.json`写入`CCSM_E2E_ARTIFACT_DIR`。
+
 L3 Space切换测试验证相同root复用ActiveRootContext、不同root关闭旧watcher并激活新context，同时确认inactive Space的CLI runtime和Hook继续运行。
 
 L3 process lifecycle测试启动受application Job保护的owner与leaf进程，强杀owner并断言leaf在超时内退出。PTY lifecycle测试验证重复shutdown保持幂等，并在返回前完成process tree终止、线程join和PseudoConsole关闭。shim scavenger测试验证死亡PID目录被清理，活跃PID、符号链接和无关目录得到保留。L4退出场景检查WebView2、OpenConsole、CLI、Hook endpoint和watcher均不再持有进程或handle。

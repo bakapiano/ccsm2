@@ -17,6 +17,8 @@ import type { AgentSummaryDto } from "./generated/AgentSummaryDto";
 import type { BootstrapDto } from "./generated/BootstrapDto";
 import { DirectoryPickerDialog } from "./directory-picker";
 import { DockNewTabAction, dockNewTabMenuPosition } from "./dock-new-tab";
+import { deferredDockviewSnapshot } from "./dock-restore";
+import { DeferredContentRenderer } from "./deferred-content-renderer";
 import {
   distinctFileEditorTitles,
   normalizeRelativePath,
@@ -37,6 +39,7 @@ import type { ProviderKind } from "./generated/ProviderKind";
 import type { SpaceSnapshotDto } from "./generated/SpaceSnapshotDto";
 import type { TabDto } from "./generated/TabDto";
 import { NEW_TAB_ACTIONS, type NewTabAction } from "./new-tab-actions";
+import { FrameTaskScheduler } from "./frame-task-scheduler";
 import { SidebarLayoutController } from "./sidebar-layout";
 import {
   type SpaceTreeConfirmationRequest,
@@ -68,6 +71,8 @@ const DOCKVIEW_POPOVER_SELECTOR =
 export class CcsmApp {
   readonly #dockview: DockviewComponent;
   readonly #registry = new TabProviderRegistry();
+  readonly #restoreScheduler = new FrameTaskScheduler(2);
+  readonly #materializedTabIds = new Set<string>();
   readonly #browserProvider: BrowserTabProvider;
   readonly #fileEditorProvider: FileEditorTabProvider;
   readonly #terminalProvider: TerminalTabProvider;
@@ -167,7 +172,12 @@ export class CcsmApp {
       createComponent: ({ id }) => {
         const tab = this.#tabs.get(id);
         if (!tab) throw new Error(`layout references unknown Tab ${id}`);
-        return this.#registry.createRenderer(tab);
+        return new DeferredContentRenderer(
+          id,
+          () => this.#registry.createRenderer(tab),
+          this.#restoreScheduler,
+          (tabId) => this.#materializedTabIds.add(tabId),
+        );
       },
       createTabComponent: ({ id }) => {
         const tab = this.#tabs.get(id);
@@ -185,7 +195,7 @@ export class CcsmApp {
         ),
       disableFloatingGroups: true,
       dndStrategy: DOCKVIEW_DND_STRATEGY,
-      defaultRenderer: "always",
+      defaultRenderer: "onlyWhenVisible",
       getTabContextMenuItems: (params) =>
         createTabContextMenuItems(
           params,
@@ -285,6 +295,7 @@ export class CcsmApp {
       this.#terminalProvider.destroyAll();
       this.#fileEditorProvider.destroyAll();
       this.#browserProvider.destroy();
+      this.#restoreScheduler.clear();
       void this.flushLayout();
     });
   }
@@ -813,7 +824,7 @@ export class CcsmApp {
         id: tab.id,
         component: tab.kind,
         title: tab.title,
-        renderer: "always",
+        renderer: "onlyWhenVisible",
         ...(this.#dockview.activePanel
           ? {
               position: {
@@ -849,7 +860,7 @@ export class CcsmApp {
       id: tab.id,
       component: tab.kind,
       title: tab.title,
-      renderer: "always",
+      renderer: "onlyWhenVisible",
       ...(targetGroupExists
         ? {
             position: {
@@ -904,6 +915,10 @@ export class CcsmApp {
         active: panel.id === this.#dockview.activePanel?.id,
       })),
       groupCount: this.#dockview.groups.length,
+      tabRestore: {
+        materialized: this.#materializedTabIds.size,
+        ...this.#restoreScheduler.snapshot(),
+      },
     };
   }
 
@@ -921,6 +936,14 @@ export class CcsmApp {
       dirtyEditorCount: this.#fileEditorProvider.dirtyCount(),
       liveCliRuntimeCount: this.#terminalProvider.liveRuntimeCount(),
     };
+  }
+
+  async debugOpenFileEditors(relativePaths: readonly string[]): Promise<void> {
+    const spaceId = this.#activeSnapshot?.space.id;
+    if (!spaceId) throw new Error("active Space is unavailable");
+    for (const relativePath of relativePaths) {
+      await this.#openFileEditor(spaceId, normalizeRelativePath(relativePath));
+    }
   }
 
   showRendererRecoveryNotice(response: RendererReadyResponse): void {
@@ -948,6 +971,8 @@ export class CcsmApp {
     try {
       this.#activeSnapshot = snapshot;
       this.#layoutRevision = snapshot.layout.layoutRevision;
+      this.#restoreScheduler.clear();
+      this.#materializedTabIds.clear();
       this.#tabs.clear();
       for (const tab of snapshot.tabs) this.#tabs.set(tab.id, tab);
       this.#dockview.clear();
@@ -955,7 +980,7 @@ export class CcsmApp {
         ? snapshot.layout.dockviewSnapshot
         : null;
       if (serialized) {
-        this.#dockview.fromJSON(serialized);
+        this.#dockview.fromJSON(deferredDockviewSnapshot(serialized));
       } else {
         this.#createDefaultLayout(snapshot.tabs);
       }
@@ -987,7 +1012,7 @@ export class CcsmApp {
           id: terminal.id,
           component: terminal.kind,
           title: terminal.title,
-          renderer: "always",
+          renderer: "onlyWhenVisible",
           initialWidth: 720,
         })
       : null;
@@ -996,7 +1021,7 @@ export class CcsmApp {
         id: browser.id,
         component: browser.kind,
         title: browser.title,
-        renderer: "always",
+        renderer: "onlyWhenVisible",
         initialWidth: 540,
         ...(terminalPanel
           ? {
@@ -1023,7 +1048,7 @@ export class CcsmApp {
         id: tab.id,
         component: tab.kind,
         title: tab.title,
-        renderer: "always",
+        renderer: "onlyWhenVisible",
         inactive: true,
         ...(reference
           ? {

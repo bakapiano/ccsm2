@@ -7,6 +7,8 @@ export interface DirectoryCrumb {
   path: string;
 }
 
+const DIRECTORY_PAGE_SIZE = 200;
+
 export class DirectoryPickerDialog {
   #backdrop: HTMLElement | null = null;
   #listing: HostDirectoryListingDto | null = null;
@@ -15,7 +17,9 @@ export class DirectoryPickerDialog {
   #workspaceRoot: string | null = null;
   #history: string[] = [];
   #historyCursor = -1;
+  #pageOffset = 0;
   #requestGeneration = 0;
+  #activeOperationId: string | null = null;
   #resolve: ((path: string | null) => void) | null = null;
 
   constructor(private readonly client: DirectoryBrowserClient) {}
@@ -28,6 +32,7 @@ export class DirectoryPickerDialog {
     this.#workspaceRoot = workspaceRoot;
     this.#history = [];
     this.#historyCursor = -1;
+    this.#pageOffset = 0;
     this.#listing = null;
     this.#selectedPath = "";
     this.#selectionValid = false;
@@ -129,17 +134,28 @@ export class DirectoryPickerDialog {
     return backdrop;
   }
 
-  async #browse(path: string | null, pushHistory: boolean): Promise<void> {
+  async #browse(
+    path: string | null,
+    pushHistory: boolean,
+    offset = 0,
+  ): Promise<void> {
+    this.#cancelActiveOperation();
     const generation = ++this.#requestGeneration;
+    const operationId = crypto.randomUUID();
+    this.#activeOperationId = operationId;
     this.#setLoading(true);
     this.#setMessage("Loading…");
     try {
       const listing = await this.client.browse({
         path,
         workspaceRoot: this.#workspaceRoot,
+        operationId,
+        offset,
+        limit: DIRECTORY_PAGE_SIZE,
       });
       if (generation !== this.#requestGeneration || !this.#backdrop) return;
       this.#listing = listing;
+      this.#pageOffset = offset;
       this.#selectedPath = listing.path;
       this.#selectionValid = listing.exists;
       if (pushHistory) {
@@ -159,6 +175,8 @@ export class DirectoryPickerDialog {
       this.#selectionValid = false;
       this.#setMessage(describeError(error), true);
     } finally {
+      if (this.#activeOperationId === operationId)
+        this.#activeOperationId = null;
       if (generation === this.#requestGeneration && this.#backdrop)
         this.#setLoading(false);
     }
@@ -239,6 +257,35 @@ export class DirectoryPickerDialog {
           "dblclick",
           () => void this.#browse(entry.path, true),
         );
+        list.append(button);
+      }
+      if (this.#pageOffset > 0) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "directory-page-previous";
+        button.textContent = `Previous ${DIRECTORY_PAGE_SIZE} folders`;
+        button.addEventListener("click", () => {
+          const listing = this.#listing;
+          if (listing) {
+            void this.#browse(
+              listing.path,
+              false,
+              Math.max(0, this.#pageOffset - DIRECTORY_PAGE_SIZE),
+            );
+          }
+        });
+        list.append(button);
+      }
+      if (this.#listing.nextOffset !== null) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "directory-load-more";
+        button.textContent = `Next ${DIRECTORY_PAGE_SIZE} folders`;
+        button.addEventListener("click", () => {
+          const listing = this.#listing;
+          if (listing && listing.nextOffset !== null)
+            void this.#browse(listing.path, false, listing.nextOffset);
+        });
         list.append(button);
       }
     }
@@ -381,12 +428,20 @@ export class DirectoryPickerDialog {
   #finish(path: string | null): void {
     if (!this.#backdrop && !this.#resolve) return;
     this.#requestGeneration += 1;
+    this.#cancelActiveOperation();
     document.removeEventListener("keydown", this.#onDocumentKeyDown, true);
     this.#backdrop?.remove();
     this.#backdrop = null;
+    this.#pageOffset = 0;
     const resolve = this.#resolve;
     this.#resolve = null;
     resolve?.(path);
+  }
+
+  #cancelActiveOperation(): void {
+    const operationId = this.#activeOperationId;
+    this.#activeOperationId = null;
+    if (operationId) void this.client.cancel(operationId);
   }
 }
 

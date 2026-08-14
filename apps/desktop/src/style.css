@@ -2202,13 +2202,65 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   contain-intrinsic-block-size: 0;
 }
 
-.git-diff-list.is-virtualized .git-diff-chunk {
+.git-diff-window {
   width: max(100%, calc(var(--git-diff-content-columns, 22) * 1ch));
-  content-visibility: auto;
   contain: layout style paint;
-  contain-intrinsic-block-size: auto var(--git-diff-chunk-block-size, 1280px);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+.deferred-tab-renderer {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink-muted);
+  background: var(--bg-elev);
+  font-size: 11px;
+}
+
+.deferred-tab-renderer > * {
+  width: 100%;
+  height: 100%;
+}
+
+.deferred-tab-renderer[data-error="true"] {
+  display: grid;
+  place-items: center;
+  color: var(--red);
+}
+
+.files-tree-spacer {
+  width: 1px;
+  contain: strict;
+  pointer-events: none;
+}
+
+.files-tree-window {
+  contain: layout style;
+}
+
+.file-load-more {
+  width: 100%;
+  height: 22px;
+  padding: 0 8px 0 calc(42px + var(--file-depth, 0) * 16px);
+  border: 0;
+  border-radius: 0;
+  color: var(--accent);
+  text-align: left;
+  background: transparent;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.file-load-more:hover,
+.file-load-more:focus-visible {
+  background: var(--sidebar-hover);
+}
+
+.git-diff-spacer {
+  width: 1px;
+  contain: strict;
+  pointer-events: none;
 }
 
 .git-diff-row {
@@ -2753,6 +2805,25 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 
 .directory-row[data-selected="true"] {
   background: var(--sidebar-active);
+}
+
+.directory-page-previous,
+.directory-load-more {
+  width: 100%;
+  height: 30px;
+  border-color: transparent;
+  color: var(--accent);
+  text-align: center;
+  background: transparent;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.directory-page-previous:hover,
+.directory-page-previous:focus-visible,
+.directory-load-more:hover,
+.directory-load-more:focus-visible {
+  background: var(--sidebar-hover);
 }
 
 .directory-row-icon {

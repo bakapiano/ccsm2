@@ -5,6 +5,7 @@ import {
   fileExplorerIconKind,
   fileTreeKeyboardAction,
   flattenFileTree,
+  flattenFileTreeItems,
 } from "./file-explorer-tree";
 import { fileResourceIconKind } from "./file-resource-icon";
 
@@ -74,6 +75,22 @@ describe("VS Code-style File Explorer tree", () => {
     expect(fileTreeKeyboardAction(rows, "README.md", "Enter")).toEqual({
       action: "open",
       path: "README.md",
+    });
+  });
+
+  test("places a bounded-page continuation at the directory boundary", () => {
+    const items = flattenFileTreeItems(
+      "",
+      new Map([["", [entry("first.txt", "file")]]]),
+      [],
+      new Map([["", 200]]),
+    );
+
+    expect(items.at(-1)).toEqual({
+      itemKind: "more",
+      parentPath: "",
+      depth: 0,
+      nextOffset: 200,
     });
   });
 });

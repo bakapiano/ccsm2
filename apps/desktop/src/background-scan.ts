@@ -32,9 +32,13 @@ export class BackgroundScanController {
   #burstRuns = 0;
   #consecutiveFailures = 0;
   #openUntil = 0;
+  #abortController: AbortController | null = null;
 
   constructor(
-    private readonly scan: (manual: boolean) => Promise<void>,
+    private readonly scan: (
+      manual: boolean,
+      signal: AbortSignal,
+    ) => Promise<void>,
     private readonly onError: (error: unknown) => void,
     options: Partial<BackgroundScanOptions> = {},
   ) {
@@ -59,6 +63,8 @@ export class BackgroundScanController {
     this.#disposed = true;
     this.#pending = false;
     this.#manualPending = false;
+    this.#abortController?.abort();
+    this.#abortController = null;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
   }
@@ -118,17 +124,22 @@ export class BackgroundScanController {
 
     let failed = false;
     let timeoutReported = false;
+    const abortController = new AbortController();
+    this.#abortController = abortController;
     const timeout = setTimeout(() => {
       timeoutReported = true;
+      abortController.abort();
       this.onError(new BackgroundScanTimeoutError(this.#options.timeoutMs));
     }, this.#options.timeoutMs);
     try {
-      await this.scan(manual);
+      await this.scan(manual, abortController.signal);
     } catch (error) {
       failed = true;
       if (!timeoutReported) this.onError(error);
     } finally {
       clearTimeout(timeout);
+      if (this.#abortController === abortController)
+        this.#abortController = null;
       this.#running = false;
     }
 

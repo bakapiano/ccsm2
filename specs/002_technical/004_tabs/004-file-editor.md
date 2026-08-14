@@ -100,6 +100,8 @@ CodeMirror配置包含：
 
 磁盘首次加载和clean external reload使用新的`EditorState`，从而重置旧undo history；普通Tab切换与Space切换保留当前state。Provider不维护自制textarea镜像、高亮器、搜索器或undo stack。
 
+session保存最近磁盘文本和一个CodeMirror `ChangeSet`组合器。每次`docChanged`将transaction changes合并到累计changes，并通过changes长度判断Dirty；输入路径读取`EditorState.doc.length`，保持零次全文materialization。保存时执行一次`doc.toString()`生成写入内容，保存成功后用当前文本重置磁盘baseline与累计changes；undo回到baseline时通过组合后的changes恢复Clean。
+
 ## Close 与退出
 
 单Tab关闭在删除TabRecord前询问session。Cancel重新挂载原Panel；Save仅在成功后删除；Discard直接删除。

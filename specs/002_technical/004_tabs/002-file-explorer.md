@@ -16,7 +16,8 @@ interface FileExplorerTabState {
 ## Core API
 
 ```text
-fs.list_directory(space_id, relative_path, cursor)
+fs.list_directory(space_id, relative_path, operation_id, offset, limit)
+fs.cancel_directory_operation(operation_id)
 fs.stat(space_id, relative_path)
 fs.set_watch_scope(tab_id, space_id, relative_paths[])
 fs.clear_watch_scope(tab_id)
@@ -24,7 +25,9 @@ path.reveal(space_id, relative_path)
 runtime.create(space_id, cwd_relative_path, provider)
 ```
 
-`fs.list_directory` 支持分页和 cancellation。返回条目包含 name、relative path、kind、size、mtime、symlink metadata 和可选 Git decoration。
+`fs.list_directory`返回`entries + next_offset`。platform adapter接受1–500的page limit，并在枚举每个entry之间检查`operation_id`对应的cancellation token。File Explorer与host directory picker每页请求200项；导航、超时、关闭和新一轮扫描调用`cancel_directory_operation`。
+
+返回条目包含 name、relative path、kind、size、mtime、symlink metadata 和可选 Git decoration。每页使用稳定的directory iteration offset继续读取；File Explorer按到达页增量合并并保留展开状态，host directory picker通过上一页/下一页替换当前200项页面。
 
 AppBackend将`space_id`解析为`root_id`。File Explorer使用active Space的ActiveRootContext watcher；每个Tab保留独立expanded/selected state。切回Space时重新读取已展开目录。
 
@@ -57,6 +60,8 @@ File Explorer 保持只读树；单击普通文件通过 File Editor Provider �
 File Explorer renderer参考VS Code Explorer/tree/list的结构与交互，并适配CCSM现有DOM renderer：
 
 - row固定22px，twistie宽16px，层级indent为16px。
+- 展开树投影为扁平可见模型，并以22px行高计算全局row window；DOM挂载viewport与overscan覆盖的行。Load More marker作为模型项参与同一窗口计算。
+- scroll window更新通过animation-frame scheduler合并；WebView暂停animation frame时由100ms watchdog推进一次window更新。
 - 文件夹、普通文件、code、config、JSON、Markdown、image、archive和symlink使用资源类型图标。
 - hover、selection和keyboard focus使用独立状态；label超长时ellipsis。
 - Arrow Up/Down/Home/End移动焦点，Arrow Left/Right折叠、展开或进入child，Enter打开文件或切换目录。

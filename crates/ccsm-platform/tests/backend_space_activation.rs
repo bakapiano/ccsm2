@@ -112,6 +112,9 @@ fn create_space_removes_the_partial_graph_when_root_activation_fails() {
         .list_directory(ListDirectoryRequest {
             space_id: initial.active_space_id,
             relative_path: String::new(),
+            operation_id: "rollback-create".into(),
+            offset: 0,
+            limit: 200,
         })
         .unwrap();
 }
@@ -145,6 +148,9 @@ fn switch_space_restores_the_previous_active_space_when_root_activation_fails() 
         .list_directory(ListDirectoryRequest {
             space_id: initial.active_space_id,
             relative_path: String::new(),
+            operation_id: "rollback-switch".into(),
+            offset: 0,
+            limit: 200,
         })
         .unwrap();
 }
@@ -175,6 +181,9 @@ fn active_directory_and_file_reads_materialize_watch_scopes() {
         .list_directory(ListDirectoryRequest {
             space_id: initial.active_space_id.clone(),
             relative_path: "nested".into(),
+            operation_id: "watch-scope".into(),
+            offset: 0,
+            limit: 200,
         })
         .unwrap();
     backend

@@ -8,7 +8,7 @@ use std::{
         mpsc,
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use ccsm_core::{
@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 use crate::containment::ProcessContainment;
 
 const RUNTIME_SHIM_ROOT_PREFIX: &str = "ccsm-runtime-shims-";
+const PTY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+const PTY_JOIN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
 pub fn cleanup_stale_runtime_shim_roots(parent: &Path) {
     let Ok(entries) = std::fs::read_dir(parent) else {
@@ -163,12 +165,13 @@ impl PortablePtyProcess {
             return Ok(());
         }
         threads.shutdown_started = true;
+        let deadline = Instant::now() + PTY_SHUTDOWN_TIMEOUT;
 
         let mut first_error = self.containment.terminate().err();
         if let Ok(mut killer) = self.killer.lock() {
             let _ = killer.kill();
         }
-        if let Err(error) = self.watchdog.shutdown()
+        if let Err(error) = self.watchdog.shutdown(deadline)
             && first_error.is_none()
         {
             first_error = Some(error);
@@ -178,10 +181,10 @@ impl PortablePtyProcess {
         self.resize_shutdown.store(true, Ordering::Release);
         let _ = self.resize_tx.try_send(ResizeCommand::Shutdown);
 
-        join_thread(&mut threads.input, "input", &mut first_error);
-        join_thread(&mut threads.resize, "resize", &mut first_error);
-        join_thread(&mut threads.reader, "reader", &mut first_error);
-        join_thread(&mut threads.waiter, "waiter", &mut first_error);
+        join_thread_until(&mut threads.input, "input", deadline, &mut first_error);
+        join_thread_until(&mut threads.resize, "resize", deadline, &mut first_error);
+        join_thread_until(&mut threads.reader, "reader", deadline, &mut first_error);
+        join_thread_until(&mut threads.waiter, "waiter", deadline, &mut first_error);
 
         match first_error {
             Some(error) => Err(error),
@@ -190,12 +193,30 @@ impl PortablePtyProcess {
     }
 }
 
-fn join_thread(
+fn join_thread_until(
     thread: &mut Option<JoinHandle<()>>,
     name: &str,
+    deadline: Instant,
     first_error: &mut Option<BackendError>,
 ) {
-    if thread.take().is_some_and(|thread| thread.join().is_err()) && first_error.is_none() {
+    let Some(handle) = thread.take() else {
+        return;
+    };
+    while !handle.is_finished() && Instant::now() < deadline {
+        thread::sleep(
+            PTY_JOIN_POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
+        );
+    }
+    if !handle.is_finished() {
+        if first_error.is_none() {
+            *first_error = Some(BackendError::Platform(format!(
+                "PTY {name} thread exceeded the {}ms shutdown deadline",
+                PTY_SHUTDOWN_TIMEOUT.as_millis()
+            )));
+        }
+        return;
+    }
+    if handle.join().is_err() && first_error.is_none() {
         *first_error = Some(BackendError::Platform(format!(
             "PTY {name} thread panicked during shutdown"
         )));
@@ -452,7 +473,7 @@ impl ProcessWatchdog {
         })
     }
 
-    fn shutdown(&self) -> BackendResult<()> {
+    fn shutdown(&self, deadline: Instant) -> BackendResult<()> {
         self.stdin
             .lock()
             .map_err(|_| BackendError::Platform("process watchdog pipe lock poisoned".into()))?
@@ -463,9 +484,32 @@ impl ProcessWatchdog {
             .map_err(|_| BackendError::Platform("process watchdog lock poisoned".into()))?
             .take()
         {
-            child.wait().map_err(|error| {
-                BackendError::Platform(format!("wait for process watchdog: {error}"))
-            })?;
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => break,
+                    Ok(None) if Instant::now() < deadline => {
+                        thread::sleep(
+                            PTY_JOIN_POLL_INTERVAL
+                                .min(deadline.saturating_duration_since(Instant::now())),
+                        );
+                    }
+                    Ok(None) => {
+                        let _ = child.kill();
+                        thread::spawn(move || {
+                            let _ = child.wait();
+                        });
+                        return Err(BackendError::Platform(format!(
+                            "process watchdog exceeded the {}ms shutdown deadline",
+                            PTY_SHUTDOWN_TIMEOUT.as_millis()
+                        )));
+                    }
+                    Err(error) => {
+                        return Err(BackendError::Platform(format!(
+                            "poll process watchdog: {error}"
+                        )));
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -480,7 +524,7 @@ impl ProcessWatchdog {
         Ok(Self)
     }
 
-    fn shutdown(&self) -> BackendResult<()> {
+    fn shutdown(&self, _deadline: Instant) -> BackendResult<()> {
         Ok(())
     }
 }
@@ -806,6 +850,27 @@ fn default_shell() -> (PathBuf, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thread_join_returns_at_the_shared_shutdown_deadline() {
+        let mut handle = Some(thread::spawn(|| thread::sleep(Duration::from_millis(250))));
+        let mut error = None;
+        let started = Instant::now();
+
+        join_thread_until(
+            &mut handle,
+            "fixture",
+            started + Duration::from_millis(30),
+            &mut error,
+        );
+
+        assert!(started.elapsed() < Duration::from_millis(150));
+        assert!(handle.is_none());
+        assert!(matches!(
+            error,
+            Some(BackendError::Platform(message)) if message.contains("shutdown deadline")
+        ));
+    }
 
     #[test]
     fn resize_queue_is_non_blocking_and_keeps_the_latest_size() {
