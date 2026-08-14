@@ -345,6 +345,51 @@ describe("IME composition overlay", () => {
     terminal.dispose();
   });
 
+  test("reports current theme colors to agent CLI dynamic-color queries", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({
+      ghostty,
+      cols: 20,
+      rows: 5,
+      theme: {
+        background: "#1e1e1e",
+        foreground: "#cccccc",
+        cursor: "#aeafad",
+      },
+    });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const responses: string[] = [];
+    const titles: string[] = [];
+    let bellCount = 0;
+    terminal.onData((data) => responses.push(data));
+    terminal.onTitleChange((title) => titles.push(title));
+    terminal.onBell(() => {
+      bellCount += 1;
+    });
+    terminal.open(host);
+
+    terminal.write("\x1b]10;?\x07\x1b]11;?\x1b\\");
+    expect(responses).toEqual([
+      "\x1b]10;rgb:cccc/cccc/cccc\x07",
+      "\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\",
+    ]);
+    expect(bellCount).toBe(0);
+
+    terminal.options.theme = {
+      background: "#ffffff",
+      foreground: "#333333",
+      cursor: "#000000",
+    };
+    terminal.write(new TextEncoder().encode("\x1b]1"));
+    terminal.write(new TextEncoder().encode("1;?\x1b\\"));
+    expect(responses.at(-1)).toBe("\x1b]11;rgb:ffff/ffff/ffff\x1b\\");
+    terminal.write("\x1b]2;light terminal\x1b\\");
+    expect(titles).toEqual(["light terminal"]);
+    expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("");
+    terminal.dispose();
+  });
+
   test("explicit redraw preserves VT contents and viewport", async () => {
     const ghostty = await Ghostty.load();
     const terminal = new Terminal({
