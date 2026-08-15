@@ -27,11 +27,19 @@
 ## Development
 
 - Run `pnpm dev` from the repository root for the normal desktop development loop. It starts `tauri dev`, which starts the Vite server through `beforeDevCommand`; TypeScript and CSS changes use Vite HMR in the running desktop window.
-- Treat `pnpm desktop:build:debug` as a final build verification command, not as the frontend iteration loop. Do not repeatedly kill, rebuild, and reopen the packaged debug executable for ordinary renderer changes.
-- Rust or Tauri host changes may trigger a native rebuild/restart under `tauri dev`; frontend-only changes must stay on the existing HMR instance. Keep one dev instance per workspace so Vite/CDP ports and WebView profiles do not conflict.
-- Run interactive verification against the workspace dev instance or an isolated fixture/profile. Do not attach expensive full-tree snapshots to a user's long-running desktop instance; prefer targeted locators/eval and clean up owned dev processes.
+- `pnpm dev` owns the frontend iteration loop. `pnpm desktop:build:debug` provides final build verification.
+- Rust or Tauri host changes may trigger a native rebuild/restart under `tauri dev`; frontend-only changes stay on the existing HMR instance. Keep one dev instance per workspace so Vite ports and WebView profiles remain uniquely owned.
 - Deliver vertical slices across core, platform, desktop adapter, TypeScript Provider, and tests.
 - Keep platform conditionals in platform modules or `ccsm-desktop/browser`; preserve shared domain behavior.
 - Preserve vendored ghostty-web CJK, selection, box-drawing, and IME fixes, plus portable-pty/ConPTY notices and integrity checks.
 - Run formatting, Rust tests, TypeScript checks, deterministic terminal regressions, and a desktop build before handoff.
-- Use the installed `playwright-cli` skill for interactive WebView verification; do not add bespoke Playwright runner scripts.
+
+## Desktop testing
+
+- Use WebdriverIO with `@wdio/tauri-service` and the embedded provider for local Desktop E2E debugging and GitHub Actions. Windows and Linux share the WDIO configuration, scenarios, fixtures, selectors, assertions, and reporters.
+- Build a dedicated E2E executable with the Cargo `e2e` feature. The feature enables `tauri-plugin-wdio-webdriver` and `tauri-plugin-wdio`; normal dev and release builds use the default feature set.
+- Use `pnpm test:desktop:build` to build the current-platform E2E executable, `pnpm test:desktop` to run the suite, and `pnpm test:desktop:debug -- --spec <file>` to debug one scenario locally.
+- Give every run isolated data, cache, runtime, Space, Browser profile, and artifact directories. The runner records and cleans every process and native surface owned by the run.
+- GitHub Actions branch protection requires independent `desktop-e2e-windows` and `desktop-e2e-linux` checks. Each job runs checks, tests, the platform E2E build, and the shared Desktop Scenarios.
+- Each platform job uploads structured results, screenshots, logs, cleanup evidence, and scenario GIFs through `actions/upload-artifact@v4` with `retention-days: 1`.
+- WDIO assertions determine the job result. PR reviewers inspect the Windows and Linux artifacts and record human acceptance through PR approval.
