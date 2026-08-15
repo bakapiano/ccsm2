@@ -163,6 +163,10 @@ jobs:
               throw "Missing packaged file: $relative"
             }
           }
+          $buildInfo = Get-Content -LiteralPath (Join-Path $extractRoot "BUILD-INFO.txt")
+          if ($buildInfo -notcontains "Source: v$env:RELEASE_VERSION") {
+            throw "BUILD-INFO source revision does not match v$env:RELEASE_VERSION"
+          }
 
       - name: Verify Ubuntu archive
         if: runner.os == 'Linux'
@@ -180,6 +184,7 @@ jobs:
           test -f "${extract_root}/${name}/BUILD-INFO.txt"
           test -f "${extract_root}/${name}/LICENSE"
           test -f "${extract_root}/${name}/README.md"
+          grep -Fx "Source: v${RELEASE_VERSION}" "${extract_root}/${name}/BUILD-INFO.txt"
 
       - name: Ensure lockfiles did not change
         run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml
