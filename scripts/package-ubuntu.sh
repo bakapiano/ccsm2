@@ -17,6 +17,7 @@ output_root="$(realpath -m "${CCSM_PACKAGE_OUTPUT_DIR:-${release_root}}")"
 package_name="CCSM-${version}-ubuntu-24.04-x86_64"
 stage_root="${release_root}/package/${package_name}"
 archive_path="${output_root}/${package_name}.tar.gz"
+source_revision="$(git -C "${repo_root}" describe --always --dirty)"
 
 if [[ "${CCSM_SKIP_BUILD:-0}" != "1" ]]; then
   (
@@ -72,7 +73,6 @@ install -m 0644 \
   "${repo_root}/crates/ccsm-platform/vendor/NOTICE.md" \
   "${stage_root}/THIRD-PARTY-NOTICES/VENDORED-COMPONENTS.md"
 
-source_revision="$(git -C "${repo_root}" describe --always --dirty)"
 binary_sha256="$(sha256sum "${stage_root}/ccsm-desktop" | cut -d' ' -f1)"
 {
   printf 'Package: %s\n' "${package_name}"

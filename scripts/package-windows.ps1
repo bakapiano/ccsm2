@@ -37,6 +37,10 @@ $packageName = "CCSM-$Version-windows-x64"
 $stageRoot = Join-Path $releaseRoot "package\$packageName"
 $zipPath = Join-Path $releaseRoot "$packageName.zip"
 $checksumPath = "$zipPath.sha256"
+$sourceRevision = (& git -C $repoRoot describe --always --dirty | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not determine source revision"
+}
 
 if (-not $SkipBuild) {
     Push-Location $repoRoot
@@ -90,10 +94,6 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination $stageRoot
 
 $binaryPath = Join-Path $stageRoot "ccsm-desktop.exe"
 $binaryHash = Get-Sha256Hex -Path $binaryPath
-$sourceRevision = (& git -C $repoRoot describe --always --dirty | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not determine source revision"
-}
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllLines(
     (Join-Path $stageRoot "BUILD-INFO.txt"),
