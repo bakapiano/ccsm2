@@ -49,11 +49,10 @@ where
 }
 
 #[tauri::command]
-pub fn bootstrap(state: State<'_, DesktopState>) -> CommandResult<BootstrapDto> {
-    state
-        .backend
-        .bootstrap(&state.default_root)
-        .map_err(ApiErrorDto::from)
+pub async fn bootstrap(state: State<'_, DesktopState>) -> CommandResult<BootstrapDto> {
+    let backend = Arc::clone(&state.backend);
+    let default_root = state.default_root.clone();
+    on_blocking_worker(move || backend.bootstrap(&default_root).map_err(ApiErrorDto::from)).await
 }
 
 #[tauri::command]
@@ -82,14 +81,12 @@ pub async fn switch_space(
 }
 
 #[tauri::command]
-pub fn create_space(
+pub async fn create_space(
     request: CreateSpaceRequest,
     state: State<'_, DesktopState>,
 ) -> CommandResult<BootstrapDto> {
-    state
-        .backend
-        .create_space(request)
-        .map_err(ApiErrorDto::from)
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || backend.create_space(request).map_err(ApiErrorDto::from)).await
 }
 
 #[tauri::command]
@@ -104,14 +101,12 @@ pub fn rename_space(
 }
 
 #[tauri::command]
-pub fn delete_space(
+pub async fn delete_space(
     request: DeleteSpaceRequest,
     state: State<'_, DesktopState>,
 ) -> CommandResult<BootstrapDto> {
-    state
-        .backend
-        .delete_space(request)
-        .map_err(ApiErrorDto::from)
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || backend.delete_space(request).map_err(ApiErrorDto::from)).await
 }
 
 #[tauri::command]
@@ -288,8 +283,27 @@ pub async fn list_directory(
     request: ListDirectoryRequest,
     state: State<'_, DesktopState>,
 ) -> CommandResult<DirectoryListingDto> {
+    state
+        .filesystem
+        .prepare_directory_operation(&request.operation_id)
+        .map_err(ApiErrorDto::from)?;
     let backend = Arc::clone(&state.backend);
-    on_blocking_worker(move || backend.list_directory(request).map_err(ApiErrorDto::from)).await
+    let filesystem = Arc::clone(&state.filesystem);
+    let operation_id = request.operation_id.clone();
+    let result =
+        on_blocking_worker(move || backend.list_directory(request).map_err(ApiErrorDto::from))
+            .await;
+    filesystem.finish_directory_operation(&operation_id);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_directory_operation(
+    operation_id: String,
+    state: State<'_, DesktopState>,
+) -> CommandResult<()> {
+    state.filesystem.cancel_directory_operation(&operation_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -325,28 +339,50 @@ pub async fn write_file(
 }
 
 #[tauri::command]
-pub fn browse_host_directory(
+pub async fn browse_host_directory(
     request: BrowseHostDirectoryRequest,
     state: State<'_, DesktopState>,
 ) -> CommandResult<HostDirectoryListingDto> {
-    ccsm_platform::LocalFileSystemBackend::new()
-        .browse_host_directory(
-            request.path.as_deref(),
-            &state.home_dir,
-            workspace_root(&request),
-        )
-        .map(Into::into)
-        .map_err(ApiErrorDto::from)
+    state
+        .filesystem
+        .prepare_directory_operation(&request.operation_id)
+        .map_err(ApiErrorDto::from)?;
+    let home_dir = state.home_dir.clone();
+    let workspace_root = workspace_root(&request).map(ToOwned::to_owned);
+    let filesystem = Arc::clone(&state.filesystem);
+    let worker_filesystem = Arc::clone(&filesystem);
+    let operation_id = request.operation_id.clone();
+    let result = on_blocking_worker(move || {
+        worker_filesystem
+            .browse_host_directory(
+                request.path.as_deref(),
+                &home_dir,
+                workspace_root.as_deref(),
+                &request.operation_id,
+                request.offset,
+                request.limit,
+            )
+            .map(Into::into)
+            .map_err(ApiErrorDto::from)
+    })
+    .await;
+    filesystem.finish_directory_operation(&operation_id);
+    result
 }
 
 #[tauri::command]
-pub fn create_host_directory(
+pub async fn create_host_directory(
     request: CreateHostDirectoryRequest,
+    state: State<'_, DesktopState>,
 ) -> CommandResult<HostDirectoryEntryDto> {
-    ccsm_platform::LocalFileSystemBackend::new()
-        .create_host_directory(&request.parent_path, &request.name)
-        .map(Into::into)
-        .map_err(ApiErrorDto::from)
+    let filesystem = Arc::clone(&state.filesystem);
+    on_blocking_worker(move || {
+        filesystem
+            .create_host_directory(&request.parent_path, &request.name)
+            .map(Into::into)
+            .map_err(ApiErrorDto::from)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -377,7 +413,7 @@ pub async fn read_git_diff(
 }
 
 #[tauri::command]
-pub fn start_runtime(
+pub async fn start_runtime(
     request: StartRuntimeRequest,
     on_event: Channel<RuntimeEvent>,
     state: State<'_, DesktopState>,
@@ -385,10 +421,13 @@ pub fn start_runtime(
     let sink: RuntimeEventSink = Arc::new(move |event| {
         let _ = on_event.send(event);
     });
-    state
-        .backend
-        .start_runtime(request, sink)
-        .map_err(ApiErrorDto::from)
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || {
+        backend
+            .start_runtime(request, sink)
+            .map_err(ApiErrorDto::from)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -417,11 +456,21 @@ pub fn resize_runtime(
 }
 
 #[tauri::command]
-pub fn stop_runtime(runtime_id: String, state: State<'_, DesktopState>) -> CommandResult<()> {
+pub fn acknowledge_runtime_output(
+    runtime_id: String,
+    bytes: usize,
+    state: State<'_, DesktopState>,
+) -> CommandResult<()> {
     state
         .backend
-        .stop_runtime(&runtime_id)
+        .acknowledge_runtime_output(&runtime_id, bytes)
         .map_err(ApiErrorDto::from)
+}
+
+#[tauri::command]
+pub async fn stop_runtime(runtime_id: String, state: State<'_, DesktopState>) -> CommandResult<()> {
+    let backend = Arc::clone(&state.backend);
+    on_blocking_worker(move || backend.stop_runtime(&runtime_id).map_err(ApiErrorDto::from)).await
 }
 
 #[tauri::command]

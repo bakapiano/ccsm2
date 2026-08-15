@@ -16,10 +16,16 @@ fn filesystem_lists_entries_and_rejects_parent_traversal() {
     let root = descriptor(directory.path());
     let filesystem = LocalFileSystemBackend::new();
 
-    let entries = filesystem.list_directory(&root, "").unwrap();
-    assert_eq!(entries[0].name, "folder");
-    assert!(entries.iter().any(|entry| entry.name == "hello.txt"));
-    assert!(filesystem.list_directory(&root, "..").is_err());
+    let page = filesystem
+        .list_directory(&root, "", "root-list", 0, 200)
+        .unwrap();
+    assert_eq!(page.entries[0].name, "folder");
+    assert!(page.entries.iter().any(|entry| entry.name == "hello.txt"));
+    assert!(
+        filesystem
+            .list_directory(&root, "..", "invalid-list", 0, 200)
+            .is_err()
+    );
 }
 
 #[test]

@@ -1,7 +1,12 @@
 use std::{
+    collections::HashMap,
     fs::OpenOptions,
     io::Write,
     path::{Component, Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::UNIX_EPOCH,
 };
 
@@ -11,10 +16,15 @@ use ccsm_core::{
         ResolvedFileReferenceDto, WriteFileRequest, WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
-    ports::{FileSystemBackend, RootDescriptor},
+    ports::{DirectoryPage, FileSystemBackend, RootDescriptor},
 };
 
-pub struct LocalFileSystemBackend;
+const MAX_DIRECTORY_PAGE_SIZE: u32 = 500;
+
+#[derive(Default)]
+pub struct LocalFileSystemBackend {
+    directory_operations: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostDirectoryEntry {
@@ -34,12 +44,13 @@ pub struct HostDirectoryListing {
     pub parent: Option<String>,
     pub exists: bool,
     pub entries: Vec<HostDirectoryEntry>,
+    pub next_offset: Option<u32>,
     pub starts: Vec<HostDirectoryStart>,
 }
 
 impl LocalFileSystemBackend {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub fn browse_host_directory(
@@ -47,7 +58,12 @@ impl LocalFileSystemBackend {
         requested_path: Option<&str>,
         home: &Path,
         workspace_root: Option<&Path>,
+        operation_id: &str,
+        offset: u32,
+        limit: u32,
     ) -> BackendResult<HostDirectoryListing> {
+        let operation = self.begin_directory_operation(operation_id)?;
+        let limit = validated_directory_page_limit(limit)?;
         let requested = requested_path
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -60,30 +76,32 @@ impl LocalFileSystemBackend {
         };
         let path = std::fs::canonicalize(&absolute).unwrap_or(absolute);
         let exists = path.is_dir();
-        let mut entries = if exists {
-            match std::fs::read_dir(&path) {
-                Ok(entries) => entries
-                    .filter_map(Result::ok)
-                    .filter_map(|entry| {
-                        let name = entry.file_name().to_string_lossy().into_owned();
-                        if name.starts_with('.') {
-                            return None;
-                        }
-                        entry
-                            .file_type()
-                            .ok()
-                            .filter(|kind| kind.is_dir())
-                            .map(|_| HostDirectoryEntry {
-                                name,
-                                path: persisted_path(&entry.path()),
-                            })
-                    })
-                    .collect(),
-                Err(_) => Vec::new(),
+        let mut entries = Vec::new();
+        if exists && let Ok(children) = std::fs::read_dir(&path) {
+            let mut visible_index = 0_u32;
+            for child in children {
+                operation.check()?;
+                let Ok(entry) = child else { continue };
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    continue;
+                }
+                if visible_index < offset {
+                    visible_index = visible_index.saturating_add(1);
+                    continue;
+                }
+                entries.push(HostDirectoryEntry {
+                    name,
+                    path: persisted_path(&entry.path()),
+                });
+                visible_index = visible_index.saturating_add(1);
+                if entries.len() > limit as usize {
+                    break;
+                }
             }
-        } else {
-            Vec::new()
-        };
+        }
+        let next_offset = (entries.len() > limit as usize).then_some(offset.saturating_add(limit));
+        entries.truncate(limit as usize);
         entries.sort_by(|left: &HostDirectoryEntry, right: &HostDirectoryEntry| {
             left.name.to_lowercase().cmp(&right.name.to_lowercase())
         });
@@ -104,8 +122,59 @@ impl LocalFileSystemBackend {
             parent,
             exists,
             entries,
+            next_offset,
             starts,
         })
+    }
+
+    pub fn cancel_directory_operation(&self, operation_id: &str) {
+        if let Ok(operations) = self.directory_operations.lock()
+            && let Some(operation) = operations.get(operation_id)
+        {
+            operation.store(true, Ordering::Release);
+        }
+    }
+
+    pub fn prepare_directory_operation(&self, operation_id: &str) -> BackendResult<()> {
+        validate_directory_operation_id(operation_id)?;
+        let mut operations = self.directory_operations.lock().map_err(|_| {
+            BackendError::Platform("directory operation registry lock poisoned".into())
+        })?;
+        if operations.contains_key(operation_id) {
+            return Err(BackendError::Invalid(
+                "directory operation identifier is already active".into(),
+            ));
+        }
+        operations.insert(operation_id.to_string(), Arc::new(AtomicBool::new(false)));
+        Ok(())
+    }
+
+    pub fn finish_directory_operation(&self, operation_id: &str) {
+        if let Ok(mut operations) = self.directory_operations.lock() {
+            operations.remove(operation_id);
+        }
+    }
+
+    fn begin_directory_operation(
+        &self,
+        operation_id: &str,
+    ) -> BackendResult<DirectoryOperationGuard<'_>> {
+        validate_directory_operation_id(operation_id)?;
+        let mut operations = self.directory_operations.lock().map_err(|_| {
+            BackendError::Platform("directory operation registry lock poisoned".into())
+        })?;
+        let cancellation = operations
+            .entry(operation_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone();
+        drop(operations);
+        let guard = DirectoryOperationGuard {
+            backend: self,
+            operation_id: operation_id.to_string(),
+            cancellation,
+        };
+        guard.check()?;
+        Ok(guard)
     }
 
     pub fn create_host_directory(
@@ -134,12 +203,6 @@ impl LocalFileSystemBackend {
             name: name.to_string(),
             path: persisted_path(&child),
         })
-    }
-}
-
-impl Default for LocalFileSystemBackend {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -188,7 +251,12 @@ impl FileSystemBackend for LocalFileSystemBackend {
         &self,
         root: &RootDescriptor,
         relative_path: &str,
-    ) -> BackendResult<Vec<FileEntryDto>> {
+        operation_id: &str,
+        offset: u32,
+        limit: u32,
+    ) -> BackendResult<DirectoryPage> {
+        let operation = self.begin_directory_operation(operation_id)?;
+        let limit = validated_directory_page_limit(limit)?;
         let root_path = PathBuf::from(&root.root_path)
             .canonicalize()
             .map_err(|error| BackendError::Platform(format!("canonicalize Space root: {error}")))?;
@@ -208,44 +276,59 @@ impl FileSystemBackend for LocalFileSystemBackend {
             )));
         }
 
-        let mut entries = std::fs::read_dir(&directory)
-            .map_err(|error| BackendError::Platform(format!("read directory: {error}")))?
-            .map(|entry| {
-                let entry = entry.map_err(|error| {
-                    BackendError::Platform(format!("read directory entry: {error}"))
-                })?;
-                let metadata = std::fs::symlink_metadata(entry.path()).map_err(|error| {
-                    BackendError::Platform(format!("read file metadata: {error}"))
-                })?;
-                let kind = if metadata.file_type().is_symlink() {
-                    FileEntryKind::Symlink
-                } else if metadata.is_dir() {
-                    FileEntryKind::Directory
-                } else if metadata.is_file() {
-                    FileEntryKind::File
-                } else {
-                    FileEntryKind::Other
-                };
-                let child_relative = relative.join(entry.file_name());
-                Ok(FileEntryDto {
-                    name: entry.file_name().to_string_lossy().into_owned(),
-                    relative_path: path_to_slashes(&child_relative),
-                    kind,
-                    size: metadata.is_file().then_some(metadata.len() as f64),
-                    modified_at: metadata
-                        .modified()
-                        .ok()
-                        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-                        .map(|duration| duration.as_secs_f64()),
-                })
-            })
-            .collect::<BackendResult<Vec<_>>>()?;
+        let children = std::fs::read_dir(&directory)
+            .map_err(|error| BackendError::Platform(format!("read directory: {error}")))?;
+        let mut entries = Vec::new();
+        for (index, entry) in children.enumerate() {
+            operation.check()?;
+            if index < offset as usize {
+                continue;
+            }
+            let entry = entry.map_err(|error| {
+                BackendError::Platform(format!("read directory entry: {error}"))
+            })?;
+            let metadata = std::fs::symlink_metadata(entry.path())
+                .map_err(|error| BackendError::Platform(format!("read file metadata: {error}")))?;
+            let kind = if metadata.file_type().is_symlink() {
+                FileEntryKind::Symlink
+            } else if metadata.is_dir() {
+                FileEntryKind::Directory
+            } else if metadata.is_file() {
+                FileEntryKind::File
+            } else {
+                FileEntryKind::Other
+            };
+            let child_relative = relative.join(entry.file_name());
+            entries.push(FileEntryDto {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                relative_path: path_to_slashes(&child_relative),
+                kind,
+                size: metadata.is_file().then_some(metadata.len() as f64),
+                modified_at: metadata
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                    .map(|duration| duration.as_secs_f64()),
+            });
+            if entries.len() > limit as usize {
+                break;
+            }
+        }
+        let next_offset = (entries.len() > limit as usize).then_some(offset.saturating_add(limit));
+        entries.truncate(limit as usize);
         entries.sort_by(|left, right| {
             entry_rank(left.kind)
                 .cmp(&entry_rank(right.kind))
                 .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
         });
-        Ok(entries)
+        Ok(DirectoryPage {
+            entries,
+            next_offset,
+        })
+    }
+
+    fn cancel_directory_operation(&self, operation_id: &str) {
+        self.cancel_directory_operation(operation_id);
     }
 
     fn read_file(
@@ -559,6 +642,54 @@ fn entry_rank(kind: FileEntryKind) -> u8 {
     }
 }
 
+struct DirectoryOperationGuard<'a> {
+    backend: &'a LocalFileSystemBackend,
+    operation_id: String,
+    cancellation: Arc<AtomicBool>,
+}
+
+impl DirectoryOperationGuard<'_> {
+    fn check(&self) -> BackendResult<()> {
+        if self.cancellation.load(Ordering::Acquire) {
+            Err(BackendError::Platform(
+                "directory operation cancelled".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for DirectoryOperationGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut operations) = self.backend.directory_operations.lock()
+            && operations
+                .get(&self.operation_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.cancellation))
+        {
+            operations.remove(&self.operation_id);
+        }
+    }
+}
+
+fn validated_directory_page_limit(limit: u32) -> BackendResult<u32> {
+    if limit == 0 || limit > MAX_DIRECTORY_PAGE_SIZE {
+        return Err(BackendError::Invalid(format!(
+            "directory page size must be between 1 and {MAX_DIRECTORY_PAGE_SIZE}"
+        )));
+    }
+    Ok(limit)
+}
+
+fn validate_directory_operation_id(operation_id: &str) -> BackendResult<()> {
+    if operation_id.is_empty() || operation_id.len() > 128 {
+        return Err(BackendError::Invalid(
+            "invalid directory operation identifier".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validated_directory_name(value: &str) -> BackendResult<&str> {
     let value = value.trim();
     let invalid_character = value.chars().any(|character| {
@@ -685,6 +816,9 @@ mod host_directory_tests {
                 Some(root.path().to_string_lossy().as_ref()),
                 root.path(),
                 None,
+                "browse-test",
+                0,
+                200,
             )
             .unwrap();
 
@@ -713,6 +847,42 @@ mod host_directory_tests {
                 .create_host_directory(root.path().to_string_lossy().as_ref(), "../escape")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn directory_pages_bound_results_and_honor_cancellation() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..501 {
+            std::fs::write(root.path().join(format!("file-{index:04}.txt")), b"x").unwrap();
+        }
+        let filesystem = LocalFileSystemBackend::new();
+        let descriptor = root_descriptor(root.path());
+
+        let first = filesystem
+            .list_directory(&descriptor, "", "page-one", 0, 200)
+            .unwrap();
+        let second = filesystem
+            .list_directory(&descriptor, "", "page-two", 200, 200)
+            .unwrap();
+        assert_eq!(first.entries.len(), 200);
+        assert_eq!(first.next_offset, Some(200));
+        assert_eq!(second.entries.len(), 200);
+        assert_eq!(second.next_offset, Some(400));
+
+        filesystem
+            .prepare_directory_operation("cancelled-page")
+            .unwrap();
+        filesystem.cancel_directory_operation("cancelled-page");
+        let error = filesystem
+            .list_directory(&descriptor, "", "cancelled-page", 0, 200)
+            .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+
+        filesystem.cancel_directory_operation("completed-page");
+        filesystem
+            .prepare_directory_operation("completed-page")
+            .unwrap();
+        filesystem.finish_directory_operation("completed-page");
     }
 
     #[test]

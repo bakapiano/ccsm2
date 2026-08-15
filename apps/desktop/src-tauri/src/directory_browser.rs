@@ -10,6 +10,9 @@ use ts_rs::TS;
 pub struct BrowseHostDirectoryRequest {
     pub path: Option<String>,
     pub workspace_root: Option<String>,
+    pub operation_id: String,
+    pub offset: u32,
+    pub limit: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, TS)]
@@ -44,6 +47,7 @@ pub struct HostDirectoryListingDto {
     pub parent: Option<String>,
     pub exists: bool,
     pub entries: Vec<HostDirectoryEntryDto>,
+    pub next_offset: Option<u32>,
     pub starts: Vec<HostDirectoryStartDto>,
 }
 
@@ -72,6 +76,7 @@ impl From<HostDirectoryListing> for HostDirectoryListingDto {
             parent: value.parent,
             exists: value.exists,
             entries: value.entries.into_iter().map(Into::into).collect(),
+            next_offset: value.next_offset,
             starts: value.starts.into_iter().map(Into::into).collect(),
         }
     }

@@ -27,12 +27,10 @@ describe("Changes diff layout", () => {
     expect(cssRule(".git-diff-file-body[hidden]")).toContain(
       "content-visibility: hidden",
     );
-    expect(cssRule(".git-diff-list.is-virtualized .git-diff-chunk")).toContain(
-      "content-visibility: auto",
+    expect(cssRule(".git-diff-window")).toContain(
+      "contain: layout style paint",
     );
-    expect(cssRule(".git-diff-list.is-virtualized .git-diff-chunk")).toContain(
-      "contain-intrinsic-block-size",
-    );
+    expect(cssRule(".git-diff-spacer")).toContain("contain: strict");
   });
 
   test("shares file resource icons and keeps Git status lightweight", () => {
@@ -52,8 +50,13 @@ describe("Changes diff layout", () => {
     expect(provider).toContain("readGitDiff");
     expect(provider).toContain("highlightTree(tree, classHighlighter");
     expect(provider).toContain("LanguageDescription.matchFilename");
-    expect(provider).toContain("Math.min(4, queue.length)");
-    expect(provider).toContain("DIFF_CHUNK_SIZE = 64");
+    expect(provider).toContain("DIFF_LOAD_CONCURRENCY = 2");
+    expect(provider).toContain("gitDiffVirtualWindow(");
+    expect(provider).toContain("IntersectionObserver(");
+    expect(provider).toContain("new FrameTaskScheduler(2)");
+    expect(provider).toContain("key !== this.#state.selectedDiffKey");
+    expect(provider).toContain("dataset.refreshRevision");
+    expect(provider).toContain('dataset.scanState = "scanning"');
     expect(provider).toContain("document.elementFromPoint");
   });
 });

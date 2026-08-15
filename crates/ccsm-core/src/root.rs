@@ -100,14 +100,23 @@ impl ActiveRootContext {
     ) -> BackendResult<DirectoryListingDto> {
         let root = self.active_root(&request.space_id)?;
         self.materialize_watch_scopes(&root, &[PathBuf::from(&request.relative_path)]);
-        let entries = self
-            .filesystem
-            .list_directory(&root, &request.relative_path)?;
+        let page = self.filesystem.list_directory(
+            &root,
+            &request.relative_path,
+            &request.operation_id,
+            request.offset,
+            request.limit,
+        )?;
         Ok(DirectoryListingDto {
             space_id: request.space_id,
             relative_path: request.relative_path,
-            entries,
+            entries: page.entries,
+            next_offset: page.next_offset,
         })
+    }
+
+    pub fn cancel_directory_operation(&self, operation_id: &str) {
+        self.filesystem.cancel_directory_operation(operation_id);
     }
 
     pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {

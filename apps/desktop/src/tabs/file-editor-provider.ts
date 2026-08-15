@@ -11,6 +11,7 @@ import {
   Compartment,
   EditorState,
   Prec,
+  type ChangeSet,
   type Extension,
 } from "@codemirror/state";
 import {
@@ -27,6 +28,7 @@ import {
   type FileEditorDialogOptions,
 } from "../file-editor-dialog";
 import { codeHighlightStyle } from "../code-highlighting";
+import { FileEditorChangeTracker } from "../file-editor-change-tracker";
 import {
   fileChangeAffectsPath,
   fileName,
@@ -217,8 +219,8 @@ class FileEditorSession {
   readonly #viewState: FileEditorTabState;
   readonly #listeners = new Set<() => void>();
   #status: EditorStatus = "loading";
-  #content = "";
   #diskContent = "";
+  readonly #changes = new FileEditorChangeTracker();
   #revision: string | null = null;
   #utf8Bom = false;
   #lineEnding: FileLineEnding = "lf";
@@ -287,7 +289,7 @@ class FileEditorSession {
   snapshot(): SessionSnapshot {
     return {
       status: this.#status,
-      content: this.#content,
+      content: this.#diskContent,
       relativePath: this.relativePath,
       message: this.#message,
       notice: this.#notice,
@@ -304,13 +306,12 @@ class FileEditorSession {
   }
 
   isDirty(): boolean {
-    return this.#content !== this.#diskContent;
+    return this.#changes.dirty;
   }
 
-  setContent(content: string): void {
-    if (content === this.#content) return;
+  applyEditorChanges(changes: ChangeSet, readCurrent: () => string): void {
     const wasDirty = this.isDirty();
-    this.#content = content;
+    this.#changes.apply(changes, readCurrent);
     if (this.#status !== "conflict" && this.#status !== "read-only") {
       this.#status = this.isDirty() ? "dirty" : "clean";
       this.#message = null;
@@ -408,8 +409,8 @@ class FileEditorSession {
     this.#message = document.reason;
     this.#notice = notice;
     const content = document.content ?? "";
-    this.#content = content;
     this.#diskContent = content;
+    this.#changes.reset(content.length);
     this.#documentGeneration += 1;
     this.#status = document.status === "editable" ? "clean" : "read-only";
     this.#emit(wasDirty);
@@ -470,7 +471,7 @@ class FileEditorSession {
     if (choice === "reload") {
       if (this.#deleted) {
         const wasDirty = this.isDirty();
-        this.#content = this.#diskContent;
+        this.#changes.reset(this.#diskContent.length);
         this.#documentGeneration += 1;
         this.#emit(wasDirty);
       }
@@ -482,7 +483,8 @@ class FileEditorSession {
 
   async #performSave(overwrite: boolean, recreate: boolean): Promise<void> {
     const wasDirty = this.isDirty();
-    const savedContent = this.#content;
+    const saveSnapshot = this.#changes.snapshotForSave(this.#diskContent);
+    const savedContent = saveSnapshot.content;
     this.#status = "saving";
     this.#message = null;
     this.#emit(wasDirty);
@@ -499,6 +501,7 @@ class FileEditorSession {
       });
       this.#revision = result.revision;
       this.#diskContent = savedContent;
+      this.#changes.markSaved(savedContent, saveSnapshot.version);
       this.#deleted = false;
       this.#status = this.isDirty() ? "dirty" : "clean";
       this.#notice = "Saved";
@@ -641,6 +644,18 @@ class FileEditorPanel implements IContentRenderer {
   constructor(private readonly session: FileEditorSession) {
     this.element.className = "file-editor-panel";
     this.element.dataset.editorEngine = "codemirror6";
+    (this.element as FileEditorDebugElement).__CCSM_FILE_EDITOR_DEBUG__ =
+      () => ({
+        documentLength: this.#view?.state.doc.length ?? 0,
+        insertText: (text: string) => {
+          const view = this.#view;
+          if (!view) return false;
+          view.dispatch({
+            changes: { from: view.state.doc.length, insert: text },
+          });
+          return true;
+        },
+      });
     this.element.innerHTML = `
       <div class="file-editor-toolbar">
         <button type="button" data-editor-action="save">Save</button>
@@ -720,6 +735,7 @@ class FileEditorPanel implements IContentRenderer {
     this.dispose();
     this.#view?.destroy();
     this.#view = null;
+    delete (this.element as FileEditorDebugElement).__CCSM_FILE_EDITOR_DEBUG__;
   }
 
   #createView(snapshot: SessionSnapshot): void {
@@ -735,6 +751,7 @@ class FileEditorPanel implements IContentRenderer {
       ),
       parent: this.#host,
     });
+    this.element.dataset.documentLength = String(this.#view.state.doc.length);
     this.#view.scrollDOM.addEventListener("scroll", this.#onScroll, {
       passive: true,
     });
@@ -803,8 +820,12 @@ class FileEditorPanel implements IContentRenderer {
 
   #onUpdate(update: ViewUpdate): void {
     if (this.#synchronizing) return;
+    this.element.dataset.documentLength = String(update.state.doc.length);
     if (update.docChanged) {
-      this.session.setContent(update.state.doc.toString());
+      const view = update.view;
+      this.session.applyEditorChanges(update.changes, () =>
+        view.state.doc.toString(),
+      );
     }
     if (update.docChanged || update.selectionSet) {
       const selection = update.state.selection.main;
@@ -828,8 +849,7 @@ class FileEditorPanel implements IContentRenderer {
     this.#updateLanguage(snapshot);
     if (view) {
       const documentChanged =
-        this.#documentGeneration !== snapshot.documentGeneration ||
-        view.state.doc.toString() !== snapshot.content;
+        this.#documentGeneration !== snapshot.documentGeneration;
       if (documentChanged) {
         const current = view.state.selection.main;
         const restorePersisted =
@@ -846,6 +866,7 @@ class FileEditorPanel implements IContentRenderer {
         this.#synchronizing = true;
         try {
           view.setState(this.#createState(snapshot, anchor, head));
+          this.element.dataset.documentLength = String(view.state.doc.length);
         } finally {
           this.#synchronizing = false;
         }
@@ -1004,6 +1025,13 @@ export interface EditorRevealPosition {
   line: number;
   column: number;
 }
+
+type FileEditorDebugElement = HTMLElement & {
+  __CCSM_FILE_EDITOR_DEBUG__?: () => {
+    documentLength: number;
+    insertText(text: string): boolean;
+  };
+};
 
 function statusLabel(status: EditorStatus): string {
   switch (status) {

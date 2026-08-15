@@ -149,13 +149,14 @@ describe("terminal flow control", () => {
 
   test("bounds each terminal output render batch", () => {
     const queue = [
-      new Uint8Array(100),
-      new Uint8Array(100),
-      new Uint8Array(100),
+      { data: new Uint8Array(100), credit: { runtimeId: "old", bytes: 120 } },
+      { data: new Uint8Array(100), credit: { runtimeId: "old", bytes: 130 } },
+      { data: new Uint8Array(100), credit: { runtimeId: "new", bytes: 140 } },
     ];
     const batch = takeByteBatch(queue, 200);
 
-    expect(batch?.byteLength).toBe(200);
+    expect(batch?.data.byteLength).toBe(200);
+    expect(batch?.credits).toEqual([{ runtimeId: "old", bytes: 250 }]);
     expect(queue).toHaveLength(1);
   });
 

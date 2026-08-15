@@ -62,7 +62,11 @@ export const config: WebdriverIO.Config = {
   reporters: ["spec"],
   mochaOpts: {
     ui: "bdd",
-    timeout: process.env.CCSM_E2E_REAL_PROVIDERS === "1" ? 360_000 : 90_000,
+    timeout:
+      process.env.CCSM_E2E_REAL_PROVIDERS === "1" ||
+      process.env.CCSM_E2E_HANG_STRESS_PHASE
+        ? 360_000
+        : 90_000,
   },
   onPrepare: async () => {
     const stdout = createWriteStream(

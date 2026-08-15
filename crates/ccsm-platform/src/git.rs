@@ -29,6 +29,7 @@ const GIT_STREAM_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 const GIT_WAIT_INTERVAL: Duration = Duration::from_millis(10);
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const MAX_RENDERED_DIFF_BYTES: usize = 4 * 1024 * 1024;
+const MAX_RENDERED_DIFF_LINES: u32 = 50_000;
 
 pub struct CommandGitBackend {
     cancellation_generation: Arc<AtomicU64>,
@@ -311,9 +312,9 @@ fn untracked_file_diff(
             .map_err(|error| BackendError::Platform(format!("read {}: {error}", change.path)))?
     };
     control.check()?;
-    let truncated = bytes.len() > MAX_RENDERED_DIFF_BYTES;
-    let binary = bytes.contains(&0);
     let additions = physical_line_count(&bytes);
+    let truncated = rendered_diff_is_truncated(&bytes);
+    let binary = bytes.contains(&0);
     let mut diff = GitFileDiffDto {
         repository_id: repository.repository_id.clone(),
         path: change.path.clone(),
@@ -378,7 +379,7 @@ fn diff_from_patch(
             || line == "GIT binary patch"
             || line.starts_with("Submodule ")
     });
-    let truncated = bytes.len() > MAX_RENDERED_DIFF_BYTES;
+    let truncated = rendered_diff_is_truncated(bytes);
     if binary || truncated {
         let (additions, deletions) = count_patch_changes(&text);
         return GitFileDiffDto {
@@ -512,6 +513,10 @@ fn count_patch_changes(text: &str) -> (u32, u32) {
         }
     }
     (additions, deletions)
+}
+
+fn rendered_diff_is_truncated(bytes: &[u8]) -> bool {
+    bytes.len() > MAX_RENDERED_DIFF_BYTES || physical_line_count(bytes) > MAX_RENDERED_DIFF_LINES
 }
 
 fn confirmed_repository_root(
@@ -984,6 +989,15 @@ mod tests {
             .expect_err("large command output should be bounded");
 
         assert!(error.to_string().contains("output exceeded 1024 bytes"));
+    }
+
+    #[test]
+    fn rendered_diff_line_count_has_a_serialization_bound() {
+        let at_limit = vec![b'\n'; MAX_RENDERED_DIFF_LINES as usize];
+        let over_limit = vec![b'\n'; MAX_RENDERED_DIFF_LINES as usize + 1];
+
+        assert!(!rendered_diff_is_truncated(&at_limit));
+        assert!(rendered_diff_is_truncated(&over_limit));
     }
 
     #[cfg(unix)]

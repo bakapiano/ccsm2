@@ -28,6 +28,8 @@ portable-pty platform backend
 - ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。已识别链接的hover和普通左键点击由CCSM保留，不发送给PTY；非链接区域继续遵循应用mouse mode。链接hover使用位于cell内部的可见下划线。
 - Rust 管理 PTY/process、byte transport、resize 和 shutdown。
 - PTY output 有序且只写入 ghostty-web 一次；input/query reply 原样回传。
+- Runtime output进入容量为64的有界事件channel，并受512 KiB byte-credit gate约束。前端在ghostty-web完成对应write callback后按byte数确认消费；丢弃、捕获和清理路径同样归还credit。Runtime stop与shutdown关闭gate并唤醒等待中的reader。
+- 前端fit、resize和每批最多8 KiB的output消费通过animation-frame scheduler执行；WebView暂停animation frame时由100ms watchdog推进同一个有界slice。等待绘制完成的异步路径使用相同的100ms上限继续检查状态。
 - ghostty-web 是终端实现；ANSI 解析和兼容修复集中在其 WASM/TypeScript 层。
 - 使用 vendored ghostty-web fork，保留 CJK spacer、单字符 selection、行边界 hysteresis、IME anchor 和 box drawing 修复。
 - Box-drawing的整格水平线与垂直线使用单个连续Canvas shape，cell中心和边界不产生重复alpha接缝。

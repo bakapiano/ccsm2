@@ -275,6 +275,10 @@ impl AppBackend {
         self.root_context.list_directory(request)
     }
 
+    pub fn cancel_directory_operation(&self, operation_id: &str) {
+        self.root_context.cancel_directory_operation(operation_id);
+    }
+
     pub fn read_file(&self, request: ReadFileRequest) -> BackendResult<FileDocumentDto> {
         self.root_context.read_file(request)
     }
@@ -389,6 +393,10 @@ impl AppBackend {
 
     pub fn resize_runtime(&self, runtime_id: &str, cols: u16, rows: u16) -> BackendResult<()> {
         self.runtimes.resize(runtime_id, cols, rows)
+    }
+
+    pub fn acknowledge_runtime_output(&self, runtime_id: &str, bytes: usize) -> BackendResult<()> {
+        self.runtimes.acknowledge_output(runtime_id, bytes)
     }
 
     pub fn stop_runtime(&self, runtime_id: &str) -> BackendResult<()> {

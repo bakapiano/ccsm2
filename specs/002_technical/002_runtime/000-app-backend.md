@@ -74,6 +74,8 @@ HookEndpoint只接受版本化`HookReport`。Windows使用当前用户Named Pipe
 
 PTY readers、Git discovery/status、filesystem watch和maintenance作为可取消Rust tasks运行。Task completion/panic转换为domain error并进入DomainEventBus。Blocking Git/filesystem/process操作进入专用blocking pool。
 
+Tauri command adapter将bootstrap、Space create/switch/delete、layout/Tab持久化、目录与文件I/O、Git读取及runtime start/stop调度到blocking worker。原生事件线程完成DTO反序列化、任务调度和结果映射；blocking worker panic统一转换为`internal` command error。
+
 ## Lifecycle
 
 Tauri setup构造AppBackend。主窗口退出、installer请求退出或OS shutdown signal触发统一`shutdown()`：冻结新命令、释放native surfaces、停止process trees、取消tasks、提交状态并关闭数据库。首版不包含应用内updater service。

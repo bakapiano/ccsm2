@@ -354,6 +354,9 @@ export_ts! {
     pub struct ListDirectoryRequest {
         pub space_id: String,
         pub relative_path: String,
+        pub operation_id: String,
+        pub offset: u32,
+        pub limit: u32,
     }
 }
 
@@ -478,6 +481,7 @@ export_ts! {
         pub space_id: String,
         pub relative_path: String,
         pub entries: Vec<FileEntryDto>,
+        pub next_offset: Option<u32>,
     }
 }
 

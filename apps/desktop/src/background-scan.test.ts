@@ -52,4 +52,31 @@ describe("background scan circuit breaker", () => {
     expect(runs).toBe(2);
     controller.dispose();
   });
+
+  test("aborts the active scan when its deadline expires", async () => {
+    let aborted = false;
+    const errors: unknown[] = [];
+    const controller = new BackgroundScanController(
+      async (_manual, signal) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              resolve();
+            },
+            { once: true },
+          );
+        });
+      },
+      (error) => errors.push(error),
+      { timeoutMs: 10 },
+    );
+
+    controller.request();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(aborted).toBe(true);
+    expect(errors).toHaveLength(1);
+    controller.dispose();
+  });
 });

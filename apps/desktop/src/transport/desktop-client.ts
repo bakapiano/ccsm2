@@ -73,6 +73,7 @@ export interface AppBackendClient {
   moveSpace(request: MoveSpaceRequest): Promise<BootstrapDto>;
   moveFolder(request: MoveFolderRequest): Promise<BootstrapDto>;
   listDirectory(request: ListDirectoryRequest): Promise<DirectoryListingDto>;
+  cancelDirectoryOperation(operationId: string): Promise<void>;
   readFile(request: ReadFileRequest): Promise<FileDocumentDto>;
   resolveFileReference(
     request: ResolveFileReferenceRequest,
@@ -97,6 +98,7 @@ export interface AppBackendClient {
   ): Promise<RuntimeStartedDto>;
   writeRuntime(runtimeId: string, data: string): Promise<void>;
   resizeRuntime(runtimeId: string, cols: number, rows: number): Promise<void>;
+  acknowledgeRuntimeOutput(runtimeId: string, bytes: number): Promise<void>;
   stopRuntime(runtimeId: string): Promise<void>;
 }
 
@@ -124,6 +126,7 @@ export interface BrowserSurfaceClient {
 export interface DirectoryBrowserClient {
   browse(request: BrowseHostDirectoryRequest): Promise<HostDirectoryListingDto>;
   create(request: CreateHostDirectoryRequest): Promise<HostDirectoryEntryDto>;
+  cancel(operationId: string): Promise<void>;
 }
 
 export type WindowResizeDirection =
@@ -227,6 +230,10 @@ class TauriBackendClient implements AppBackendClient {
     return invoke("list_directory", { request });
   }
 
+  cancelDirectoryOperation(operationId: string): Promise<void> {
+    return invoke("cancel_directory_operation", { operationId });
+  }
+
   readFile(request: ReadFileRequest): Promise<FileDocumentDto> {
     return invoke("read_file", { request });
   }
@@ -312,6 +319,10 @@ class TauriBackendClient implements AppBackendClient {
     return invoke("resize_runtime", { runtimeId, cols, rows });
   }
 
+  acknowledgeRuntimeOutput(runtimeId: string, bytes: number): Promise<void> {
+    return invoke("acknowledge_runtime_output", { runtimeId, bytes });
+  }
+
   stopRuntime(runtimeId: string): Promise<void> {
     return invoke("stop_runtime", { runtimeId });
   }
@@ -381,6 +392,10 @@ class TauriDirectoryBrowserClient implements DirectoryBrowserClient {
 
   create(request: CreateHostDirectoryRequest): Promise<HostDirectoryEntryDto> {
     return invoke("create_host_directory", { request });
+  }
+
+  cancel(operationId: string): Promise<void> {
+    return invoke("cancel_directory_operation", { operationId });
   }
 }
 

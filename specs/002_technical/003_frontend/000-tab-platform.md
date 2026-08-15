@@ -5,7 +5,12 @@ Tab 是可持久化的视图抽象。Session、PTY 和 WebView 分别使用独�
 ## 数据模型
 
 ```ts
-type TabKind = "cli-session" | "browser" | "file-explorer" | "file-editor" | "git";
+type TabKind =
+  | "cli-session"
+  | "browser"
+  | "file-explorer"
+  | "file-editor"
+  | "git";
 
 interface TabRecord<State = unknown> {
   id: string;
@@ -53,6 +58,8 @@ interface TabView {
 - Dockview使用right header action渲染每个group的New Tab加号。`noPanelsOverlay=emptyGroup`保留最后一个空group，使零Tab状态仍有创建入口。
 - Provider定义resource cardinality和Duplicate语义。
 - Space layout snapshot 与 TabRecord 分开持久化，恢复时先加载 records，再重建 Dockview。
+- Dockview持久snapshot在恢复前将全部Panel renderer归一化为`onlyWhenVisible`。Panel先创建轻量`DeferredContentRenderer`，其`onShow`将真实Provider renderer加入frame scheduler；scheduler每个animation frame最多实例化两个renderer，WebView暂停animation frame时使用100ms watchdog slice且每个slice仍最多执行两个。隐藏或销毁的待执行任务即时取消，active/focused Panel优先进入队列。
+- Tab header随Dockview结构同步恢复，使大量历史Tab立即可导航；Provider DOM、CodeMirror、ghostty-web和Git renderer在Panel首次可见时创建。
 
 ## 内置资源绑定
 

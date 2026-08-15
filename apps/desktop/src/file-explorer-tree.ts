@@ -13,6 +13,15 @@ export interface VisibleFileRow {
   expanded: boolean;
 }
 
+export type VisibleFileTreeItem =
+  | ({ itemKind: "entry" } & VisibleFileRow)
+  | {
+      itemKind: "more";
+      parentPath: string;
+      depth: number;
+      nextOffset: number;
+    };
+
 export type FileTreeKeyboardResult =
   | { action: "collapse" | "expand" | "open"; path: string }
   | { action: "focus"; path: string }
@@ -23,14 +32,38 @@ export function flattenFileTree(
   entriesByDirectory: ReadonlyMap<string, readonly FileEntryDto[]>,
   expandedPaths: readonly string[],
 ): VisibleFileRow[] {
+  return flattenFileTreeItems(
+    rootPath,
+    entriesByDirectory,
+    expandedPaths,
+    new Map(),
+  ).flatMap((item) => (item.itemKind === "entry" ? [item] : []));
+}
+
+export function flattenFileTreeItems(
+  rootPath: string,
+  entriesByDirectory: ReadonlyMap<string, readonly FileEntryDto[]>,
+  expandedPaths: readonly string[],
+  nextOffsets: ReadonlyMap<string, number>,
+): VisibleFileTreeItem[] {
   const expanded = new Set(expandedPaths);
-  const result: VisibleFileRow[] = [];
+  const result: VisibleFileTreeItem[] = [];
   const append = (parentPath: string, depth: number) => {
     for (const entry of entriesByDirectory.get(parentPath) ?? []) {
       const isExpanded =
         entry.kind === "directory" && expanded.has(entry.relativePath);
-      result.push({ entry, depth, parentPath, expanded: isExpanded });
+      result.push({
+        itemKind: "entry",
+        entry,
+        depth,
+        parentPath,
+        expanded: isExpanded,
+      });
       if (isExpanded) append(entry.relativePath, depth + 1);
+    }
+    const nextOffset = nextOffsets.get(parentPath);
+    if (nextOffset !== undefined) {
+      result.push({ itemKind: "more", parentPath, depth, nextOffset });
     }
   };
   append(rootPath, 0);

@@ -5,6 +5,7 @@ import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
 import { BackgroundScanController } from "../background-scan";
 import { createFileResourceIcon } from "../file-resource-icon";
+import { FrameTaskScheduler } from "../frame-task-scheduler";
 import {
   flattenGitDiff,
   gitChangeBadge,
@@ -21,6 +22,7 @@ import type { GitRepositoryStatusDto } from "../generated/GitRepositoryStatusDto
 import type { GitSnapshotDto } from "../generated/GitSnapshotDto";
 import type { TabDto } from "../generated/TabDto";
 import { GitScanVisibility } from "../git-scan-visibility";
+import { GIT_DIFF_ROW_HEIGHT, gitDiffVirtualWindow } from "../git-diff-window";
 import { observePanelVisibility } from "../panel-visibility";
 import { gitChangeNeedsScan } from "../scan-routing";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
@@ -37,6 +39,14 @@ interface GitDiffEntry {
   repository: GitRepositoryStatusDto;
   change: GitFileChangeDto;
   view: GitDiffFileView;
+  loadState: "idle" | "queued" | "loading" | "loaded" | "error";
+}
+
+interface GitDiffLoadQueue {
+  generation: number;
+  pending: string[];
+  queued: Set<string>;
+  active: number;
 }
 
 interface SyntaxToken {
@@ -45,9 +55,9 @@ interface SyntaxToken {
   classes: string;
 }
 
-const DIFF_CHUNK_SIZE = 64;
-const DIFF_ROW_BLOCK_SIZE = 20;
 const DIFF_GUTTER_COLUMNS = 22;
+const DIFF_LOAD_CONCURRENCY = 2;
+const DIFF_LOAD_ROOT_MARGIN = 800;
 
 export class GitTabProvider implements TabProvider {
   readonly kind = "git" as const;
@@ -82,16 +92,34 @@ class GitPanel implements IContentRenderer {
   #visibilitySubscription: { dispose(): void } | null = null;
   readonly #scanVisibility = new GitScanVisibility();
   #loadGeneration = 0;
-  #scrollFrame: number | null = null;
+  #loadQueue: GitDiffLoadQueue = {
+    generation: 0,
+    pending: [],
+    queued: new Set(),
+    active: 0,
+  };
+  #intersectionObserver: IntersectionObserver | null = null;
+  readonly #nearViewportKeys = new Set<string>();
+  readonly #layoutScheduler = new FrameTaskScheduler(2);
   #persistTimer: number | null = null;
   #diffContentColumns = DIFF_GUTTER_COLUMNS;
+  #refreshRevision = 0;
 
   constructor(tab: TabDto, client: CcsmDesktopClient) {
     this.#tab = tab;
     this.#client = client;
     this.#state = parseState(tab.state);
+    (this.element as GitDebugElement).__CCSM_GIT_DEBUG__ = () => ({
+      files: [...this.#entries.values()].map((entry) => ({
+        path: entry.change.path,
+        loadState: entry.loadState,
+        totalRows: Number(entry.view.element.dataset.totalRows ?? 0),
+        renderedRows: Number(entry.view.element.dataset.renderedRows ?? 0),
+        message: entry.view.message,
+      })),
+    });
     this.#scanner = new BackgroundScanController(
-      (manual) => this.#runScan(manual),
+      (manual, signal) => this.#runScan(manual, signal),
       (error) => {
         if (!this.#disposed)
           this.#setStatus(`paused · ${describeError(error)}`);
@@ -105,6 +133,8 @@ class GitPanel implements IContentRenderer {
       },
     );
     this.element.className = "git-panel";
+    this.element.dataset.refreshRevision = "0";
+    this.element.dataset.scanState = "idle";
     this.element.innerHTML = `
       <div class="git-toolbar">
         <strong>Changes</strong>
@@ -168,6 +198,13 @@ class GitPanel implements IContentRenderer {
     diffPane.addEventListener("scroll", this.#onDiffScroll, {
       passive: true,
     });
+    this.#intersectionObserver = new IntersectionObserver(
+      this.#onDiffIntersection,
+      {
+        root: diffPane,
+        rootMargin: `${DIFF_LOAD_ROOT_MARGIN}px 0px`,
+      },
+    );
     void this.#client.events
       .subscribe((event) => {
         if (
@@ -197,8 +234,10 @@ class GitPanel implements IContentRenderer {
     this.#visibilitySubscription?.dispose();
     this.#unlisten = null;
     this.#scanner.dispose();
-    if (this.#scrollFrame !== null) cancelAnimationFrame(this.#scrollFrame);
-    this.#scrollFrame = null;
+    this.#intersectionObserver?.disconnect();
+    this.#intersectionObserver = null;
+    this.#nearViewportKeys.clear();
+    this.#layoutScheduler.clear();
     if (this.#persistTimer !== null) {
       window.clearTimeout(this.#persistTimer);
       this.#persistTimer = null;
@@ -206,6 +245,7 @@ class GitPanel implements IContentRenderer {
     }
     for (const entry of this.#entries.values()) entry.view.destroy();
     this.#entries.clear();
+    delete (this.element as GitDebugElement).__CCSM_GIT_DEBUG__;
   }
 
   async #initialize(): Promise<void> {
@@ -218,7 +258,7 @@ class GitPanel implements IContentRenderer {
     if (this.#scanVisibility.setReady()) this.#scanner.request();
   }
 
-  async #runScan(manual: boolean): Promise<void> {
+  async #runScan(manual: boolean, _signal: AbortSignal): Promise<void> {
     const revision = this.#scanVisibility.beginScan();
     await this.#refresh(manual);
     if (!this.#disposed && this.#scanVisibility.completeScan(revision)) {
@@ -228,16 +268,23 @@ class GitPanel implements IContentRenderer {
 
   async #refresh(manual: boolean): Promise<void> {
     if (manual) this.#setStatus("scanning");
-    const snapshot = await this.#client.backend.refreshGit({
-      spaceId: this.#tab.spaceId,
-    });
-    if (this.#disposed) return;
-    this.#snapshot = snapshot;
-    this.#render();
-    const changes = changeCount(snapshot);
-    this.#setStatus(
-      `${snapshot.repositories.length} repos · ${changes} changes`,
-    );
+    this.element.dataset.scanState = "scanning";
+    try {
+      const snapshot = await this.#client.backend.refreshGit({
+        spaceId: this.#tab.spaceId,
+      });
+      if (this.#disposed) return;
+      this.#snapshot = snapshot;
+      this.#render();
+      this.#refreshRevision += 1;
+      this.element.dataset.refreshRevision = String(this.#refreshRevision);
+      const changes = changeCount(snapshot);
+      this.#setStatus(
+        `${snapshot.repositories.length} repos · ${changes} changes`,
+      );
+    } finally {
+      this.element.dataset.scanState = "idle";
+    }
   }
 
   #render(): void {
@@ -246,6 +293,14 @@ class GitPanel implements IContentRenderer {
     if (!diffList || !diffPane) return;
     const previousScrollTop = diffPane.scrollTop;
     const generation = ++this.#loadGeneration;
+    this.#loadQueue = {
+      generation,
+      pending: [],
+      queued: new Set(),
+      active: 0,
+    };
+    this.#intersectionObserver?.disconnect();
+    this.#nearViewportKeys.clear();
     for (const entry of this.#entries.values()) entry.view.destroy();
     this.#entries.clear();
     this.#repositoryGroups.clear();
@@ -265,6 +320,7 @@ class GitPanel implements IContentRenderer {
     );
     if (this.#summaryCount)
       this.#summaryCount.textContent = String(totalChanges);
+    diffList.dataset.totalFiles = String(totalChanges);
 
     if (repositories.length === 0) {
       diffList.append(
@@ -319,7 +375,12 @@ class GitPanel implements IContentRenderer {
             this.#state.collapsedDiffKeys.includes(key),
             (collapsed) => this.#setDiffCollapsed(key, collapsed),
           );
-          this.#entries.set(key, { repository, change, view });
+          this.#entries.set(key, {
+            repository,
+            change,
+            view,
+            loadState: "idle",
+          });
           this.#diffKeysByElement.set(view.element, key);
           group.append(view.element);
         }
@@ -334,52 +395,91 @@ class GitPanel implements IContentRenderer {
       this.#state.selectedDiffKey = this.#entries.keys().next().value ?? null;
     }
     this.#applyFilter();
-    requestAnimationFrame(() => {
-      if (generation !== this.#loadGeneration || this.#disposed) return;
-      if (this.#diffPane) this.#diffPane.scrollTop = previousScrollTop;
-      this.#syncSelectionFromScroll();
-    });
-    void this.#loadDiffs(generation);
+    for (const entry of this.#entries.values()) {
+      this.#intersectionObserver?.observe(entry.view.element);
+    }
+    this.#layoutScheduler.enqueue(
+      "git-initial-layout",
+      () => {
+        if (generation !== this.#loadGeneration || this.#disposed) return;
+        if (this.#diffPane) this.#diffPane.scrollTop = previousScrollTop;
+        this.#updateDiffViewports();
+        this.#syncSelectionFromScroll();
+        if (this.#nearViewportKeys.size === 0 && this.#state.selectedDiffKey) {
+          this.#requestDiff(this.#state.selectedDiffKey, true);
+        }
+      },
+      true,
+    );
   }
 
-  async #loadDiffs(generation: number): Promise<void> {
-    const queue = [...this.#entries.entries()];
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (cursor < queue.length) {
-        const item = queue[cursor];
-        cursor += 1;
-        if (!item) return;
-        const [key, entry] = item;
-        try {
-          const diff = await this.#client.backend.readGitDiff({
-            spaceId: this.#tab.spaceId,
-            repositoryId: entry.repository.repositoryId,
-            path: entry.change.path,
-          });
-          if (
-            this.#disposed ||
-            generation !== this.#loadGeneration ||
-            this.#entries.get(key) !== entry
-          ) {
-            return;
-          }
-          this.#setDiffContentColumns(entry.view.render(diff));
-        } catch (error) {
-          if (
-            this.#disposed ||
-            generation !== this.#loadGeneration ||
-            this.#entries.get(key) !== entry
-          ) {
-            return;
-          }
-          entry.view.renderError(describeError(error));
-        }
+  #requestDiff(key: string, priority = false): void {
+    const entry = this.#entries.get(key);
+    const queue = this.#loadQueue;
+    if (!entry || entry.loadState !== "idle" || queue.queued.has(key)) return;
+    entry.loadState = "queued";
+    queue.queued.add(key);
+    if (priority) queue.pending.unshift(key);
+    else queue.pending.push(key);
+    this.#pumpDiffLoads(queue);
+  }
+
+  #pumpDiffLoads(queue: GitDiffLoadQueue): void {
+    while (
+      queue === this.#loadQueue &&
+      queue.active < DIFF_LOAD_CONCURRENCY &&
+      queue.pending.length > 0
+    ) {
+      const key = queue.pending.shift();
+      if (!key) continue;
+      queue.queued.delete(key);
+      const entry = this.#entries.get(key);
+      if (!entry || entry.loadState !== "queued") continue;
+      entry.loadState = "loading";
+      queue.active += 1;
+      void this.#loadDiff(queue, key, entry);
+    }
+  }
+
+  async #loadDiff(
+    queue: GitDiffLoadQueue,
+    key: string,
+    entry: GitDiffEntry,
+  ): Promise<void> {
+    try {
+      const diff = await this.#client.backend.readGitDiff({
+        spaceId: this.#tab.spaceId,
+        repositoryId: entry.repository.repositoryId,
+        path: entry.change.path,
+      });
+      if (
+        this.#disposed ||
+        queue !== this.#loadQueue ||
+        queue.generation !== this.#loadGeneration ||
+        this.#entries.get(key) !== entry
+      ) {
+        return;
       }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(4, queue.length) }, () => worker()),
-    );
+      entry.loadState = "loaded";
+      this.#setDiffContentColumns(entry.view.render(diff));
+      entry.view.updateViewport(
+        this.#diffPane?.getBoundingClientRect() ?? null,
+      );
+    } catch (error) {
+      if (
+        this.#disposed ||
+        queue !== this.#loadQueue ||
+        queue.generation !== this.#loadGeneration ||
+        this.#entries.get(key) !== entry
+      ) {
+        return;
+      }
+      entry.loadState = "error";
+      entry.view.renderError(describeError(error));
+    } finally {
+      queue.active = Math.max(0, queue.active - 1);
+      if (queue === this.#loadQueue) this.#pumpDiffLoads(queue);
+    }
   }
 
   #applyFilter(): void {
@@ -484,7 +584,12 @@ class GitPanel implements IContentRenderer {
     this.#state.collapsedDiffKeys = collapsed
       ? [...new Set([...this.#state.collapsedDiffKeys, key])]
       : this.#state.collapsedDiffKeys.filter((value) => value !== key);
-    this.#entries.get(key)?.view.setCollapsed(collapsed);
+    const entry = this.#entries.get(key);
+    entry?.view.setCollapsed(collapsed);
+    if (entry && !collapsed) {
+      this.#requestDiff(key, true);
+      this.#scheduleDiffLayout();
+    }
     this.#schedulePersistState();
   }
 
@@ -505,21 +610,26 @@ class GitPanel implements IContentRenderer {
     const entry = this.#entries.get(key);
     const pane = this.#diffPane;
     if (!entry || !pane || entry.view.element.hidden) return;
+    this.#requestDiff(key, true);
     const paneBounds = pane.getBoundingClientRect();
     const fileBounds = entry.view.element.getBoundingClientRect();
-    pane.scrollTo({
-      top: pane.scrollTop + fileBounds.top - paneBounds.top - 4,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-    });
+    pane.scrollTop = Math.max(
+      0,
+      pane.scrollTop + fileBounds.top - paneBounds.top - 4,
+    );
     this.#setSelectedDiff(key);
+    entry.view.updateViewport(pane.getBoundingClientRect());
     entry.view.focusHeader();
+    this.#scheduleDiffLayout();
   }
 
   #setSelectedDiff(key: string): void {
     if (this.#state.selectedDiffKey === key) return;
+    const previousKey = this.#state.selectedDiffKey;
     this.#state.selectedDiffKey = key;
+    if (previousKey && !this.#nearViewportKeys.has(previousKey)) {
+      this.#entries.get(previousKey)?.view.clearViewport();
+    }
     for (const [candidate, button] of this.#navigationButtons) {
       button.classList.toggle("is-selected", candidate === key);
     }
@@ -527,12 +637,52 @@ class GitPanel implements IContentRenderer {
   }
 
   readonly #onDiffScroll = (): void => {
-    if (this.#scrollFrame !== null) return;
-    this.#scrollFrame = requestAnimationFrame(() => {
-      this.#scrollFrame = null;
+    this.#scheduleDiffLayout();
+  };
+
+  readonly #onDiffIntersection = (
+    intersections: readonly IntersectionObserverEntry[],
+  ): void => {
+    for (const intersection of intersections) {
+      const element = intersection.target as HTMLElement;
+      const key = this.#diffKeysByElement.get(element);
+      if (!key || !this.#entries.has(key)) continue;
+      if (intersection.isIntersecting) {
+        this.#nearViewportKeys.add(key);
+        const entry = this.#entries.get(key);
+        if (entry && !entry.view.isCollapsed && !entry.view.element.hidden) {
+          this.#requestDiff(key);
+        }
+      } else {
+        this.#nearViewportKeys.delete(key);
+        if (key !== this.#state.selectedDiffKey) {
+          this.#entries.get(key)?.view.clearViewport();
+        }
+      }
+    }
+    this.#scheduleDiffLayout();
+  };
+
+  #scheduleDiffLayout(): void {
+    this.#layoutScheduler.enqueue("git-diff-layout", () => {
+      this.#updateDiffViewports();
       this.#syncSelectionFromScroll();
     });
-  };
+  }
+
+  #updateDiffViewports(): void {
+    const pane = this.#diffPane;
+    if (!pane) return;
+    const bounds = pane.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const viewportKeys = new Set(this.#nearViewportKeys);
+    if (this.#state.selectedDiffKey) {
+      viewportKeys.add(this.#state.selectedDiffKey);
+    }
+    for (const key of viewportKeys) {
+      this.#entries.get(key)?.view.updateViewport(bounds);
+    }
+  }
 
   #syncSelectionFromScroll(): void {
     const pane = this.#diffPane;
@@ -587,12 +737,23 @@ class GitDiffFileView {
   readonly element = document.createElement("article");
   readonly #header = document.createElement("button");
   readonly #body = document.createElement("div");
+  readonly #topSpacer = document.createElement("div");
+  readonly #rowWindow = document.createElement("div");
+  readonly #bottomSpacer = document.createElement("div");
   readonly #chevron = document.createElement("span");
   readonly #additions = document.createElement("span");
   readonly #deletions = document.createElement("span");
+  #lines: readonly GitDisplayLine[] | null = null;
+  #diffPath = "";
+  #windowStart = -1;
+  #windowEnd = -1;
   #collapsed: boolean;
   #renderVersion = 0;
   #destroyed = false;
+
+  get message(): string {
+    return this.#body.textContent ?? "";
+  }
 
   constructor(
     repository: GitRepositoryStatusDto,
@@ -639,11 +800,16 @@ class GitDiffFileView {
     this.setCollapsed(collapsed);
   }
 
+  get isCollapsed(): boolean {
+    return this.#collapsed;
+  }
+
   setCollapsed(collapsed: boolean): void {
     this.#collapsed = collapsed;
     this.#chevron.textContent = collapsed ? "▸" : "▾";
     this.#header.setAttribute("aria-expanded", String(!collapsed));
     this.#body.hidden = collapsed;
+    if (collapsed) this.clearViewport();
   }
 
   focusHeader(): void {
@@ -651,7 +817,12 @@ class GitDiffFileView {
   }
 
   render(diff: GitFileDiffDto): number {
-    const version = ++this.#renderVersion;
+    this.#renderVersion += 1;
+    this.#lines = null;
+    this.#windowStart = -1;
+    this.#windowEnd = -1;
+    this.element.dataset.totalRows = "0";
+    this.element.dataset.renderedRows = "0";
     this.#additions.textContent = diff.additions ? `+${diff.additions}` : "";
     this.#deletions.textContent = diff.deletions ? `−${diff.deletions}` : "";
     this.#body.replaceChildren();
@@ -665,7 +836,7 @@ class GitDiffFileView {
       this.#body.append(
         statusElement(
           "git-diff-message",
-          "Diff exceeds the 4 MiB display limit",
+          "Diff exceeds the 4 MiB or 50,000-line display limit",
         ),
       );
       return 0;
@@ -682,22 +853,65 @@ class GitDiffFileView {
       );
       return 0;
     }
+    this.#lines = lines;
+    this.#diffPath = diff.path;
+    this.element.dataset.totalRows = String(lines.length);
+    this.#topSpacer.className = "git-diff-spacer";
+    this.#topSpacer.setAttribute("aria-hidden", "true");
+    this.#rowWindow.className = "git-diff-window";
+    this.#bottomSpacer.className = "git-diff-spacer";
+    this.#bottomSpacer.setAttribute("aria-hidden", "true");
+    this.#bottomSpacer.style.height = `${lines.length * GIT_DIFF_ROW_HEIGHT}px`;
+    this.#body.replaceChildren(
+      this.#topSpacer,
+      this.#rowWindow,
+      this.#bottomSpacer,
+    );
+    return gitDiffContentColumns(lines);
+  }
+
+  updateViewport(paneBounds: DOMRect | null): void {
+    const lines = this.#lines;
+    if (!lines || this.#collapsed || !paneBounds) {
+      this.clearViewport();
+      return;
+    }
+    const bodyBounds = this.#body.getBoundingClientRect();
+    const window = gitDiffVirtualWindow(
+      lines.length,
+      paneBounds.top - bodyBounds.top,
+      paneBounds.bottom - bodyBounds.top,
+    );
+    this.#renderWindow(
+      window.start,
+      window.end,
+      window.paddingBefore,
+      window.paddingAfter,
+    );
+  }
+
+  clearViewport(): void {
+    const lines = this.#lines;
+    if (!lines) return;
+    this.#renderWindow(0, 0, 0, lines.length * GIT_DIFF_ROW_HEIGHT);
+  }
+
+  #renderWindow(
+    start: number,
+    end: number,
+    paddingBefore: number,
+    paddingAfter: number,
+  ): void {
+    const lines = this.#lines;
+    if (!lines || (start === this.#windowStart && end === this.#windowEnd))
+      return;
+    this.#windowStart = start;
+    this.#windowEnd = end;
+    const version = ++this.#renderVersion;
     const codeCells: HTMLElement[] = [];
+    const displayLines = lines.slice(start, end);
     const fragment = document.createDocumentFragment();
-    let chunk: HTMLElement | null = null;
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (!line) continue;
-      if (index % DIFF_CHUNK_SIZE === 0) {
-        const chunkLineCount = Math.min(DIFF_CHUNK_SIZE, lines.length - index);
-        chunk = document.createElement("div");
-        chunk.className = "git-diff-chunk";
-        chunk.style.setProperty(
-          "--git-diff-chunk-block-size",
-          `${chunkLineCount * DIFF_ROW_BLOCK_SIZE}px`,
-        );
-        fragment.append(chunk);
-      }
+    for (const line of displayLines) {
       const row = document.createElement("div");
       row.className = `git-diff-row is-${line.kind}`;
       const oldNumber = document.createElement("span");
@@ -713,15 +927,18 @@ class GitDiffFileView {
       code.className = "git-diff-code";
       code.textContent = line.content || " ";
       row.append(oldNumber, newNumber, marker, code);
-      chunk?.append(row);
+      fragment.append(row);
       codeCells.push(code);
     }
-    this.#body.append(fragment);
-    void highlightDisplayLines(diff.path, lines)
+    this.#topSpacer.style.height = `${paddingBefore}px`;
+    this.#rowWindow.replaceChildren(fragment);
+    this.#bottomSpacer.style.height = `${paddingAfter}px`;
+    this.element.dataset.renderedRows = String(displayLines.length);
+    void highlightDisplayLines(this.#diffPath, displayLines)
       .then((tokens) => {
         if (this.#destroyed || version !== this.#renderVersion) return;
         tokens.forEach((lineTokens, index) => {
-          const line = lines[index];
+          const line = displayLines[index];
           const cell = codeCells[index];
           if (!line || !cell || line.kind === "hunk" || line.kind === "meta")
             return;
@@ -731,11 +948,13 @@ class GitDiffFileView {
       .catch(() => {
         // Plain diff text remains available when an optional language chunk fails.
       });
-    return gitDiffContentColumns(lines);
   }
 
   renderError(message: string): void {
     this.#renderVersion += 1;
+    this.#lines = null;
+    this.element.dataset.totalRows = "0";
+    this.element.dataset.renderedRows = "0";
     this.#body.replaceChildren(statusElement("git-error", message));
   }
 
@@ -895,3 +1114,15 @@ function required<T extends Element>(root: ParentNode, selector: string): T {
   if (!element) throw new Error(`missing Changes element: ${selector}`);
   return element;
 }
+
+type GitDebugElement = HTMLElement & {
+  __CCSM_GIT_DEBUG__?: () => {
+    files: Array<{
+      path: string;
+      loadState: GitDiffEntry["loadState"];
+      totalRows: number;
+      renderedRows: number;
+      message: string;
+    }>;
+  };
+};

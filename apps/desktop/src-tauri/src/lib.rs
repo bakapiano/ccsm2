@@ -25,6 +25,7 @@ use renderer_health::RendererHealthMonitor;
 
 pub struct DesktopState {
     backend: Arc<AppBackend>,
+    filesystem: Arc<LocalFileSystemBackend>,
     browser: BrowserSurfaceManager,
     default_root: PathBuf,
     home_dir: PathBuf,
@@ -124,7 +125,8 @@ pub fn run() {
             let event_sink: AppEventSink = Arc::new(move |event| {
                 let _ = app_handle.emit("ccsm:event", event);
             });
-            let backend = AppBackend::new(store, pty, filesystem, git, file_watch, event_sink);
+            let backend =
+                AppBackend::new(store, pty, filesystem.clone(), git, file_watch, event_sink);
             let hook_backend = Arc::clone(&backend);
             let hook_sink: HookReportSink = Arc::new(move |report| {
                 if let Err(error) = hook_backend.report_hook(report) {
@@ -142,6 +144,7 @@ pub fn run() {
             let browser = BrowserSurfaceManager::new(data_dir.join("browser-profile"))?;
             app.manage(DesktopState {
                 backend,
+                filesystem,
                 browser,
                 default_root,
                 home_dir,
@@ -210,6 +213,7 @@ pub fn run() {
             commands::get_cli_session,
             commands::replace_cli_session,
             commands::list_directory,
+            commands::cancel_directory_operation,
             commands::read_file,
             commands::resolve_file_reference,
             commands::write_file,
@@ -221,6 +225,7 @@ pub fn run() {
             commands::start_runtime,
             commands::write_runtime,
             commands::resize_runtime,
+            commands::acknowledge_runtime_output,
             commands::stop_runtime,
             commands::create_browser,
             commands::set_browser_bounds,

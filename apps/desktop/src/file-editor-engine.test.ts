@@ -15,6 +15,7 @@ describe("File Editor engine", () => {
     expect(provider).toContain('dataset.editorEngine = "codemirror6"');
     expect(provider).toContain("readonly #panels");
     expect(provider).toContain("this.#panels.get(tab.id)");
+    expect(provider.match(/dataset\.documentLength = String/g)).toHaveLength(3);
   });
 
   test("does not retain the handwritten textarea editor", () => {
