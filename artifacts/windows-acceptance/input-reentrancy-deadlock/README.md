@@ -16,7 +16,7 @@ rounds while remaining responsive.
 - frozen binary: `0.1.0-beta.3`, SHA-256
   `3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781`;
 - fixed binary: `0.1.0-beta.5`, SHA-256
-  `19823f679ee95752f3999ef167d4a04c89d18ed5c753c3705996dd3d381e943b`.
+  `a3eb368584dca22721cf8d2a0ea4dee06f5bfbc3b2acfed2419b58f67b664b0e`.
 
 ## Production hang capture
 
@@ -106,15 +106,15 @@ The fixed beta.5 Release executable ran the same harness for three consecutive
 
 | Round | Keyboard messages | Completed focus messages | Timeouts | Responsive |
 | ---: | ---: | ---: | ---: | :---: |
-| 1 | 37,349 | 54,970 | 0 | yes |
-| 2 | 28,284 | 55,148 | 0 | yes |
-| 3 | 27,784 | 54,710 | 0 | yes |
-| **Total** | **93,417** | **164,828** | **0** | **yes** |
+| 1 | 38,652 | 54,130 | 0 | yes |
+| 2 | 27,987 | 54,304 | 0 | yes |
+| 3 | 28,178 | 54,884 | 0 | yes |
+| **Total** | **94,817** | **163,318** | **0** | **yes** |
 
-The fixed process started at `29,958,144` working-set bytes, `6,918,144`
-private bytes, `354` handles, and `36` threads. After round three it remained
-responsive at `45,174,784` working-set bytes, `30,109,696` private bytes,
-`361` handles, and `35` threads.
+The fixed process started at `30,588,928` working-set bytes, `7,389,184`
+private bytes, `361` handles, and `37` threads. After round three it remained
+responsive at `46,415,872` working-set bytes, `30,605,312` private bytes,
+`378` handles, and `40` threads.
 
 ## Repository gates
 

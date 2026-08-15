@@ -186,7 +186,7 @@ fn run_server(
     use std::{fs::File, os::windows::io::FromRawHandle};
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE},
+        Foundation::{CloseHandle, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE},
         Storage::FileSystem::PIPE_ACCESS_INBOUND,
         System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE},
     };
@@ -226,7 +226,13 @@ fn run_server(
         let connected = unsafe { ConnectNamedPipe(handle, std::ptr::null_mut()) };
         if connected == 0 {
             let error = std::io::Error::last_os_error();
-            if error.raw_os_error() != Some(ERROR_PIPE_CONNECTED as i32) {
+            let error_code = error.raw_os_error();
+            // The client can write and close between CreateNamedPipeW and
+            // ConnectNamedPipe. Windows reports ERROR_NO_DATA in that case,
+            // while the buffered payload remains readable from this handle.
+            if error_code != Some(ERROR_PIPE_CONNECTED as i32)
+                && error_code != Some(ERROR_NO_DATA as i32)
+            {
                 unsafe { CloseHandle(handle) };
                 if stop.load(Ordering::SeqCst) {
                     return;

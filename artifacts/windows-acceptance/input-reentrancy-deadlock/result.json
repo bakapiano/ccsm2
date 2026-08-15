@@ -89,60 +89,60 @@
   "fixedReleaseVerification": {
     "passed": true,
     "productVersion": "0.1.0-beta.5",
-    "executableSha256": "19823f679ee95752f3999ef167d4a04c89d18ed5c753c3705996dd3d381e943b",
+    "executableSha256": "a3eb368584dca22721cf8d2a0ea4dee06f5bfbc3b2acfed2419b58f67b664b0e",
     "secondsPerRound": 15,
     "requestedRounds": 3,
     "before": {
-      "workingSetBytes": 29958144,
-      "privateBytes": 6918144,
-      "handles": 354,
-      "threads": 36
+      "workingSetBytes": 30588928,
+      "privateBytes": 7389184,
+      "handles": 361,
+      "threads": 37
     },
     "rounds": [
       {
         "round": 1,
-        "durationMs": 15003,
-        "postedKeyboardMessages": 37349,
-        "completedFocusMessages": 54970,
+        "durationMs": 15007,
+        "postedKeyboardMessages": 38652,
+        "completedFocusMessages": 54130,
         "focusMessageTimeouts": 0,
         "windowProbeResponsive": true,
         "processResponding": true,
-        "workingSetBytes": 35168256,
-        "privateBytes": 12730368,
-        "handles": 361,
-        "threads": 35
+        "workingSetBytes": 36384768,
+        "privateBytes": 13197312,
+        "handles": 379,
+        "threads": 40
       },
       {
         "round": 2,
-        "durationMs": 15016,
-        "postedKeyboardMessages": 28284,
-        "completedFocusMessages": 55148,
+        "durationMs": 15002,
+        "postedKeyboardMessages": 27987,
+        "completedFocusMessages": 54304,
         "focusMessageTimeouts": 0,
         "windowProbeResponsive": true,
         "processResponding": true,
-        "workingSetBytes": 40177664,
-        "privateBytes": 18554880,
-        "handles": 361,
-        "threads": 35
+        "workingSetBytes": 41439232,
+        "privateBytes": 19050496,
+        "handles": 378,
+        "threads": 40
       },
       {
         "round": 3,
-        "durationMs": 15011,
-        "postedKeyboardMessages": 27784,
-        "completedFocusMessages": 54710,
+        "durationMs": 15015,
+        "postedKeyboardMessages": 28178,
+        "completedFocusMessages": 54884,
         "focusMessageTimeouts": 0,
         "windowProbeResponsive": true,
         "processResponding": true,
-        "workingSetBytes": 45174784,
-        "privateBytes": 30109696,
-        "handles": 361,
-        "threads": 35
+        "workingSetBytes": 46415872,
+        "privateBytes": 30605312,
+        "handles": 378,
+        "threads": 40
       }
     ],
     "totals": {
-      "durationMs": 45030,
-      "postedKeyboardMessages": 93417,
-      "completedFocusMessages": 164828,
+      "durationMs": 45024,
+      "postedKeyboardMessages": 94817,
+      "completedFocusMessages": 163318,
       "focusMessageTimeouts": 0
     }
   },
