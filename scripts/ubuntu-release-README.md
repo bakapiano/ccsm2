@@ -17,8 +17,8 @@ sudo apt install -y \
 Extract and run:
 
 ```bash
-tar -xzf CCSM-0.1.0-beta.3-ubuntu-24.04-x86_64.tar.gz
-cd CCSM-0.1.0-beta.3-ubuntu-24.04-x86_64
+tar -xzf CCSM-__VERSION__-ubuntu-24.04-x86_64.tar.gz
+cd CCSM-__VERSION__-ubuntu-24.04-x86_64
 ./run.sh
 ```
 

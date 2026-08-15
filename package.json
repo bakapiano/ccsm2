@@ -1,19 +1,21 @@
 {
   "name": "ccsm2",
   "private": true,
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "dev": "pnpm desktop:dev",
     "build": "pnpm --filter @ccsm/desktop build",
-    "check": "pnpm --filter @ccsm/desktop check && cargo check --workspace",
-    "test": "cargo test --workspace && pnpm --filter @ccsm/desktop test",
+    "check": "pnpm --filter @ccsm/desktop check && cargo check --workspace --locked",
+    "test": "cargo test --workspace --locked && pnpm --filter @ccsm/desktop test",
     "format": "cargo fmt --all && pnpm --filter @ccsm/desktop format",
+    "format:check": "cargo fmt --all -- --check && pnpm --filter @ccsm/desktop format:check",
+    "verify:version": "node scripts/check-release-version.mjs",
     "desktop:dev": "pnpm --filter @ccsm/desktop dev:desktop",
     "desktop:build:debug": "pnpm --filter @ccsm/desktop build:desktop:debug",
-    "desktop:build:release": "pnpm --filter @ccsm/desktop tauri build --no-bundle --config src-tauri/tauri.release.conf.json",
+    "desktop:build:release": "pnpm --filter @ccsm/desktop tauri build --no-bundle --config src-tauri/tauri.release.conf.json -- --locked",
     "package:ubuntu": "bash scripts/package-ubuntu.sh",
     "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
-    "contracts": "cargo test -p ccsm-core export_bindings && cargo test -p ccsm-desktop export_bindings"
+    "contracts": "cargo test --locked -p ccsm-core export_bindings && cargo test --locked -p ccsm-desktop export_bindings"
   }
 }

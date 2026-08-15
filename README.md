@@ -49,3 +49,11 @@ pnpm package:ubuntu
 
 The archive and its SHA-256 file are written to `target/release/`. Its packaged
 `README-UBUNTU.md` contains the runtime dependency and launch commands.
+
+## Automated releases
+
+Pull requests and `main` run the Windows and Ubuntu CI matrix. Pushing an
+annotated `v<version>` tag whose version matches the repository manifests runs
+the full quality gate, builds both native archives, verifies their contents,
+creates SHA-256 files and provenance attestations, and publishes a GitHub
+pre-release when the version contains a prerelease suffix.

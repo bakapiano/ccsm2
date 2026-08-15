@@ -1,15 +1,42 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.0-beta.3",
+    [string]$Version,
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = (Get-Content -LiteralPath (Join-Path $repoRoot "package.json") -Raw | ConvertFrom-Json).version
+}
+if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+    throw "Invalid release version: $Version"
+}
+
 $releaseRoot = Join-Path $repoRoot "target\release"
 $packageName = "CCSM-$Version-windows-x64"
 $stageRoot = Join-Path $releaseRoot "package\$packageName"
 $zipPath = Join-Path $releaseRoot "$packageName.zip"
+$checksumPath = "$zipPath.sha256"
 
 if (-not $SkipBuild) {
     Push-Location $repoRoot
@@ -45,6 +72,9 @@ if (Test-Path -LiteralPath $stageRoot) {
 if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
+if (Test-Path -LiteralPath $checksumPath) {
+    Remove-Item -LiteralPath $checksumPath -Force
+}
 
 New-Item -ItemType Directory -Path $stageRoot | Out-Null
 $noticeRoot = New-Item -ItemType Directory -Path (Join-Path $stageRoot "THIRD-PARTY-NOTICES")
@@ -58,23 +88,36 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "crates\ccsm-platform\vendor\NOTICE.
 Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $stageRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination $stageRoot
 
+$binaryPath = Join-Path $stageRoot "ccsm-desktop.exe"
+$binaryHash = Get-Sha256Hex -Path $binaryPath
+$sourceRevision = (& git -C $repoRoot describe --always --dirty | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not determine source revision"
+}
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllLines(
+    (Join-Path $stageRoot "BUILD-INFO.txt"),
+    @(
+        "Package: $packageName",
+        "Source: $sourceRevision",
+        "Built on: $([System.Environment]::OSVersion.VersionString)",
+        "Architecture: $env:PROCESSOR_ARCHITECTURE",
+        "ccsm-desktop.exe SHA256: $binaryHash"
+    ),
+    $utf8NoBom
+)
+
 Compress-Archive -Path (Join-Path $stageRoot "*") -DestinationPath $zipPath -CompressionLevel Optimal
 $archive = Get-Item -LiteralPath $zipPath
-$stream = [System.IO.File]::OpenRead($zipPath)
-try {
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $hash = ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
-    }
-    finally {
-        $sha256.Dispose()
-    }
-}
-finally {
-    $stream.Dispose()
-}
+$hash = Get-Sha256Hex -Path $zipPath
+[System.IO.File]::WriteAllText(
+    $checksumPath,
+    "$hash  $($archive.Name)`n",
+    $utf8NoBom
+)
 [pscustomobject]@{
-    Archive = $archive.FullName
-    Bytes = $archive.Length
-    SHA256 = $hash
+    Archive  = $archive.FullName
+    Checksum = $checksumPath
+    Bytes    = $archive.Length
+    SHA256   = $hash
 }
