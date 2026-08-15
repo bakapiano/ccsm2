@@ -147,7 +147,14 @@ fn git_reads_a_two_way_diff_for_conflicted_working_content() {
     commit(directory.path(), "main");
     let merge = Command::new("git")
         .current_dir(directory.path())
-        .args(["merge", "other"])
+        .args([
+            "-c",
+            "user.name=CCSM Test",
+            "-c",
+            "user.email=ccsm@example.test",
+            "merge",
+            "other",
+        ])
         .status()
         .unwrap();
     assert!(!merge.success());

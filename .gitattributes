@@ -5,3 +5,6 @@
 *.png binary
 *.icns binary
 * text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

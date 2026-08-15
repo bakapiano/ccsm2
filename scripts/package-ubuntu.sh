@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version="${1:-0.1.0-beta.3}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+version="${1:-}"
+if [[ -z "${version}" ]]; then
+  version="$(cd "${repo_root}" && node -p "require('./package.json').version")"
+fi
+if [[ ! "${version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+  echo "Invalid release version: ${version}" >&2
+  exit 1
+fi
+
 target_root="${CARGO_TARGET_DIR:-${repo_root}/target}"
 release_root="${target_root}/release"
 output_root="$(realpath -m "${CCSM_PACKAGE_OUTPUT_DIR:-${release_root}}")"
@@ -48,7 +56,10 @@ mkdir -p "${stage_root}/THIRD-PARTY-NOTICES"
 
 install -m 0755 "${release_root}/ccsm-desktop" "${stage_root}/ccsm-desktop"
 install -m 0755 "${repo_root}/scripts/ubuntu-release-run.sh" "${stage_root}/run.sh"
-install -m 0644 "${repo_root}/scripts/ubuntu-release-README.md" "${stage_root}/README-UBUNTU.md"
+sed "s/__VERSION__/${version}/g" \
+  "${repo_root}/scripts/ubuntu-release-README.md" \
+  >"${stage_root}/README-UBUNTU.md"
+chmod 0644 "${stage_root}/README-UBUNTU.md"
 install -m 0644 "${repo_root}/README.md" "${stage_root}/README.md"
 install -m 0644 "${repo_root}/LICENSE" "${stage_root}/LICENSE"
 install -m 0644 \
