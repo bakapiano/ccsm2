@@ -12,21 +12,25 @@ import type { ILink } from './types';
 /**
  * Mock terminal for testing
  */
-function createMockTerminal(lineText: string) {
-  const cells = Array.from(lineText).map((char) => ({
-    getCodepoint: () => char.codePointAt(0) || 0,
-  }));
+function createMockTerminal(
+  input: string | Array<{ text: string; isWrapped?: boolean }>,
+) {
+  const rows = typeof input === 'string' ? [{ text: input }] : input;
+  const lines = rows.map(({ text, isWrapped = false }) => {
+    const cells = Array.from(text).map((char) => ({
+      getCodepoint: () => char.codePointAt(0) || 0,
+    }));
+    return {
+      length: cells.length,
+      isWrapped,
+      getCell: (x: number) => cells[x],
+    };
+  });
 
   return {
     buffer: {
       active: {
-        getLine: (y: number) => {
-          if (y !== 0) return undefined;
-          return {
-            length: cells.length,
-            getCell: (x: number) => cells[x],
-          };
-        },
+        getLine: (y: number) => lines[y],
       },
     },
   };
@@ -35,12 +39,15 @@ function createMockTerminal(lineText: string) {
 /**
  * Helper to get links from provider
  */
-function getLinks(lineText: string): Promise<ILink[] | undefined> {
-  const terminal = createMockTerminal(lineText) as any;
+function getLinks(
+  input: string | Array<{ text: string; isWrapped?: boolean }>,
+  y = 0,
+): Promise<ILink[] | undefined> {
+  const terminal = createMockTerminal(input) as any;
   const provider = new UrlRegexProvider(terminal);
 
   return new Promise((resolve) => {
-    provider.provideLinks(0, resolve);
+    provider.provideLinks(y, resolve);
   });
 }
 
@@ -152,6 +159,35 @@ describe('URL Detection', () => {
     expect(links).toBeDefined();
     expect(links?.length).toBe(1);
     expect(links?.[0].text).toBe('https://example.com:8080/path');
+  });
+
+  test('reconstructs URLs split by terminal soft wrapping', async () => {
+    const secondRow = 'com/docs?view=full';
+    const links = await getLinks(
+      [
+        { text: 'Visit https://example.' },
+        { text: secondRow, isWrapped: true },
+      ],
+      1,
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links?.[0]).toMatchObject({
+      text: 'https://example.com/docs?view=full',
+      range: {
+        start: { x: 6, y: 0 },
+        end: { x: secondRow.length - 1, y: 1 },
+      },
+    });
+  });
+
+  test('does not join URL fragments across hard line breaks', async () => {
+    const links = await getLinks(
+      [{ text: 'Visit https://' }, { text: 'example.com/docs' }],
+      0,
+    );
+
+    expect(links).toBeUndefined();
   });
 
   test('does not detect file paths', async () => {

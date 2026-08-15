@@ -13,6 +13,8 @@ CLI Session Tab 通过稳定 `cli_session_id` 引用 Session，并在 mount 时 
 
 Provider resolver遍历完整PATH寻找对应的原生CLI。per-runtime shim通过depth guard把CLI内部的同名调用转发到已解析的原生CLI。用户自定义command、args、env和resume template进入后续版本。
 
+每个新PTY runtime在注入本次Hook身份前清除继承的`CCSM_WRAPPER_ACTIVE`、native Session ID、Hook token/endpoint和plugin目录。用户从一个CCSM Agent终端启动另一份CCSM时，内层runtime仍执行自己的Hook与native resume注入；depth guard只约束当前provider进程树中的递归调用。
+
 Windows resolver将进程继承的PATH与当前HKCU/HKLM环境PATH合并，并把合并结果传给launcher。Explorer在CLI安装前启动所持有的旧环境不能导致已安装Provider持续不可用；开发终端临时PATH保持最高优先级。
 
 ## Hook 注入

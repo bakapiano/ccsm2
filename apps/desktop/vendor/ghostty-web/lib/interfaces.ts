@@ -156,7 +156,7 @@ export interface IBuffer {
 export interface IBufferLine {
   /** Length of the line (in columns) */
   readonly length: number;
-  /** Whether this line wraps to the next line */
+  /** Whether this physical line is a soft-wrapped continuation */
   readonly isWrapped: boolean;
 
   /**

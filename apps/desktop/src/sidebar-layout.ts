@@ -46,6 +46,14 @@ export function normalizeAgentsHeight(
   return Math.round(Math.min(maximum, Math.max(MIN_AGENTS_HEIGHT, numeric)));
 }
 
+export function normalizeAgentsPreferredHeight(value: unknown): number {
+  if (value === null || value === undefined || value === "")
+    return DEFAULT_AGENTS_HEIGHT;
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_AGENTS_HEIGHT;
+  return Math.round(Math.max(MIN_AGENTS_HEIGHT, numeric));
+}
+
 export function resizeAgentsHeight(
   startHeight: number,
   deltaY: number,
@@ -59,6 +67,7 @@ export class SidebarLayoutController {
   readonly #agentsResizer: HTMLElement;
   #width: number;
   #agentsHeight: number;
+  #agentsPreferredHeight: number;
 
   constructor(
     private readonly root: HTMLElement,
@@ -67,8 +76,11 @@ export class SidebarLayoutController {
     this.#resizer = required(root, "#sidebar-resizer");
     this.#agentsResizer = required(root, "#agents-resizer");
     this.#width = normalizeSidebarWidth(storage.getItem(WIDTH_KEY));
-    this.#agentsHeight = normalizeAgentsHeight(
+    this.#agentsPreferredHeight = normalizeAgentsPreferredHeight(
       storage.getItem(AGENTS_HEIGHT_KEY),
+    );
+    this.#agentsHeight = normalizeAgentsHeight(
+      this.#agentsPreferredHeight,
       this.#layoutHeight(),
     );
     this.#resizer.addEventListener("pointerdown", (event) =>
@@ -108,7 +120,7 @@ export class SidebarLayoutController {
     });
     window.addEventListener("resize", () => {
       this.#agentsHeight = normalizeAgentsHeight(
-        this.#agentsHeight,
+        this.#agentsPreferredHeight,
         this.#layoutHeight(),
       );
       this.#apply();
@@ -126,7 +138,7 @@ export class SidebarLayoutController {
     const move = (moveEvent: PointerEvent) => {
       this.#setWidth(
         resizeSidebarWidth(startWidth, moveEvent.clientX - startX),
-        false,
+        true,
       );
     };
     const finish = () => {
@@ -161,7 +173,7 @@ export class SidebarLayoutController {
           moveEvent.clientY - startY,
           this.#layoutHeight(),
         ),
-        false,
+        true,
       );
     };
     const finish = () => {
@@ -169,7 +181,10 @@ export class SidebarLayoutController {
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
       delete this.root.dataset.agentsResizing;
-      this.storage.setItem(AGENTS_HEIGHT_KEY, String(this.#agentsHeight));
+      this.storage.setItem(
+        AGENTS_HEIGHT_KEY,
+        String(this.#agentsPreferredHeight),
+      );
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
@@ -177,9 +192,16 @@ export class SidebarLayoutController {
   }
 
   #setAgentsHeight(height: number, persist: boolean): void {
-    this.#agentsHeight = normalizeAgentsHeight(height, this.#layoutHeight());
+    this.#agentsPreferredHeight = normalizeAgentsPreferredHeight(height);
+    this.#agentsHeight = normalizeAgentsHeight(
+      this.#agentsPreferredHeight,
+      this.#layoutHeight(),
+    );
     if (persist)
-      this.storage.setItem(AGENTS_HEIGHT_KEY, String(this.#agentsHeight));
+      this.storage.setItem(
+        AGENTS_HEIGHT_KEY,
+        String(this.#agentsPreferredHeight),
+      );
     this.#apply();
   }
 
