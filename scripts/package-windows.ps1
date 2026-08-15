@@ -1,7 +1,10 @@
 [CmdletBinding()]
 param(
     [string]$Version,
-    [switch]$SkipBuild
+    [string]$SourceRevision,
+    [switch]$SkipBuild,
+    [switch]$RequireSignature,
+    [string]$ExpectedSignerSubject
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,9 +40,14 @@ $packageName = "CCSM-$Version-windows-x64"
 $stageRoot = Join-Path $releaseRoot "package\$packageName"
 $zipPath = Join-Path $releaseRoot "$packageName.zip"
 $checksumPath = "$zipPath.sha256"
-$sourceRevision = (& git -C $repoRoot describe --always --dirty | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not determine source revision"
+if ([string]::IsNullOrWhiteSpace($SourceRevision)) {
+    $SourceRevision = (& git -C $repoRoot describe --always --dirty | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not determine source revision"
+    }
+}
+if ($SourceRevision -match '[\r\n]') {
+    throw "Invalid source revision: $SourceRevision"
 }
 
 if (-not $SkipBuild) {
@@ -70,6 +78,14 @@ foreach ($path in $requiredPaths) {
     }
 }
 
+$releaseBinaryPath = Join-Path $releaseRoot "ccsm-desktop.exe"
+$signature = Get-AuthenticodeSignature -FilePath $releaseBinaryPath
+if ($RequireSignature) {
+    $signature = & (Join-Path $PSScriptRoot "verify-windows-signature.ps1") `
+        -Path $releaseBinaryPath `
+        -ExpectedSubject $ExpectedSignerSubject
+}
+
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
 }
@@ -95,13 +111,32 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination $stageRoot
 $binaryPath = Join-Path $stageRoot "ccsm-desktop.exe"
 $binaryHash = Get-Sha256Hex -Path $binaryPath
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$signerSubject = if ($null -ne $signature.SignerCertificate) {
+    $signature.SignerCertificate.Subject
+}
+else {
+    ""
+}
+$signerThumbprint = if ($null -ne $signature.SignerCertificate) {
+    $signature.SignerCertificate.Thumbprint
+}
+else {
+    ""
+}
+if ($RequireSignature) {
+    $signerSubject = $signature.SignerSubject
+    $signerThumbprint = $signature.SignerThumbprint
+}
 [System.IO.File]::WriteAllLines(
     (Join-Path $stageRoot "BUILD-INFO.txt"),
     @(
         "Package: $packageName",
-        "Source: $sourceRevision",
+        "Source: $SourceRevision",
         "Built on: $([System.Environment]::OSVersion.VersionString)",
         "Architecture: $env:PROCESSOR_ARCHITECTURE",
+        "Authenticode Status: $($signature.Status)",
+        "Authenticode Signer: $signerSubject",
+        "Authenticode Certificate Thumbprint: $signerThumbprint",
         "ccsm-desktop.exe SHA256: $binaryHash"
     ),
     $utf8NoBom

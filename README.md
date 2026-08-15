@@ -56,4 +56,33 @@ Pull requests and `main` run the Windows and Ubuntu CI matrix. Pushing an
 annotated `v<version>` tag whose version matches the repository manifests runs
 the full quality gate, builds both native archives, verifies their contents,
 creates SHA-256 files and provenance attestations, and publishes a GitHub
-pre-release when the version contains a prerelease suffix.
+pre-release when the version contains a prerelease suffix. Windows releases are
+signed and timestamped with Microsoft Artifact Signing before the ZIP is
+created.
+
+### Windows release signing
+
+The `release` GitHub environment supplies these non-secret variables:
+
+| Variable | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | Microsoft Entra application client ID |
+| `AZURE_TENANT_ID` | Microsoft Entra tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription containing the signing account |
+| `AZURE_ARTIFACT_SIGNING_ENDPOINT` | Regional HTTPS Artifact Signing endpoint |
+| `AZURE_ARTIFACT_SIGNING_ACCOUNT` | Artifact Signing account name |
+| `AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE` | Public-trust certificate profile name |
+| `WINDOWS_SIGNING_SUBJECT` | Exact X.509 subject emitted by that certificate profile |
+
+Configure the Entra application with a GitHub OIDC federated credential for the
+`release` environment and grant its service principal the **Artifact Signing
+Certificate Profile Signer** role. Restrict that GitHub environment to release
+tags. The workflow stores no certificate private key and fails before building
+when any signing variable is missing. It also requires a valid Code Signing EKU,
+a trusted timestamp, and the configured publisher subject before packaging.
+
+Microsoft setup references:
+
+- [Configure GitHub Actions OIDC for Azure](https://learn.microsoft.com/azure/developer/github/connect-from-azure)
+- [Create Artifact Signing resources](https://learn.microsoft.com/azure/artifact-signing/quickstart-portal)
+- [Artifact Signing roles](https://learn.microsoft.com/azure/artifact-signing/concept-resources-roles)
