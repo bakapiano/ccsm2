@@ -29,3 +29,8 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[patch.crates-io]
+# Backport tauri-apps/tao#1215 while Tauri 2.11 requires the 0.35 line.
+# The fix moves PeekMessageW outside non-reentrant input-state locks on Windows.
+tao = { git = "https://github.com/tauri-apps/tao", rev = "c704261c519c58cfdd0bc2d58ba24e06a0b71c92" }

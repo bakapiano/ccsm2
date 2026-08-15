@@ -1,0 +1,71 @@
+CCSM Windows Release input reentrancy deadlock
+Sanitized WinDbg evidence (absolute addresses and user paths removed)
+
+Production beta.3 host full dump
+==================================
+
+Native UI thread, leaf to outer caller:
+
+  ntdll!RtlWaitOnAddress
+  KERNELBASE!WaitOnAddress
+  ccsm-desktop.exe+0x2b9cfd  reentrant parking_lot mutex slow-path return
+  comctl32!DefSubclassProc
+  user32!CallWindowProcW
+  user32!SendMessageW
+  ntdll!KiUserCallbackDispatcher
+  win32u!NtUserPeekMessage
+  user32!PeekMessageW
+  ccsm-desktop.exe+0x2b9271  outer Tao callback after PeekMessageW
+
+Critical state derived from the full dump and Release disassembly:
+
+  KEY_EVENT_BUILDERS mutex RVA  : 0x578790
+  mutex state byte               : 0x03 (parking_lot LOCKED | PARKED)
+  outer callback message         : WM_KILLFOCUS (0x0008)
+  keyboard-related range check   : 0x0100..0x0109 plus focus messages
+  outer guard                    : acquired before PeekMessageW
+  inner guard                    : same static mutex, same native UI thread
+
+The call immediately after the inner WaitOnAddress returns to the second
+KEY_EVENT_BUILDERS acquisition. The lower stack shows that acquisition was
+entered synchronously from PeekMessageW while the outer acquisition was still
+live. This is a same-thread reentrant mutex deadlock.
+
+Controlled beta.3 host full dump
+================================
+
+Native UI thread, leaf to outer caller:
+
+  ntdll!RtlWaitOnAddress
+  KERNELBASE!WaitOnAddress
+  ccsm-desktop.exe+0x2b9cfd  reentrant parking_lot mutex slow-path return
+  comctl32!DefSubclassProc
+  user32!CallWindowProcW
+  user32!SendMessageW
+  ntdll!KiUserCallbackDispatcher
+  win32u!NtUserPeekMessage
+  user32!PeekMessageW
+  ccsm-desktop.exe+0x2b9361  outer Tao callback after PeekMessageW
+
+The different outer RVA is another keyboard-message branch in the same Tao
+routine. The reentrant mutex slow path and the Win32 callback chain match the
+production dump.
+
+Source correlation
+==================
+
+Tao 0.35.3:
+
+  KEY_EVENT_BUILDERS: Lazy<Mutex<HashMap<WindowId, KeyEventBuilder>>>
+
+The Windows event callback locks KEY_EVENT_BUILDERS around
+KeyEventBuilder::process_message. That function calls PeekMessageW while the
+guard is live.
+
+Upstream fix:
+
+  c704261c519c58cfdd0bc2d58ba24e06a0b71c92
+  fix(windows): avoid reentrant input lock deadlocks (#1215)
+
+The fix moves keyboard and IME PeekMessageW calls before the non-reentrant
+input-state locks and narrows related layout-cache guard lifetimes.
