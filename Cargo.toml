@@ -4,7 +4,6 @@ members = [
   "crates/ccsm-platform",
   "apps/desktop/src-tauri",
 ]
-exclude = ["crates/vendor/tauri-runtime-wry"]
 resolver = "2"
 
 [workspace.package]
@@ -32,7 +31,9 @@ panic = "abort"
 strip = true
 
 [patch.crates-io]
-# Tauri 2.11.5 is the latest release, but its published runtime still requires
-# Tao 0.35. This vendored 2.11.4 runtime applies Tauri's merged Tao 0.36/Wry
-# 0.56 adapter delta while retaining released tauri-runtime and tauri-utils.
-tauri-runtime-wry = { path = "crates/vendor/tauri-runtime-wry" }
+# Temporary backport of tauri-apps/tao#1215 while Tauri runtime-wry 2.11.4
+# constrains Tao to ^0.35. Upgrade to the first stable Tauri runtime that
+# resolves Tao >=0.36.0, then remove this patch.
+# The fix moves PeekMessageW outside non-reentrant input-state locks on Windows.
+# This revision also contains 47d38f3, an additive Linux JIS-key mapping fix.
+tao = { git = "https://github.com/tauri-apps/tao", rev = "c704261c519c58cfdd0bc2d58ba24e06a0b71c92" }
