@@ -1,0 +1,134 @@
+CCSM Windows Release input reentrancy deadlock
+Sanitized WinDbg evidence (absolute addresses and user paths removed)
+
+Production beta.3 host full dump
+==================================
+
+Native UI thread, leaf to outer caller:
+
+  ntdll!RtlWaitOnAddress
+  KERNELBASE!WaitOnAddress
+  ccsm-desktop.exe+0x2b9cfd  reentrant parking_lot mutex slow-path return
+  comctl32!DefSubclassProc
+  user32!CallWindowProcW
+  user32!SendMessageW
+  ntdll!KiUserCallbackDispatcher
+  win32u!NtUserPeekMessage
+  user32!PeekMessageW
+  ccsm-desktop.exe+0x2b9271  outer Tao callback after PeekMessageW
+
+Critical state derived from the full dump and Release disassembly:
+
+  KEY_EVENT_BUILDERS mutex RVA  : 0x578790
+  mutex state byte               : 0x03 (parking_lot LOCKED | PARKED)
+  outer callback message         : WM_KEYUP (0x0101)
+  reentrant callback message     : WM_KILLFOCUS (0x0008)
+  keyboard-related range check   : 0x0100..0x0109 plus focus messages
+  outer guard                    : acquired before PeekMessageW
+  inner guard                    : same static mutex, same native UI thread
+
+The call immediately after the inner WaitOnAddress returns to the second
+KEY_EVENT_BUILDERS acquisition. The lower stack shows that acquisition was
+entered synchronously from PeekMessageW while the outer acquisition was still
+live. This is a same-thread reentrant mutex deadlock.
+
+Reproducible WinDbg correlation
+===============================
+
+The following commands were rerun against the production host dump with
+WinDbg 10.0.29617.1000. Module-relative addresses and frame-relative stack
+offsets keep the transcript independent of ASLR:
+
+  ~0s
+  kn 20
+  u ccsm_desktop+0x2b8d21 L18
+  .frame /c 4
+  dd @rsp+0x4c L1
+  .frame /c e
+  dd @rsp+0x4c L1
+  dps ccsm_desktop+0x3f7c68 L1
+  u ccsm_desktop+0x2b9254 L10
+  u ccsm_desktop+0x2b9cf1 L6
+  db ccsm_desktop+0x578790 L1
+
+Sanitized key output:
+
+  ccsm_desktop+0x2b8d3a  mov esi,edx
+  ccsm_desktop+0x2b8d60  mov dword ptr [rsp+4Ch],esi
+
+  frame 04, rip=ccsm_desktop+0x2b9cfd
+  dd @rsp+0x4c L1       00000008
+
+  frame 0e, rip=ccsm_desktop+0x2b9271
+  dd @rsp+0x4c L1       00000101
+
+  ccsm_desktop+0x3f7c68  user32!PeekMessageW
+  ccsm_desktop+0x2b926b  call [ccsm_desktop+0x3f7c68]
+  ccsm_desktop+0x2b9271  test eax,eax
+
+  ccsm_desktop+0x2b9cf1  lea rcx,[ccsm_desktop+0x578790]
+  ccsm_desktop+0x2b9cf8  call ccsm_desktop+0x3eb371
+  ccsm_desktop+0x2b9cfd  jmp ccsm_desktop+0x2b8e7f
+
+  db ccsm_desktop+0x578790 L1   03
+
+On Win64, the callback's second argument (`msg`) arrives in `EDX`; the entry
+sequence above stores it at `[rsp+0x4c]`. Thus frame `0e` is the outer
+`WM_KEYUP`, frame `04` is the reentrant `WM_KILLFOCUS`, `0x2b9271` is the
+return from `PeekMessageW`, and `0x2b9cfd` follows the second acquisition of
+the mutex at RVA `0x578790`.
+
+Controlled beta.3 host full dump
+================================
+
+Native UI thread, leaf to outer caller:
+
+  ntdll!RtlWaitOnAddress
+  KERNELBASE!WaitOnAddress
+  ccsm-desktop.exe+0x2b9cfd  reentrant parking_lot mutex slow-path return
+  comctl32!DefSubclassProc
+  user32!CallWindowProcW
+  user32!SendMessageW
+  ntdll!KiUserCallbackDispatcher
+  win32u!NtUserPeekMessage
+  user32!PeekMessageW
+  ccsm-desktop.exe+0x2b9361  outer Tao callback after PeekMessageW
+
+The different outer RVA is another keyboard-message branch in the same Tao
+routine. The reentrant mutex slow path and the Win32 callback chain match the
+production dump.
+
+Source correlation
+==================
+
+Tao 0.35.3:
+
+  KEY_EVENT_BUILDERS: Lazy<Mutex<HashMap<WindowId, KeyEventBuilder>>>
+
+The Windows event callback locks KEY_EVENT_BUILDERS around
+KeyEventBuilder::process_message. That function calls PeekMessageW while the
+guard is live.
+
+Upstream fix:
+
+  c704261c519c58cfdd0bc2d58ba24e06a0b71c92
+  fix(windows): avoid reentrant input lock deadlocks (#1215)
+
+The fix moves keyboard and IME PeekMessageW calls before the non-reentrant
+input-state locks and narrows related layout-cache guard lifetimes.
+
+Resolved fixed dependency graph:
+
+  tao 0.35.3
+    official tauri-apps/tao Git revision:
+      c704261c519c58cfdd0bc2d58ba24e06a0b71c92
+  wry 0.55.1 (crates.io)
+  tauri 2.11.5 (crates.io)
+  tauri-runtime 2.11.3 (crates.io)
+  tauri-utils 2.9.3 (crates.io)
+  tauri-runtime-wry 2.11.4 (crates.io)
+
+Tao released the fix in 0.36.0. Tauri's development branch integrates Tao
+0.36/Wry 0.56 at revision 7cc68e74ff6981f5c50a52a67d56c5eb2d227188.
+The first stable Tauri runtime resolving Tao >=0.36.0 is the upgrade point for
+removing the Git patch. The workspace MSRV is Rust 1.88.

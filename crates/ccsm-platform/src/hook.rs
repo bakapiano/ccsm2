@@ -177,6 +177,41 @@ fn endpoint_address() -> String {
 }
 
 #[cfg(windows)]
+#[derive(Debug, PartialEq, Eq)]
+enum NamedPipeConnection {
+    Connected,
+    ConnectedBeforeWait,
+    BufferedAfterClientClose,
+}
+
+#[cfg(windows)]
+fn connect_named_pipe(
+    handle: windows_sys::Win32::Foundation::HANDLE,
+) -> std::io::Result<NamedPipeConnection> {
+    use windows_sys::Win32::{
+        Foundation::{ERROR_NO_DATA, ERROR_PIPE_CONNECTED},
+        System::Pipes::ConnectNamedPipe,
+    };
+
+    if unsafe { ConnectNamedPipe(handle, std::ptr::null_mut()) } != 0 {
+        return Ok(NamedPipeConnection::Connected);
+    }
+
+    let error = std::io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(code) if code == ERROR_PIPE_CONNECTED as i32 => {
+            Ok(NamedPipeConnection::ConnectedBeforeWait)
+        }
+        // A client can write and close between CreateNamedPipeW and
+        // ConnectNamedPipe. The payload remains buffered on this handle.
+        Some(code) if code == ERROR_NO_DATA as i32 => {
+            Ok(NamedPipeConnection::BufferedAfterClientClose)
+        }
+        _ => Err(error),
+    }
+}
+
+#[cfg(windows)]
 fn run_server(
     address: String,
     stop: Arc<AtomicBool>,
@@ -186,9 +221,9 @@ fn run_server(
     use std::{fs::File, os::windows::io::FromRawHandle};
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE},
+        Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
         Storage::FileSystem::PIPE_ACCESS_INBOUND,
-        System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE},
+        System::Pipes::{CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE},
     };
 
     let mut first = true;
@@ -223,16 +258,12 @@ fn run_server(
             first = false;
             let _ = ready.send(Ok(()));
         }
-        let connected = unsafe { ConnectNamedPipe(handle, std::ptr::null_mut()) };
-        if connected == 0 {
-            let error = std::io::Error::last_os_error();
-            if error.raw_os_error() != Some(ERROR_PIPE_CONNECTED as i32) {
-                unsafe { CloseHandle(handle) };
-                if stop.load(Ordering::SeqCst) {
-                    return;
-                }
-                continue;
+        if connect_named_pipe(handle).is_err() {
+            unsafe { CloseHandle(handle) };
+            if stop.load(Ordering::SeqCst) {
+                return;
             }
+            continue;
         }
         let mut file = unsafe { File::from_raw_handle(handle) };
         let mut bytes = Vec::new();
@@ -366,5 +397,79 @@ mod tests {
         assert_eq!(received.runtime_id, report.runtime_id);
         assert_eq!(received.native_session_id, report.native_session_id);
         endpoint.shutdown();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn endpoint_delivers_report_closed_before_connect_wait() {
+        use std::{
+            fs::File,
+            os::windows::io::{AsRawHandle, FromRawHandle},
+        };
+
+        use windows_sys::Win32::{
+            Foundation::INVALID_HANDLE_VALUE,
+            Storage::FileSystem::PIPE_ACCESS_INBOUND,
+            System::Pipes::{CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE},
+        };
+
+        let address = endpoint_address();
+        let wide = address
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let handle = unsafe {
+            CreateNamedPipeW(
+                wide.as_ptr(),
+                PIPE_ACCESS_INBOUND,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
+                1,
+                0,
+                MAX_HOOK_MESSAGE_BYTES as u32,
+                500,
+                std::ptr::null(),
+            )
+        };
+        assert_ne!(handle, INVALID_HANDLE_VALUE, "create test named pipe");
+        let mut pipe = unsafe { File::from_raw_handle(handle) };
+
+        let report = HookReport {
+            provider: ProviderKind::Codex,
+            cli_session_id: "session-before-connect".into(),
+            runtime_id: "runtime-before-connect".into(),
+            token: "secret".into(),
+            native_session_id: "native-before-connect".into(),
+            hook_event_name: "SessionStart".into(),
+        };
+        let payload = serde_json::to_vec(&report).expect("serialize report");
+        let client_address = address.clone();
+        let client = thread::spawn(move || write_endpoint(&client_address, &payload));
+        client
+            .join()
+            .expect("join named-pipe client")
+            .expect("write report before ConnectNamedPipe");
+
+        let connection = connect_named_pipe(pipe.as_raw_handle());
+        assert_eq!(
+            connection.expect("accept buffered named-pipe report"),
+            NamedPipeConnection::BufferedAfterClientClose
+        );
+
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut pipe)
+            .take(MAX_HOOK_MESSAGE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .expect("read buffered named-pipe report");
+
+        let (tx, rx) = mpsc::sync_channel(1);
+        let sink: HookReportSink = Arc::new(move |received| {
+            let _ = tx.send(received);
+        });
+        handle_message(bytes, &sink);
+        let received = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("deliver buffered named-pipe report");
+        assert_eq!(received.runtime_id, report.runtime_id);
+        assert_eq!(received.native_session_id, report.native_session_id);
     }
 }
