@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { ScenarioEvidence } from "./support/evidence";
 import {
@@ -207,13 +207,26 @@ async function createSpace(name: string, root: string): Promise<void> {
   await picker.waitForDisplayed();
   const address = await $(".directory-address");
   await address.setValue(root);
-  await browser.keys("Enter");
+  await $(".directory-address-submit").click();
   const useFolder = await $(".directory-use");
-  await browser.waitUntil(() => useFolder.isEnabled(), {
-    timeout: 20_000,
-    interval: 200,
-    timeoutMsg: `${root} did not become selectable`,
-  });
+  await browser.waitUntil(
+    async () => {
+      const breadcrumbs = await $$(".directory-breadcrumbs button");
+      const breadcrumbCount = await breadcrumbs.length;
+      const selectedPath =
+        await breadcrumbs[breadcrumbCount - 1]?.getAttribute("title");
+      return Boolean(
+        selectedPath &&
+          normalizedPath(selectedPath) === normalizedPath(root) &&
+          (await useFolder.isEnabled()),
+      );
+    },
+    {
+      timeout: 20_000,
+      interval: 200,
+      timeoutMsg: `${root} did not become selectable`,
+    },
+  );
   await useFolder.click();
 
   const dialog = await $(".app-dialog");
@@ -226,6 +239,11 @@ async function createSpace(name: string, root: string): Promise<void> {
     interval: 250,
     timeoutMsg: `Space ${name} did not become active`,
   });
+}
+
+function normalizedPath(path: string): string {
+  const normalized = resolve(path).replaceAll("\\", "/").replace(/\/+$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 async function activeSpaceName(): Promise<string> {

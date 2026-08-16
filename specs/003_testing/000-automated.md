@@ -180,7 +180,7 @@ GIF 由场景中的有名称验收 checkpoint 生成，按操作顺序展示启�
 - GIF 使用固定尺寸和低帧率，画面标记平台、场景名称及 checkpoint。
 - 失败场景保留失败前后的可用画面，并在最后一帧标记失败步骤；GIF 生成错误写入独立诊断文件并保留原始测试错误。
 
-GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据。上传前对 JSON、JSONL、XML、TXT 与日志去除 NUL，规范化 workspace/temp 路径并清理 token；credential scan 命中会使 gate 失败并写入 `credential-scan.json`。`logs/wdio.log` 是跨平台人工诊断的规范化入口。
+GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据，E2E status bar 使用 `<E2E_SPACE_ROOT>` 标签。上传前对 JSON、JSONL、XML、TXT 与日志去除 NUL，规范化 workspace/temp 路径并清理 token；credential scan 命中会使 gate 失败并写入 `credential-scan.json`。`logs/wdio.log` 是跨平台人工诊断的规范化入口。
 
 ## Artifact 上传
 

@@ -63,6 +63,7 @@ export class DirectoryPickerDialog {
           </div>
           <form class="directory-address-form">
             <input class="directory-address" aria-label="Folder path" spellcheck="false" />
+            <button type="submit" class="directory-address-submit" aria-label="Open folder path" title="Open folder path">Go</button>
           </form>
         </div>
         <nav class="directory-breadcrumbs" aria-label="Folder breadcrumbs"></nav>

@@ -1235,7 +1235,9 @@ export class CcsmApp {
     requiredElement(this.root, "#active-space-name").textContent =
       snapshot.space.name;
     requiredElement(this.root, "#active-space-root").textContent =
-      snapshot.space.rootPath;
+      import.meta.env.MODE === "e2e"
+        ? "<E2E_SPACE_ROOT>"
+        : snapshot.space.rootPath;
   }
 
   async #refreshAgents(): Promise<void> {
