@@ -478,8 +478,11 @@ function sanitizeTextArtifacts() {
   ];
   const replacements = [
     [temporaryRoot, "<CCSM_E2E_TEMP>"],
+    [canonicalPath(temporaryRoot), "<CCSM_E2E_TEMP>"],
     [repositoryRoot, "<REPOSITORY_ROOT>"],
+    [canonicalPath(repositoryRoot), "<REPOSITORY_ROOT>"],
     [sourceAppBinary, "<SOURCE_APP_BINARY>"],
+    [canonicalPath(sourceAppBinary), "<SOURCE_APP_BINARY>"],
   ].sort((left, right) => right[0].length - left[0].length);
   for (const path of walkFiles(artifactDirectory)) {
     if (!/\.(?:json|jsonl|log|txt|xml)$/i.test(path)) continue;
@@ -513,6 +516,14 @@ function sanitizeTextArtifacts() {
     writeFileSync(path, contents);
   }
   return findings;
+}
+
+function canonicalPath(path) {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
 }
 
 function detectWebviewVersion() {
