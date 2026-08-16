@@ -9,7 +9,7 @@ if (!fixtureRoot) {
 
 const workspaceName = "L4 Workspace";
 const folderName = "Acceptance Folder";
-const fixtureFileName = "acceptance.md";
+const fixtureFileName = "acceptance.txt";
 const unicodeMarker = "Linux L4 中文编辑 ✓";
 
 interface RecoveryState {
