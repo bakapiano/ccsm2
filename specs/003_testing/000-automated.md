@@ -45,11 +45,13 @@ Pull Request / main push
 每个 job 按固定顺序执行：
 
 ```text
-checkout
+initialize failure evidence
+→ checkout
 → install pinned toolchains and locked dependencies
 → pnpm check
 → pnpm test
 → pnpm test:desktop:build
+→ test E2E-only backend
 → pnpm test:desktop:ci
 → finalize acceptance evidence
 → upload artifact
@@ -58,7 +60,7 @@ checkout
 
 `pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
 
-测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。原始测试退出码保持为 job 结果；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
+job 开始时创建最小 `workflow-state.json`。测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。finalizer 将 workflow 状态、display cleanup 和 runner 结果汇总为一个最终结论；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
 
 ## Desktop 驱动方式
 
@@ -107,13 +109,15 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 
 公开仓库必需门禁的全部输入由确定性 fixture、虚拟 provider 数据和隔离目录组成。真实 provider credential 归属受保护的专项验收 workflow。
 
-WDIO teardown 关闭应用、native child WebView、PTY、provider fixture 进程和虚拟 display。teardown 结束后执行进程残留检查，并将结果写入 `process-cleanup.json`。
+每次运行复制一份独立 E2E executable 到临时 ownership root。应用、runtime shim、Hook reporter、watchdog 与 provider fixture 都从该目录启动。teardown 结束后按 ownership root 检查完整进程集合，记录 graceful cleanup、强制回收前后的进程信息，并将结果写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
 
 ## Provider model mock
 
 必需门禁通过 E2E executable 内的 test-only provider mock 运行 Claude、Codex 与 GitHub Copilot。mock executable 继续经过生产 CLI shim、PTY、Hook reporter、native session binding 和 resume 参数组装，并以固定内容代替网络 model 调用。
 
-`CCSM_E2E_MODEL_MOCK_FILE` 指向本次运行的 JSON 配置。测试可以在发送 prompt 前按 `provider + prompt` 设置返回内容；mock 在每次 prompt 到达时读取最新配置。`CCSM_E2E_MODEL_MOCK_LOG` 记录 session start、native session ID、resume 状态、prompt 和 response，供断言及 artifact 验收。
+`CCSM_E2E_MODEL_MOCK_FILE` 指向本次运行的 JSON 配置。测试在发送 prompt 前按 `provider + prompt` 设置返回内容；第二轮响应在 resumed CLI 启动后写入，mock 在 prompt 到达时读取最新配置。`CCSM_E2E_MODEL_MOCK_LOG` 记录 session start、native session ID、resume 状态、prompt 和 response，供断言及 artifact 验收。
+
+Claude mock 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 在首条 prompt 到达时建立初始绑定。三家 provider 的 resume 启动均校验生产 shim 组装的参数与已绑定 native session ID 一致。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使 provider fixture 和场景失败。
 
 门禁包含三条独立场景：
 
@@ -121,17 +125,17 @@ WDIO teardown 关闭应用、native child WebView、PTY、provider fixture 进�
 2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 
-Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 WebView 的控制；对应测试仍创建生产默认 Browser Tab 数据。native Browser child 的平台场景使用其独立验收套件。
+Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 WebView 的控制；对应测试仍创建生产默认 Browser Tab 数据。native Browser child 的 bounds、visibility 与 lifecycle 验收列入后续独立平台套件。
 
 ## 自动断言
 
-自动断言是门禁事实源，至少覆盖：
+当前自动门禁覆盖：
 
 1. executable 成功启动且主 WebView ready。
-2. 用户可以创建 Tab、输入内容并看到预期结果。
-3. Space、Tab、layout 和 restart recovery 的关键状态一致。
-4. Browser/native surface 的 bounds、visibility 和 lifecycle 满足测试契约。
-5. 应用退出后，本次测试拥有的进程与资源完成清理。
+2. 用户通过可见目录选择、CLI 按钮与真实 WebDriver keyboard action 创建 Space 和三种 CLI。
+3. 每种 CLI 收到按 prompt 动态配置的固定 model response。
+4. Stop 后再次 Start 使用同一 native session，第二轮 prompt 正常返回。
+5. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
 
 场景从用户可观察结果断言。内部诊断状态补充失败原因。
 
@@ -159,18 +163,21 @@ logs/
   frontend.log
   backend.log
 process-cleanup.json
+display-cleanup.json
+credential-scan.json
+workflow-state.json
 ```
 
-`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 passed/failed、持续时间和失败步骤。
+`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、最终 gate 状态、cleanup 状态、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 ID、passed/failed、持续时间和失败步骤。runner 或 teardown 失败会追加结构化 runner failure，确保 job、result、manifest 和 Actions Summary 使用同一个最终结论。
 
 GIF 由场景中的有名称验收 checkpoint 生成，按操作顺序展示启动、关键输入、状态变化和最终结果：
 
 - DOM 场景使用 WebDriver screenshot。
 - 包含 native child surface 的场景使用完整应用窗口 screenshot。
 - GIF 使用固定尺寸和低帧率，画面标记平台、场景名称及 checkpoint。
-- 失败场景保留失败前后的可用画面，并在最后一帧标记失败步骤。
+- 失败场景保留失败前后的可用画面，并在最后一帧标记失败步骤；GIF 生成错误写入独立诊断文件并保留原始测试错误。
 
-GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据，并在写入 artifact 前清理 token、路径和外部内容。
+GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据。上传前对 JSON、JSONL、XML、TXT 与日志去除 NUL，规范化 workspace/temp 路径并清理 token；credential scan 命中会使 gate 失败并写入 `credential-scan.json`。`logs/wdio.log` 是跨平台人工诊断的规范化入口。
 
 ## Artifact 上传
 
@@ -207,7 +214,7 @@ PR review 是人工验收记录；两个 required status checks 是自动门禁�
 
 - Pull Request：运行两个必需平台 job。
 - `main` push：运行两个平台 job，验证合并结果。
-- `workflow_dispatch`：允许指定单个场景进行诊断，结果保留相同证据格式。
+- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp` 指定诊断范围，结果保留相同证据格式。
 - 同一 PR 的旧 commit 运行通过 concurrency group 取消。
 - job 和单场景设置明确 timeout。
 - artifact 使用 7 天 retention，为 PR 审查和跨时区验收提供完整窗口。

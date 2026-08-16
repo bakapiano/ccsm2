@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -27,6 +28,13 @@ const platform =
       : "linux";
 const runId =
   process.env.CCSM_E2E_RUN_ID ?? `${Date.now().toString(36)}-${process.pid}`;
+const runMode = process.argv.includes("--ci")
+  ? "ci"
+  : process.argv.includes("--debug")
+    ? "debug"
+    : process.argv.includes("--evidence")
+      ? "evidence"
+      : "local";
 const artifactDirectory = resolve(
   process.env.CCSM_E2E_ARTIFACT_DIR ??
     join(repositoryRoot, "test-results", "desktop", platform, runId),
@@ -34,16 +42,19 @@ const artifactDirectory = resolve(
 const temporaryRoot = mkdtempSync(join(tmpdir(), `ccsm-e2e-${platform}-`));
 const binaryName =
   process.platform === "win32" ? "ccsm-desktop.exe" : "ccsm-desktop";
-const appBinary = resolve(
+const sourceAppBinary = resolve(
   process.env.CCSM_E2E_APP_BINARY ??
     join(repositoryRoot, "target", "debug", binaryName),
 );
+const isolatedBinaryDirectory = join(temporaryRoot, "bin");
+const appBinary = join(isolatedBinaryDirectory, binaryName);
 const modelMockFile = join(temporaryRoot, "model-mock.json");
 const modelMockLog = join(artifactDirectory, "logs", "model-mock.jsonl");
 const dataDirectory = join(temporaryRoot, "app-data");
 const spacesDirectory = join(temporaryRoot, "spaces");
 
 mkdirSync(join(artifactDirectory, "logs"), { recursive: true });
+mkdirSync(isolatedBinaryDirectory, { recursive: true });
 mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(spacesDirectory, { recursive: true });
 for (const provider of ["claude", "codex", "copilot"]) {
@@ -65,6 +76,7 @@ if (process.argv.includes("--debug")) {
 const inheritedRuntimeVariables = new Set([
   "CCSM_HOOK_PIPE",
   "CCSM_HOOK_REPORTER",
+  "CCSM_HOOK_REPORTER_STRICT",
   "CCSM_HOOK_TOKEN",
   "CCSM_DATA_DIR",
   "CCSM_NATIVE_SESSION_ID",
@@ -88,7 +100,9 @@ const environment = {
   CCSM_E2E_MODEL_MOCK_LOG: modelMockLog,
   CCSM_E2E_PLATFORM: platform,
   CCSM_E2E_RUN_ID: runId,
+  CCSM_E2E_RUN_MODE: runMode,
   CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
+  CCSM_HOOK_REPORTER_STRICT: "1",
   CCSM_REAL_CLAUDE_PATH: appBinary,
   CCSM_REAL_CODEX_PATH: appBinary,
   CCSM_REAL_COPILOT_PATH: appBinary,
@@ -104,10 +118,14 @@ const environment = {
 
 let exitCode = 1;
 let runnerError;
-if (!existsSync(appBinary)) {
-  runnerError = `E2E executable does not exist at ${appBinary}; run pnpm test:desktop:build first`;
+if (!existsSync(sourceAppBinary)) {
+  runnerError = `E2E executable does not exist at ${sourceAppBinary}; run pnpm test:desktop:build first`;
   console.error(runnerError);
 } else {
+  copyFileSync(sourceAppBinary, appBinary);
+  if (process.platform !== "win32") {
+    chmodSync(appBinary, statSync(sourceAppBinary).mode);
+  }
   const wdioCli = join(
     desktopRoot,
     "node_modules",
@@ -135,69 +153,124 @@ copyFileSync(
   join(artifactDirectory, "logs", "model-mock-config.json"),
 );
 splitServiceLogs();
-const lingeringProcesses = waitForProcessCleanup(appBinary, 5_000);
+const observedBeforeTermination = waitForProcessCleanup(temporaryRoot, 5_000);
+if (observedBeforeTermination.length > 0) {
+  terminateOwnedProcesses(observedBeforeTermination);
+}
+const lingeringProcesses = waitForProcessCleanup(temporaryRoot, 5_000);
 writeFileSync(
   join(artifactDirectory, "process-cleanup.json"),
   `${JSON.stringify(
     {
+      sourceAppBinary,
       appBinary,
+      ownershipRoot: temporaryRoot,
       checkedAt: new Date().toISOString(),
       clean: lingeringProcesses.length === 0,
+      gracefulCleanup: observedBeforeTermination.length === 0,
+      observedBeforeTermination,
       lingeringProcesses,
     },
     null,
     2,
   )}\n`,
 );
-if (lingeringProcesses.length > 0) {
+if (observedBeforeTermination.length > 0) {
   console.error(
     "Desktop E2E left owned processes running:",
+    observedBeforeTermination,
+  );
+  exitCode = 1;
+}
+if (lingeringProcesses.length > 0) {
+  console.error(
+    "Desktop E2E could not terminate owned processes:",
     lingeringProcesses,
   );
   exitCode = 1;
 }
 
 const resultPath = join(artifactDirectory, "result.json");
-if (!existsSync(resultPath)) {
-  writeFileSync(
-    resultPath,
-    `${JSON.stringify(
-      [
-        {
-          title: "Desktop E2E runner",
-          fullTitle: "Desktop E2E runner",
-          state: "failed",
-          durationMs: 0,
-          error: runnerError ?? `WDIO exited with code ${exitCode}`,
-        },
-      ],
-      null,
-      2,
-    )}\n`,
-  );
+const credentialFindings = sanitizeTextArtifacts();
+writeFileSync(
+  join(artifactDirectory, "credential-scan.json"),
+  `${JSON.stringify(
+    {
+      clean: credentialFindings.length === 0,
+      findings: credentialFindings,
+    },
+    null,
+    2,
+  )}\n`,
+);
+if (credentialFindings.length > 0) {
+  runnerError ??= `artifact credential scan matched ${credentialFindings.length} file(s)`;
+  exitCode = 1;
 }
 
+ensureResultReflectsRunnerStatus();
+sanitizeTextArtifacts();
 writeManifest();
 appendGitHubSummary();
-removeTemporaryRoot();
+if (lingeringProcesses.length === 0) removeTemporaryRoot();
 process.exitCode = exitCode;
 
-function waitForProcessCleanup(targetBinary, timeoutMs) {
+function waitForProcessCleanup(ownershipRoot, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
-  let processes = listProcesses(targetBinary);
+  let processes = listProcesses(ownershipRoot);
   while (processes.length > 0 && Date.now() < deadline) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
-    processes = listProcesses(targetBinary);
+    processes = listProcesses(ownershipRoot);
   }
   return processes;
 }
 
-function listProcesses(targetBinary) {
+function ensureResultReflectsRunnerStatus() {
+  let results = [];
+  if (existsSync(resultPath)) {
+    try {
+      results = JSON.parse(readFileSync(resultPath, "utf8"));
+      if (!Array.isArray(results)) throw new Error("expected an array");
+    } catch (error) {
+      runnerError ??= `read result.json: ${error.message}`;
+      exitCode = 1;
+      results = [];
+    }
+  }
+  if (results.length === 0) {
+    runnerError ??= "WDIO produced no scenario results";
+    exitCode = 1;
+  }
+  if (results.some((row) => row.state !== "passed")) exitCode = 1;
+  if (
+    results.length === 0 ||
+    (exitCode !== 0 && results.every((row) => row.state === "passed"))
+  ) {
+    const cleanupError =
+      observedBeforeTermination.length > 0
+        ? `owned process cleanup required forced termination (${observedBeforeTermination.length} process(es))`
+        : lingeringProcesses.length > 0
+          ? `owned process cleanup left ${lingeringProcesses.length} process(es)`
+          : undefined;
+    results.push({
+      scenarioId: "runner",
+      title: "Desktop E2E runner",
+      fullTitle: "Desktop E2E runner and cleanup",
+      state: "failed",
+      durationMs: 0,
+      failureStep: cleanupError ? "process-cleanup" : "runner",
+      error: runnerError ?? cleanupError ?? `WDIO exited with code ${exitCode}`,
+    });
+  }
+  writeFileSync(resultPath, `${JSON.stringify(results, null, 2)}\n`);
+}
+
+function listProcesses(ownershipRoot) {
   try {
     if (process.platform === "win32") {
       const script = [
-        "$target = [IO.Path]::GetFullPath($env:CCSM_E2E_SCAN_BINARY)",
-        "$items = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $target } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
+        "$root = [IO.Path]::GetFullPath($env:CCSM_E2E_OWNERSHIP_ROOT).TrimEnd('\\') + '\\'",
+        "$items = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) -or ($_.CommandLine -and $_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
         "$items | ConvertTo-Json -Compress",
       ].join("; ");
       const output = execFileSync(
@@ -205,7 +278,7 @@ function listProcesses(targetBinary) {
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
         {
           encoding: "utf8",
-          env: { ...process.env, CCSM_E2E_SCAN_BINARY: targetBinary },
+          env: { ...process.env, CCSM_E2E_OWNERSHIP_ROOT: ownershipRoot },
         },
       ).trim();
       if (!output) return [];
@@ -217,10 +290,57 @@ function listProcesses(targetBinary) {
     });
     return output
       .split("\n")
-      .filter((line) => line.includes(targetBinary))
-      .map((line) => ({ command: line.trim() }));
+      .filter((line) => line.includes(ownershipRoot))
+      .map((line) => {
+        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+        return match
+          ? {
+              ProcessId: Number(match[1]),
+              ParentProcessId: Number(match[2]),
+              CommandLine: match[3],
+            }
+          : { CommandLine: line.trim() };
+      });
   } catch (error) {
     return [{ inspectionError: error.message }];
+  }
+}
+
+function terminateOwnedProcesses(processes) {
+  const processIds = processes
+    .map((entry) => Number(entry.ProcessId))
+    .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
+  if (processIds.length === 0) return;
+  if (process.platform === "win32") {
+    const script = [
+      "$ids = $env:CCSM_E2E_PROCESS_IDS -split ',' | ForEach-Object { [int]$_ }",
+      "foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }",
+    ].join("; ");
+    try {
+      execFileSync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        {
+          env: {
+            ...process.env,
+            CCSM_E2E_PROCESS_IDS: processIds.join(","),
+          },
+          stdio: "ignore",
+        },
+      );
+    } catch {}
+    return;
+  }
+  for (const pid of processIds) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000);
+  for (const pid of processIds) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
   }
 }
 
@@ -253,16 +373,27 @@ function writeManifest() {
     `${JSON.stringify(
       {
         runId,
+        runMode,
         commitSha,
         platform,
         architecture: process.arch,
         appVersion: packageJson.version,
         webviewVersion,
         workflowRunId: process.env.GITHUB_RUN_ID ?? null,
+        finalStatus:
+          exitCode === 0 && results.every((result) => result.state === "passed")
+            ? "passed"
+            : "failed",
+        cleanupStatus: {
+          clean: lingeringProcesses.length === 0,
+          graceful: observedBeforeTermination.length === 0,
+        },
         scenarios: results.map((result) => ({
+          scenarioId: result.scenarioId,
           fullTitle: result.fullTitle,
           state: result.state,
           durationMs: result.durationMs,
+          ...(result.failureStep ? { failureStep: result.failureStep } : {}),
         })),
         generatedAt: new Date().toISOString(),
         files,
@@ -277,9 +408,13 @@ function splitServiceLogs() {
   const logDirectory = join(artifactDirectory, "logs");
   const serviceLogs = readdirSync(logDirectory)
     .filter((name) => /^wdio-.*\.log$/.test(name))
+    .sort()
     .flatMap((name) =>
-      readFileSync(join(logDirectory, name), "utf8").split("\n"),
+      readFileSync(join(logDirectory, name), "utf8")
+        .replaceAll("\0", "")
+        .split("\n"),
     );
+  writeFileSync(join(logDirectory, "wdio.log"), `${serviceLogs.join("\n")}\n`);
   const backend = serviceLogs.filter((line) =>
     line.includes("[Tauri:Backend:"),
   );
@@ -288,6 +423,55 @@ function splitServiceLogs() {
   );
   writeFileSync(join(logDirectory, "backend.log"), `${backend.join("\n")}\n`);
   writeFileSync(join(logDirectory, "frontend.log"), `${frontend.join("\n")}\n`);
+}
+
+function sanitizeTextArtifacts() {
+  const findings = [];
+  const credentialPatterns = [
+    [
+      "github-token",
+      /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g,
+    ],
+    ["hook-token", /(CCSM_HOOK_TOKEN[\s=:"']+)[^\s,"']+/gi],
+    ["bearer-token", /(Authorization[\s=:"']+Bearer\s+)[^\s,"']+/gi],
+  ];
+  const replacements = [
+    [temporaryRoot, "<CCSM_E2E_TEMP>"],
+    [repositoryRoot, "<REPOSITORY_ROOT>"],
+    [sourceAppBinary, "<SOURCE_APP_BINARY>"],
+  ].sort((left, right) => right[0].length - left[0].length);
+  for (const path of walkFiles(artifactDirectory)) {
+    if (!/\.(?:json|jsonl|log|txt|xml)$/i.test(path)) continue;
+    let contents = readFileSync(path, "utf8").replaceAll("\0", "");
+    for (const [kind, pattern] of credentialPatterns) {
+      pattern.lastIndex = 0;
+      if (pattern.test(contents)) {
+        findings.push({
+          path: relative(artifactDirectory, path).replaceAll("\\", "/"),
+          kind,
+        });
+      }
+    }
+    for (const [value, replacement] of replacements) {
+      const variants = new Set([
+        value,
+        value.replaceAll("\\", "/"),
+        value.replaceAll("\\", "\\\\"),
+      ]);
+      for (const variant of variants) {
+        contents = contents.replaceAll(variant, replacement);
+      }
+    }
+    contents = contents
+      .replace(
+        /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g,
+        "<REDACTED_GITHUB_TOKEN>",
+      )
+      .replace(/(CCSM_HOOK_TOKEN[\s=:"']+)[^\s,"']+/gi, "$1<REDACTED>")
+      .replace(/(Authorization[\s=:"']+Bearer\s+)[^\s,"']+/gi, "$1<REDACTED>");
+    writeFileSync(path, contents);
+  }
+  return findings;
 }
 
 function detectWebviewVersion() {
@@ -326,6 +510,8 @@ function appendGitHubSummary() {
   const results = JSON.parse(readFileSync(resultPath, "utf8"));
   const lines = [
     `## Desktop E2E — ${platform}`,
+    "",
+    `Final gate: **${exitCode === 0 && results.every((result) => result.state === "passed") ? "passed" : "failed"}**`,
     "",
     `Artifact directory: \`${artifactDirectory}\``,
     "",

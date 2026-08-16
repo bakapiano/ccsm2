@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 function requiredEnvironment(name: string, hint?: string): string {
@@ -19,11 +19,42 @@ const logDirectory = join(artifactDirectory, "logs");
 mkdirSync(logDirectory, { recursive: true });
 
 interface ScenarioResult {
+  scenarioId: string;
   title: string;
   fullTitle: string;
   state: "passed" | "failed";
   durationMs: number;
+  failureStep?: string;
   error?: string;
+}
+
+const scenarioIds = new Map([
+  ["creates a Space and resumes Claude", "claude-resume"],
+  ["creates a Space and resumes Codex", "codex-resume"],
+  ["creates a Space and resumes GHCP", "ghcp-resume"],
+]);
+const scenarioTitles: Record<string, string> = {
+  claude: "creates a Space and resumes Claude",
+  codex: "creates a Space and resumes Codex",
+  ghcp: "creates a Space and resumes GHCP",
+};
+const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
+if (selectedScenario !== "all" && !scenarioTitles[selectedScenario]) {
+  throw new Error(
+    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp; received ${selectedScenario}`,
+  );
+}
+
+function failureContext(scenarioId: string): { failureStep?: string } {
+  const path = join(artifactDirectory, `${scenarioId}-failure-context.json`);
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as {
+      failureStep?: string;
+    };
+  } catch {
+    return {};
+  }
 }
 
 function readScenarioResults(): ScenarioResult[] {
@@ -87,6 +118,9 @@ export const config: WebdriverIO.Config = {
   mochaOpts: {
     ui: "bdd",
     timeout: 180_000,
+    ...(selectedScenario !== "all"
+      ? { grep: scenarioTitles[selectedScenario] }
+      : {}),
   },
   before: async () => {
     writeFileSync(
@@ -98,11 +132,15 @@ export const config: WebdriverIO.Config = {
   },
   afterTest: async (test, _context, result) => {
     const results = readScenarioResults();
+    const scenarioId = scenarioIds.get(test.title) ?? "unknown-scenario";
+    const context = result.error ? failureContext(scenarioId) : {};
     results.push({
+      scenarioId,
       title: test.title,
       fullTitle: `${test.parent} ${test.title}`.trim(),
       state: result.passed ? "passed" : "failed",
       durationMs: result.duration,
+      ...context,
       ...(result.error ? { error: result.error.message } : {}),
     });
     writeFileSync(

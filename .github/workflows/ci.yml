@@ -7,6 +7,26 @@ on:
       - main
   workflow_call:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Desktop platform jobs to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+      scenario:
+        description: Provider resume scenario to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - claude
+          - codex
+          - ghcp
 
 permissions:
   contents: read
@@ -18,6 +38,7 @@ concurrency:
 jobs:
   verify:
     name: Verify (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -101,14 +122,19 @@ jobs:
 
   desktop-e2e-windows:
     name: desktop-e2e-windows
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows'
     runs-on: windows-2022
     timeout-minutes: 90
     env:
       CCSM_E2E_ARTIFACT_DIR: ${{ github.workspace }}/test-results/desktop/windows
       CCSM_E2E_PLATFORM: windows
       CCSM_E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CCSM_E2E_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.scenario || 'all' }}
 
     steps:
+      - name: Initialize Windows E2E evidence
+        run: node -e "const fs=require('node:fs'),p=require('node:path'),d=process.env.CCSM_E2E_ARTIFACT_DIR;fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'workflow-state.json'),JSON.stringify({phase:'initialized',platform:'windows',createdAt:new Date().toISOString()},null,2)+'\n')"
+
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -154,8 +180,18 @@ jobs:
       - name: Build Windows E2E executable
         run: pnpm test:desktop:build
 
+      - name: Test E2E-only backend
+        run: cargo test --locked -p ccsm-desktop --features e2e e2e_provider
+
       - name: Run Windows Desktop E2E
+        timeout-minutes: 70
         run: pnpm test:desktop:ci
+
+      - name: Finalize Windows Desktop E2E evidence
+        if: always()
+        env:
+          CCSM_E2E_JOB_STATUS: ${{ job.status }}
+        run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
 
       - name: Upload Windows Desktop E2E evidence
         if: always()
@@ -169,14 +205,19 @@ jobs:
 
   desktop-e2e-linux:
     name: desktop-e2e-linux
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       CCSM_E2E_ARTIFACT_DIR: ${{ github.workspace }}/test-results/desktop/linux
       CCSM_E2E_PLATFORM: linux
       CCSM_E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CCSM_E2E_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.scenario || 'all' }}
 
     steps:
+      - name: Initialize Linux E2E evidence
+        run: node -e "const fs=require('node:fs'),p=require('node:path'),d=process.env.CCSM_E2E_ARTIFACT_DIR;fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'workflow-state.json'),JSON.stringify({phase:'initialized',platform:'linux',createdAt:new Date().toISOString()},null,2)+'\n')"
+
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -239,8 +280,18 @@ jobs:
       - name: Build Linux E2E executable
         run: pnpm test:desktop:build
 
+      - name: Test E2E-only backend
+        run: cargo test --locked -p ccsm-desktop --features e2e e2e_provider
+
       - name: Run Linux Desktop E2E
+        timeout-minutes: 70
         run: xvfb-run -a --server-args="-screen 0 1440x900x24" pnpm test:desktop:ci
+
+      - name: Finalize Linux Desktop E2E evidence
+        if: always()
+        env:
+          CCSM_E2E_JOB_STATUS: ${{ job.status }}
+        run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
 
       - name: Upload Linux Desktop E2E evidence
         if: always()

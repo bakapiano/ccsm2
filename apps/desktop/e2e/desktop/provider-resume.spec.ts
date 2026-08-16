@@ -50,26 +50,40 @@ describe("mocked provider resume", () => {
       const secondPrompt = `${provider}-prompt-two`;
       const secondResponse = `MOCK_${provider.toUpperCase()}_RESPONSE_TWO`;
       setModelResponse(provider, firstPrompt, firstResponse);
-      setModelResponse(provider, secondPrompt, secondResponse);
 
+      let primaryError: unknown;
+      let currentStep = "create-space";
       try {
         await createSpace(spaceName, spaceRoot);
         expect(await activeSpaceName()).toBe(spaceName);
         await evidence.checkpoint("space-created");
 
+        currentStep = "create-cli";
         await openProviderTab(provider);
+        const bindsOnFirstPrompt = provider !== "claude";
         const started = await waitForProvider(provider, (snapshot) =>
           Boolean(
             snapshot.runtimeId &&
               snapshot.inputEnabled &&
-              snapshot.bindingState === "bound" &&
-              snapshot.nativeSessionId &&
+              (bindsOnFirstPrompt
+                ? snapshot.bindingState === "pending" &&
+                  !snapshot.nativeSessionId
+                : snapshot.bindingState === "bound" &&
+                  snapshot.nativeSessionId) &&
               snapshot.text.includes("CCSM_E2E_READY>"),
           ),
         );
+        if (bindsOnFirstPrompt) {
+          expect(
+            readModelMockEvents(provider).filter(
+              (event) => event.event === "session-start",
+            ),
+          ).toHaveLength(0);
+        }
         const firstRuntimeId = started.runtimeId!;
         await evidence.checkpoint("cli-started");
 
+        currentStep = "first-prompt";
         await sendTerminalLine(provider, firstPrompt);
         const firstTurn = await waitForProvider(
           provider,
@@ -81,10 +95,12 @@ describe("mocked provider resume", () => {
         const nativeSessionId = firstTurn.nativeSessionId!;
         await evidence.checkpoint("first-model-response");
 
+        currentStep = "close-cli";
         await clickRuntimeAction(provider);
         await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
         await evidence.checkpoint("cli-closed");
 
+        currentStep = "resume-cli";
         await clickRuntimeAction(provider);
         const resumed = await waitForProvider(provider, (snapshot) =>
           Boolean(
@@ -102,6 +118,8 @@ describe("mocked provider resume", () => {
         assertResumeInvocation(provider, nativeSessionId);
         await evidence.checkpoint("cli-resumed");
 
+        currentStep = "resumed-prompt";
+        setModelResponse(provider, secondPrompt, secondResponse);
         await sendTerminalLine(provider, secondPrompt);
         const secondTurn = await waitForProvider(
           provider,
@@ -116,23 +134,66 @@ describe("mocked provider resume", () => {
         ]);
         await evidence.checkpoint("resumed-model-response");
 
+        currentStep = "final-stop";
         await clickRuntimeAction(provider);
         await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
         await evidence.checkpoint("cli-stopped");
+      } catch (error) {
+        primaryError = error;
+        writeFileSync(
+          join(artifactDirectory, `${scenarioId}-failure-context.json`),
+          `${JSON.stringify(
+            {
+              scenarioId,
+              failureStep: currentStep,
+              error: String(error),
+            },
+            null,
+            2,
+          )}\n`,
+        );
       } finally {
+        const supplementalErrors: unknown[] = [];
         try {
-          await evidence.checkpoint("final-state");
-        } catch (error) {
-          writeFileSync(
-            join(artifactDirectory, `${scenarioId}-final-screenshot-error.txt`),
-            `${String(error)}\n`,
+          await evidence.checkpoint(
+            primaryError ? `failed-${currentStep}` : "final-state",
           );
+        } catch (error) {
+          supplementalErrors.push(error);
+          writeDiagnostic(scenarioId, "final-screenshot", error);
         }
-        evidence.finalize();
+        try {
+          const snapshot = await terminalSnapshot(provider);
+          if (snapshot?.runtimeId) await clickRuntimeAction(provider);
+        } catch (error) {
+          supplementalErrors.push(error);
+          writeDiagnostic(scenarioId, "runtime-cleanup", error);
+        }
+        try {
+          evidence.finalize();
+        } catch (error) {
+          supplementalErrors.push(error);
+          writeDiagnostic(scenarioId, "gif-finalize", error);
+        }
+        if (!primaryError && supplementalErrors.length > 0) {
+          [primaryError] = supplementalErrors;
+        }
       }
+      if (primaryError) throw primaryError;
     });
   }
 });
+
+function writeDiagnostic(
+  scenarioId: string,
+  operation: string,
+  error: unknown,
+): void {
+  writeFileSync(
+    join(artifactDirectory, `${scenarioId}-${operation}-error.txt`),
+    `${String(error)}\n`,
+  );
+}
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -144,18 +205,9 @@ async function createSpace(name: string, root: string): Promise<void> {
   await $("#new-space").click();
   const picker = await $(".directory-dialog");
   await picker.waitForDisplayed();
-  await browser.execute((rootPath) => {
-    const input =
-      document.querySelector<HTMLInputElement>(".directory-address");
-    if (!input) throw new Error("directory address is missing");
-    input.value = rootPath;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    document
-      .querySelector<HTMLFormElement>(".directory-address-form")
-      ?.dispatchEvent(
-        new SubmitEvent("submit", { bubbles: true, cancelable: true }),
-      );
-  }, root);
+  const address = await $(".directory-address");
+  await address.setValue(root);
+  await browser.keys("Enter");
   const useFolder = await $(".directory-use");
   await browser.waitUntil(() => useFolder.isEnabled(), {
     timeout: 20_000,
@@ -240,68 +292,34 @@ async function sendTerminalLine(
   provider: Provider,
   input: string,
 ): Promise<void> {
-  const handled = await browser.execute(
-    (requestedProvider, text) => {
-      for (const element of document.querySelectorAll<HTMLElement>(
-        ".terminal-panel",
-      )) {
-        const snapshot = (
-          element as HTMLElement & {
-            __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
-          }
-        ).__CCSM_TERMINAL_DEBUG__?.();
-        if (snapshot?.provider !== requestedProvider || !snapshot.inputEnabled)
-          continue;
-        const host = element.querySelector<HTMLElement>(".terminal-host");
-        const textarea = element.querySelector<HTMLTextAreaElement>(
-          'textarea[aria-label="Terminal input"]',
-        );
-        if (!host || !textarea) return false;
-        textarea.focus();
-        const clipboard = new DataTransfer();
-        clipboard.setData("text/plain", text);
-        const pasteHandled = !host.dispatchEvent(
-          new ClipboardEvent("paste", {
-            bubbles: true,
-            cancelable: true,
-            clipboardData: clipboard,
-          }),
-        );
-        const enterHandled = !host.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: "Enter",
-            code: "Enter",
-            bubbles: true,
-            cancelable: true,
-          }),
-        );
-        return pasteHandled && enterHandled;
-      }
-      return false;
-    },
-    provider,
-    input,
-  );
-  expect(handled).toBe(true);
+  await waitForProvider(provider, (snapshot) => snapshot.inputEnabled);
+  const panel = await terminalPanel(provider);
+  const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
+  await terminalInput.waitForExist({ timeout: 20_000 });
+  await terminalInput.click();
+  await browser.keys(input);
+  await browser.keys("Enter");
 }
 
 async function clickRuntimeAction(provider: Provider): Promise<void> {
-  const clicked = await browser.execute((requestedProvider) => {
-    for (const element of document.querySelectorAll<HTMLElement>(
-      ".terminal-panel",
-    )) {
-      const snapshot = (
-        element as HTMLElement & {
-          __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
-        }
-      ).__CCSM_TERMINAL_DEBUG__?.();
-      if (snapshot?.provider !== requestedProvider) continue;
-      element.querySelector<HTMLButtonElement>(".terminal-action")?.click();
-      return true;
-    }
-    return false;
-  }, provider);
-  expect(clicked).toBe(true);
+  const before = await waitForProvider(provider, () => true);
+  const previousRuntimeId = before.runtimeId;
+  const panel = await terminalPanel(provider);
+  const action = await panel.$('[data-testid="terminal-runtime-action"]');
+  await action.waitForDisplayed({ timeout: 20_000 });
+  await action.waitForEnabled({ timeout: 20_000 });
+  await action.click();
+  await waitForProvider(provider, (snapshot) =>
+    previousRuntimeId
+      ? !snapshot.runtimeId
+      : Boolean(snapshot.runtimeId && snapshot.runtimeId !== previousRuntimeId),
+  );
+}
+
+async function terminalPanel(provider: Provider) {
+  const panel = await $(`.terminal-panel[data-provider="${provider}"]`);
+  await panel.waitForDisplayed({ timeout: 20_000 });
+  return panel;
 }
 
 function assertResumeInvocation(

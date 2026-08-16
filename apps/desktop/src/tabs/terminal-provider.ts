@@ -218,11 +218,11 @@ class TerminalPanel implements IContentRenderer {
     (this.element as TerminalDebugElement).__CCSM_TERMINAL_DEBUG__ = () =>
       this.#debugSnapshot();
     this.element.innerHTML = `
-      <div class="terminal-host" aria-label="Terminal"></div>
+      <div class="terminal-host" data-testid="terminal-input-surface" aria-label="Terminal"></div>
       <div class="terminal-panel-toolbar">
         <span class="terminal-status" data-state="starting">loading terminal</span>
         <span class="terminal-meta">—</span>
-        <button class="terminal-action" type="button">Stop</button>
+        <button class="terminal-action" data-testid="terminal-runtime-action" type="button">Stop</button>
       </div>
     `;
   }
@@ -450,6 +450,7 @@ class TerminalPanel implements IContentRenderer {
       const sessionId = this.#tab.resourceId;
       if (!sessionId) throw new Error("CLI Tab is missing resourceId");
       this.#session = await this.#client.backend.getCliSession(sessionId);
+      this.element.dataset.provider = this.#session.provider;
       const attemptedStart = await this.#maybeAutoStart();
       if (!attemptedStart && !this.#starting && !this.#runtimeId)
         this.#renderRuntimeStatus();

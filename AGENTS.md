@@ -42,6 +42,7 @@
 - Playwright CLI sessions own interactive exploration of an existing `pnpm dev` WebView. WDIO scenarios own repeatable assertions, regression coverage, and gate results.
 - Build a dedicated E2E executable with the Cargo `e2e` feature. The feature enables `tauri-plugin-wdio-webdriver` and `tauri-plugin-wdio`; normal dev and release builds use the default feature set.
 - Use `pnpm test:desktop:build` to build the current-platform E2E executable, `pnpm test:desktop` to run the suite, and `pnpm test:desktop:debug -- --spec <file>` to debug one scenario locally.
+- Set `CCSM_E2E_SCENARIO` to `claude`, `codex`, or `ghcp` to run one provider resume scenario. Desktop scenarios use visible WebDriver clicks and keyboard actions; internal snapshots provide diagnostics.
 - Give every run isolated data, cache, runtime, Space, Browser profile, and artifact directories. The runner records and cleans every process and native surface owned by the run.
 - GitHub Actions branch protection requires independent `desktop-e2e-windows` and `desktop-e2e-linux` checks. Each job runs checks, tests, the platform E2E build, and the shared Desktop Scenarios.
 - Each platform job uploads structured results, screenshots, logs, cleanup evidence, and scenario GIFs through the repository-pinned `actions/upload-artifact` release with `retention-days: 7`.

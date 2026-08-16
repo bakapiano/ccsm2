@@ -86,10 +86,18 @@ pub fn run_hook_reporter() -> i32 {
             .map_err(|error| BackendError::Platform(format!("send Hook report: {error}")))
     });
     let _ = std::io::stdout().write_all(b"{}\n");
+    let failed = result.is_err();
     if let Err(error) = result {
         eprintln!("ccsm hook report skipped: {error}");
     }
-    0
+    hook_reporter_exit_code(
+        failed,
+        std::env::var("CCSM_HOOK_REPORTER_STRICT").as_deref() == Ok("1"),
+    )
+}
+
+fn hook_reporter_exit_code(failed: bool, strict: bool) -> i32 {
+    i32::from(failed && strict)
 }
 
 fn collect_hook_report() -> BackendResult<HookReport> {
@@ -338,6 +346,13 @@ mod tests {
         .unwrap();
         assert_eq!(session_id, "copilot-session");
         assert_eq!(event, "Notification");
+    }
+
+    #[test]
+    fn strict_reporter_propagates_delivery_failures() {
+        assert_eq!(hook_reporter_exit_code(true, true), 1);
+        assert_eq!(hook_reporter_exit_code(false, true), 0);
+        assert_eq!(hook_reporter_exit_code(true, false), 0);
     }
 
     #[test]

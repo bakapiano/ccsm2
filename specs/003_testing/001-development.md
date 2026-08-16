@@ -124,11 +124,20 @@ Tauri composition root 在 `e2e` feature 下注册两个插件和对应 capabili
 pnpm test:desktop:build                 build current-platform E2E executable
 pnpm test:desktop                       run all current-platform Desktop Scenarios
 pnpm test:desktop -- --spec <file>      run one spec file
-pnpm test:desktop:debug -- --spec <file> run one spec with debug logging and breakpoints
-pnpm test:desktop:evidence -- --spec <file> run one spec and retain GIF evidence
+CCSM_E2E_SCENARIO=<provider> pnpm test:desktop run claude/codex/ghcp scenario
+pnpm test:desktop:debug -- --spec <file> run one spec with debug logging
+pnpm test:desktop:evidence -- --spec <file> run one spec in evidence mode
 ```
 
 CI 的 `pnpm test:desktop:ci` 调用同一 runner，并增加 CI reporter、固定 timeout 和 artifact 输出路径。
+
+PowerShell 运行单个 provider 场景：
+
+```powershell
+$env:CCSM_E2E_SCENARIO = "codex"
+pnpm test:desktop
+Remove-Item Env:CCSM_E2E_SCENARIO
+```
 
 ## 调试单个场景
 
@@ -150,17 +159,17 @@ build E2E executable once
 
 ## 隔离环境
 
-每次本地运行创建独立环境：
+每次本地运行在操作系统临时目录创建 ownership root：
 
 ```text
 test-results/desktop/<run_id>/
-.tmp/e2e/<run_id>/data/
-.tmp/e2e/<run_id>/cache/
-.tmp/e2e/<run_id>/runtime/
-.tmp/e2e/<run_id>/space/
+<os-temp>/ccsm-e2e-<platform>-*/bin/<e2e-executable>
+<os-temp>/ccsm-e2e-<platform>-*/app-data/
+<os-temp>/ccsm-e2e-<platform>-*/spaces/
+<os-temp>/ccsm-e2e-<platform>-*/model-mock.json
 ```
 
-运行器向应用传入 `CCSM_DATA_DIR`、fixture root 和 `run_id`，并记录、清理本次运行创建的进程、WebView、profile 和目录。
+运行器复制独立 executable，向应用传入 `CCSM_DATA_DIR`、fixture root 和 `run_id`，并按 ownership root 记录、清理本次运行创建的 app、shim、provider、watchdog、WebView、profile 和目录。
 
 同一 workspace 同时保留一个 Desktop E2E session，以避免 executable、display、profile 和端口竞争。调试结束后 runner 执行标准 teardown，并报告残留资源。
 
@@ -186,7 +195,7 @@ logs/
 process-cleanup.json
 ```
 
-普通调试运行默认保留失败证据；`test:desktop:evidence` 为选定场景保留完整 GIF。开发者在推送前打开 GIF，确认画面包含关键输入、状态变化和最终结果。
+每种运行模式都保留结构化结果、checkpoint 截图和完整 GIF。`test:desktop:evidence` 用于显式标记人工验收运行。开发者在推送前打开 GIF，确认画面包含关键输入、状态变化和最终结果。
 
 ## CI 失败复现
 

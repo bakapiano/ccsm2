@@ -59,30 +59,31 @@ pub fn run() -> i32 {
 fn run_inner() -> Result<(), String> {
     let provider = required_env("CCSM_PROVIDER")?;
     let cli_session_id = required_env("CCSM_SESSION_ID")?;
+    let arguments = env::args().skip(1).collect::<Vec<_>>();
     let resumed_session_id = env::var("CCSM_NATIVE_SESSION_ID")
         .ok()
         .filter(|value| !value.trim().is_empty());
     let resumed = resumed_session_id.is_some();
-    let native_session_id =
-        resumed_session_id.unwrap_or_else(|| format!("ccsm-e2e-{provider}-{cli_session_id}"));
-    let arguments = env::args().skip(1).collect::<Vec<_>>();
+    let mut native_session_id = if let Some(session_id) = resumed_session_id {
+        validate_resume_invocation(&provider, &arguments, &session_id)?;
+        Some(session_id)
+    } else if provider == "claude" {
+        Some(
+            argument_value(&arguments, "--session-id")
+                .ok_or_else(|| "Claude mock invocation has no --session-id".to_string())?,
+        )
+    } else {
+        None
+    };
 
-    report_hook(&native_session_id, "SessionStart")?;
-    append_event(ModelMockEvent {
-        timestamp_ms: timestamp_ms(),
-        event: "session-start",
-        provider: &provider,
-        cli_session_id: &cli_session_id,
-        native_session_id: &native_session_id,
-        resumed,
-        prompt: None,
-        response: None,
-        arguments: Some(&arguments),
-    })?;
+    if let Some(session_id) = native_session_id.as_deref() {
+        start_session(&provider, &cli_session_id, session_id, resumed, &arguments)?;
+    }
 
     println!(
-        "CCSM E2E {provider} mock {} session {native_session_id}",
-        if resumed { "resumed" } else { "started" }
+        "CCSM E2E {provider} mock {} session {}",
+        if resumed { "resumed" } else { "started" },
+        native_session_id.as_deref().unwrap_or("pending")
     );
     print!("CCSM_E2E_READY> ");
     io::stdout().flush().map_err(|error| error.to_string())?;
@@ -96,27 +97,92 @@ fn run_inner() -> Result<(), String> {
             continue;
         }
 
-        report_hook(&native_session_id, "UserPromptSubmit")?;
+        if native_session_id.is_none() {
+            let session_id = format!("ccsm-e2e-{provider}-{cli_session_id}");
+            start_session(&provider, &cli_session_id, &session_id, false, &arguments)?;
+            native_session_id = Some(session_id);
+        }
+        let session_id = native_session_id
+            .as_deref()
+            .ok_or_else(|| "model mock session binding is unavailable".to_string())?;
+        report_hook(session_id, "UserPromptSubmit")?;
         let response = model_response(&provider, &prompt)?;
         append_event(ModelMockEvent {
             timestamp_ms: timestamp_ms(),
             event: "model-response",
             provider: &provider,
             cli_session_id: &cli_session_id,
-            native_session_id: &native_session_id,
+            native_session_id: session_id,
             resumed,
             prompt: Some(&prompt),
             response: Some(&response),
             arguments: None,
         })?;
         println!("\r\n{response}");
-        report_hook(&native_session_id, "Stop")?;
+        report_hook(session_id, "Stop")?;
         print!("CCSM_E2E_READY> ");
         io::stdout().flush().map_err(|error| error.to_string())?;
     }
 
-    let _ = report_hook(&native_session_id, "SessionEnd");
+    if let Some(session_id) = native_session_id.as_deref() {
+        let _ = report_hook(session_id, "SessionEnd");
+    }
     Ok(())
+}
+
+fn start_session(
+    provider: &str,
+    cli_session_id: &str,
+    native_session_id: &str,
+    resumed: bool,
+    arguments: &[String],
+) -> Result<(), String> {
+    report_hook(native_session_id, "SessionStart")?;
+    append_event(ModelMockEvent {
+        timestamp_ms: timestamp_ms(),
+        event: "session-start",
+        provider,
+        cli_session_id,
+        native_session_id,
+        resumed,
+        prompt: None,
+        response: None,
+        arguments: Some(arguments),
+    })
+}
+
+fn argument_value(arguments: &[String], name: &str) -> Option<String> {
+    arguments.iter().enumerate().find_map(|(index, argument)| {
+        if argument == name {
+            arguments.get(index + 1).cloned()
+        } else {
+            argument
+                .strip_prefix(&format!("{name}="))
+                .map(str::to_string)
+        }
+    })
+}
+
+fn validate_resume_invocation(
+    provider: &str,
+    arguments: &[String],
+    native_session_id: &str,
+) -> Result<(), String> {
+    let matches = match provider {
+        "claude" => argument_value(arguments, "--resume").as_deref() == Some(native_session_id),
+        "codex" => arguments
+            .windows(2)
+            .any(|pair| pair[0] == "resume" && pair[1] == native_session_id),
+        "copilot" => argument_value(arguments, "--resume").as_deref() == Some(native_session_id),
+        _ => false,
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(format!(
+            "{provider} resume invocation does not contain native session {native_session_id}"
+        ))
+    }
 }
 
 fn required_env(name: &str) -> Result<String, String> {
@@ -240,5 +306,38 @@ mod tests {
     #[test]
     fn prompt_normalization_removes_bracketed_paste_markers() {
         assert_eq!(normalize_prompt("\u{1b}[200~ hello \u{1b}[201~\r"), "hello");
+    }
+
+    #[test]
+    fn extracts_split_and_joined_argument_values() {
+        assert_eq!(
+            argument_value(&["--session-id".into(), "native-1".into()], "--session-id").as_deref(),
+            Some("native-1")
+        );
+        assert_eq!(
+            argument_value(&["--resume=native-2".into()], "--resume").as_deref(),
+            Some("native-2")
+        );
+    }
+
+    #[test]
+    fn validates_each_provider_resume_shape() {
+        assert!(
+            validate_resume_invocation(
+                "claude",
+                &["--resume".into(), "native-1".into()],
+                "native-1"
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_resume_invocation("codex", &["resume".into(), "native-1".into()], "native-1")
+                .is_ok()
+        );
+        assert!(
+            validate_resume_invocation("copilot", &["--resume=native-1".into()], "native-1")
+                .is_ok()
+        );
+        assert!(validate_resume_invocation("codex", &[], "native-1").is_err());
     }
 }
