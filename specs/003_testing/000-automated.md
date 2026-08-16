@@ -24,15 +24,15 @@ Pull Request / main push
         │       └── formatting + contracts + check + unit/integration tests
         │
         ├── desktop-e2e-windows ── windows-2022
-        │       ├── build Windows E2E executable
         │       ├── test E2E-only backend
+        │       ├── build Windows E2E executable
         │       ├── WDIO desktop scenarios
         │       ├── acceptance GIF + result files
         │       └── upload Actions Artifact (7 days)
         │
         └── desktop-e2e-linux ──── ubuntu-24.04 + virtual display
-                ├── build Linux E2E executable
                 ├── test E2E-only backend
+                ├── build Linux E2E executable
                 ├── WDIO desktop scenarios
                 ├── acceptance GIF + result files
                 └── upload Actions Artifact (7 days)
@@ -53,15 +53,15 @@ Verify matrix 与两个 Desktop E2E jobs 并行执行。Verify matrix 负责静�
 initialize failure evidence
 → checkout
 → install pinned toolchains and locked dependencies
-→ pnpm test:desktop:build
 → test E2E-only backend
+→ pnpm test:desktop:build
 → pnpm test:desktop:ci
 → finalize acceptance evidence
 → upload artifact
 → report job status
 ```
 
-`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
+`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。E2E-only Cargo tests 先执行，平台 build 最后写入带 Tauri E2E config overlay 的 executable。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
 
 job 开始时创建最小 `workflow-state.json`。测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。finalizer 将 workflow 状态、display cleanup 和 runner 结果汇总为一个最终结论；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
 

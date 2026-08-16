@@ -171,11 +171,11 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows E2E executable
-        run: pnpm test:desktop:build
-
       - name: Test E2E-only backend
         run: cargo test --locked -p ccsm-desktop --features e2e e2e_provider
+
+      - name: Build Windows E2E executable
+        run: pnpm test:desktop:build
 
       - name: Run Windows Desktop E2E
         timeout-minutes: 70
@@ -265,11 +265,11 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Linux E2E executable
-        run: pnpm test:desktop:build
-
       - name: Test E2E-only backend
         run: cargo test --locked -p ccsm-desktop --features e2e e2e_provider
+
+      - name: Build Linux E2E executable
+        run: pnpm test:desktop:build
 
       - name: Run Linux Desktop E2E
         timeout-minutes: 70
