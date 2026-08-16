@@ -12,9 +12,10 @@
     "mutexState": "0x03 (LOCKED | PARKED)",
     "outerPeekReturnRva": "0x2b9271",
     "reentrantLockReturnRva": "0x2b9cfd",
+    "outerMessage": "WM_KEYUP (0x0101)",
     "reentrantMessage": "WM_KILLFOCUS (0x0008)",
     "sequence": [
-      "keyboard callback locks KEY_EVENT_BUILDERS",
+      "WM_KEYUP callback locks KEY_EVENT_BUILDERS",
       "PeekMessageW dispatches a synchronous callback while the lock is held",
       "the same UI thread reenters for WM_KILLFOCUS",
       "the reentrant callback parks while reacquiring KEY_EVENT_BUILDERS"
@@ -22,7 +23,17 @@
     "upstreamFix": {
       "commit": "c704261c519c58cfdd0bc2d58ba24e06a0b71c92",
       "url": "https://github.com/tauri-apps/tao/commit/c704261c519c58cfdd0bc2d58ba24e06a0b71c92",
-      "subject": "fix(windows): avoid reentrant input lock deadlocks (#1215)"
+      "subject": "fix(windows): avoid reentrant input lock deadlocks (#1215)",
+      "baseTag": {
+        "name": "tao-v0.35.3",
+        "commit": "5a14e624c81b7a799728129417e9218be25f17d9"
+      },
+      "additionalAncestor": {
+        "commit": "47d38f369f7fb6778df90744faa39d25ab0e3bcc",
+        "subject": "Fix(linux): JIS key mapping (#1228)",
+        "behavioralDelta": "four additive raw_key_to_key mappings in a six-line source diff",
+        "validation": "the locked Ubuntu workspace CI passed with this exact revision"
+      }
     }
   },
   "productionFreeze": {
@@ -49,37 +60,58 @@
       }
     ]
   },
-  "controlledBeta3Reproduction": {
+  "beta3HarnessVerification": {
     "passed": false,
+    "startedAt": "2026-08-16T09:36:32.6970078+08:00",
+    "completedAt": "2026-08-16T09:36:48.9292317+08:00",
     "productVersion": "0.1.0-beta.3",
     "executableSha256": "3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781",
     "secondsPerRound": 15,
     "requestedRounds": 1,
+    "acceptance": {
+      "minimumPostedKeyboardMessagesPerRound": 100,
+      "minimumCompletedFocusMessagesPerRound": 10,
+      "maximumFocusFailureStreakMs": 1000
+    },
     "before": {
-      "workingSetBytes": 32649216,
-      "privateBytes": 7544832,
-      "handles": 350,
-      "threads": 36
+      "workingSetBytes": 35188736,
+      "privateBytes": 7860224,
+      "handles": 408,
+      "threads": 41
     },
     "rounds": [
       {
         "round": 1,
-        "durationMs": 15013,
+        "durationMs": 15008,
+        "keyboardPostAttempts": 3051310,
         "postedKeyboardMessages": 10000,
+        "keyboardPostFailures": 3041310,
+        "lastKeyboardPostError": 1816,
         "completedFocusMessages": 0,
-        "focusMessageTimeouts": 593757,
+        "failedFocusMessages": 317502,
+        "focusMessageTimeouts": 81,
+        "focusHungAborts": 317421,
+        "otherFocusSendFailures": 0,
+        "lastFocusSendError": 0,
+        "longestFocusFailureStreakMs": 15009,
         "windowProbeResponsive": false,
+        "windowProbeError": 0,
+        "windowHung": true,
         "processResponding": false,
-        "workingSetBytes": 32837632,
-        "privateBytes": 7516160,
-        "handles": 360,
-        "threads": 35
+        "workingSetBytes": 35192832,
+        "privateBytes": 7823360,
+        "handles": 416,
+        "threads": 40
       }
-    ],
-    "hostDump": {
-      "bytes": 125984564,
-      "sha256": "6d2a3025681f5a71bfd5789fee736588b70e3f14fc93ee8494ac78d6c4fbe32e"
-    },
+    ]
+  },
+  "controlledBeta3Dump": {
+    "kind": "host full memory from an earlier isolated harness freeze of the same binary",
+    "bytes": 125984564,
+    "sha256": "6d2a3025681f5a71bfd5789fee736588b70e3f14fc93ee8494ac78d6c4fbe32e",
+    "reentrantLockReturnRva": "0x2b9cfd",
+    "outerKeyboardReturnRva": "0x2b9361",
+    "stackMatchesProduction": true,
     "rendererFrameProbe": {
       "observationMs": 900,
       "requestAnimationFrameDeltaMs": 937.4,
@@ -88,63 +120,119 @@
   },
   "fixedReleaseVerification": {
     "passed": true,
+    "startedAt": "2026-08-16T09:41:53.3452311+08:00",
+    "completedAt": "2026-08-16T09:42:41.2964784+08:00",
     "productVersion": "0.1.0-beta.5",
-    "executableSha256": "a3eb368584dca22721cf8d2a0ea4dee06f5bfbc3b2acfed2419b58f67b664b0e",
+    "executableSha256": "31494cf7f9ec3a4175de3af22bd77d8cc95d2aa635f5e6259612c0dd626802eb",
+    "executableBytes": 5997568,
     "secondsPerRound": 15,
     "requestedRounds": 3,
+    "acceptance": {
+      "minimumPostedKeyboardMessagesPerRound": 100,
+      "minimumCompletedFocusMessagesPerRound": 10,
+      "maximumFocusFailureStreakMs": 1000
+    },
     "before": {
-      "workingSetBytes": 30588928,
-      "privateBytes": 7389184,
-      "handles": 361,
-      "threads": 37
+      "workingSetBytes": 32817152,
+      "privateBytes": 7843840,
+      "handles": 408,
+      "threads": 41
     },
     "rounds": [
       {
         "round": 1,
-        "durationMs": 15007,
-        "postedKeyboardMessages": 38652,
-        "completedFocusMessages": 54130,
+        "durationMs": 15011,
+        "keyboardPostAttempts": 666672,
+        "postedKeyboardMessages": 40712,
+        "keyboardPostFailures": 625960,
+        "lastKeyboardPostError": 1816,
+        "completedFocusMessages": 59750,
+        "failedFocusMessages": 0,
         "focusMessageTimeouts": 0,
+        "focusHungAborts": 0,
+        "otherFocusSendFailures": 0,
+        "lastFocusSendError": 0,
+        "longestFocusFailureStreakMs": 0,
         "windowProbeResponsive": true,
+        "windowProbeError": 0,
+        "windowHung": false,
         "processResponding": true,
-        "workingSetBytes": 36384768,
-        "privateBytes": 13197312,
-        "handles": 379,
+        "workingSetBytes": 38785024,
+        "privateBytes": 19185664,
+        "handles": 417,
         "threads": 40
       },
       {
         "round": 2,
-        "durationMs": 15002,
-        "postedKeyboardMessages": 27987,
-        "completedFocusMessages": 54304,
+        "durationMs": 15012,
+        "keyboardPostAttempts": 684322,
+        "postedKeyboardMessages": 31792,
+        "keyboardPostFailures": 652530,
+        "lastKeyboardPostError": 1816,
+        "completedFocusMessages": 60917,
+        "failedFocusMessages": 0,
         "focusMessageTimeouts": 0,
+        "focusHungAborts": 0,
+        "otherFocusSendFailures": 0,
+        "lastFocusSendError": 0,
+        "longestFocusFailureStreakMs": 0,
         "windowProbeResponsive": true,
+        "windowProbeError": 0,
+        "windowHung": false,
         "processResponding": true,
-        "workingSetBytes": 41439232,
-        "privateBytes": 19050496,
-        "handles": 378,
+        "workingSetBytes": 44388352,
+        "privateBytes": 19275776,
+        "handles": 417,
         "threads": 40
       },
       {
         "round": 3,
-        "durationMs": 15015,
-        "postedKeyboardMessages": 28178,
-        "completedFocusMessages": 54884,
+        "durationMs": 15004,
+        "keyboardPostAttempts": 692220,
+        "postedKeyboardMessages": 31212,
+        "keyboardPostFailures": 661008,
+        "lastKeyboardPostError": 1816,
+        "completedFocusMessages": 61348,
+        "failedFocusMessages": 0,
         "focusMessageTimeouts": 0,
+        "focusHungAborts": 0,
+        "otherFocusSendFailures": 0,
+        "lastFocusSendError": 0,
+        "longestFocusFailureStreakMs": 0,
         "windowProbeResponsive": true,
+        "windowProbeError": 0,
+        "windowHung": false,
         "processResponding": true,
-        "workingSetBytes": 46415872,
-        "privateBytes": 30605312,
-        "handles": 378,
+        "workingSetBytes": 49963008,
+        "privateBytes": 30830592,
+        "handles": 417,
         "threads": 40
       }
     ],
     "totals": {
-      "durationMs": 45024,
-      "postedKeyboardMessages": 94817,
-      "completedFocusMessages": 163318,
-      "focusMessageTimeouts": 0
+      "durationMs": 45027,
+      "keyboardPostAttempts": 2043214,
+      "postedKeyboardMessages": 103716,
+      "keyboardPostFailures": 1939498,
+      "completedFocusMessages": 182015,
+      "failedFocusMessages": 0,
+      "focusMessageTimeouts": 0,
+      "focusHungAborts": 0
+    },
+    "cleanup": {
+      "ownedDataDirectoryRemoved": true,
+      "hostOrWebViewProcessesRemaining": 0
     }
+  },
+  "windowsHookRegression": {
+    "test": "hook::tests::endpoint_delivers_report_closed_before_connect_wait",
+    "forcedOrder": [
+      "CreateNamedPipeW",
+      "client connects, writes the complete report, and closes",
+      "ConnectNamedPipe"
+    ],
+    "connectResult": "ERROR_NO_DATA (232)",
+    "completePayloadDeliveredToSink": true
   },
   "rawDumps": {
     "storage": "local diagnostic storage",

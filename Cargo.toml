@@ -33,4 +33,6 @@ strip = true
 [patch.crates-io]
 # Backport tauri-apps/tao#1215 while Tauri 2.11 requires the 0.35 line.
 # The fix moves PeekMessageW outside non-reentrant input-state locks on Windows.
+# This upstream revision also contains 47d38f3, an additive four-key Linux JIS
+# mapping fix; both source deltas and the locked Ubuntu build are reviewed.
 tao = { git = "https://github.com/tauri-apps/tao", rev = "c704261c519c58cfdd0bc2d58ba24e06a0b71c92" }
