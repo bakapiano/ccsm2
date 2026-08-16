@@ -24,6 +24,11 @@ describe("application shell layout", () => {
     expect(cssRule(".sidebar-resizer")).toContain("bottom: 22px");
   });
 
+  test("aligns the Spaces and Agents heading text", () => {
+    expect(cssRule(".sidebar-toolbar")).toContain("padding: 2px 8px");
+    expect(cssRule(".agents-header")).toContain("padding: 0 8px");
+  });
+
   test("keeps a native resize hit target above the frameless titlebar", () => {
     expect(html).toContain('id="window-resize-north"');
     expect(cssRule(".window-resize-handle")).toContain("z-index: 10000");
@@ -32,13 +37,13 @@ describe("application shell layout", () => {
     expect(cssRule(".window-resize-north")).toContain("cursor: n-resize");
   });
 
-  test("expands the Dockview sash hit target without changing its layout", () => {
+  test("keeps the Dockview sash hit target clear of terminal scrollbars", () => {
     const hitTarget = cssRule(
       "#dockview .dv-sash-container > .dv-sash::before",
     );
     expect(hitTarget).toContain('content: ""');
     expect(hitTarget).toContain("position: absolute");
-    expect(hitTarget).toContain("inset: -6px");
+    expect(hitTarget).toContain("inset: -1px");
     expect(hitTarget).toContain("pointer-events: auto");
   });
 });

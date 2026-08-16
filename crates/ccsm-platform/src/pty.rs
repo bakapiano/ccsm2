@@ -24,6 +24,23 @@ use crate::containment::ProcessContainment;
 const RUNTIME_SHIM_ROOT_PREFIX: &str = "ccsm-runtime-shims-";
 const PTY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const PTY_JOIN_POLL_INTERVAL: Duration = Duration::from_millis(5);
+const PROVIDER_RUNTIME_ENVIRONMENT: [&str; 9] = [
+    "CCSM_WRAPPER_ACTIVE",
+    "CCSM_PROVIDER",
+    "CCSM_SESSION_ID",
+    "CCSM_RUNTIME_ID",
+    "CCSM_HOOK_PIPE",
+    "CCSM_HOOK_TOKEN",
+    "CCSM_HOOK_REPORTER",
+    "CCSM_NATIVE_SESSION_ID",
+    "CCSM_COPILOT_PLUGIN_DIR",
+];
+
+fn clear_inherited_provider_runtime_environment(command: &mut CommandBuilder) {
+    for name in PROVIDER_RUNTIME_ENVIRONMENT {
+        command.env_remove(name);
+    }
+}
 
 pub fn cleanup_stale_runtime_shim_roots(parent: &Path) {
     let Ok(entries) = std::fs::read_dir(parent) else {
@@ -306,6 +323,7 @@ impl PtyBackend for PortablePtyBackend {
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
         if let Some(runtime_shim) = runtime_shim.as_ref() {
+            clear_inherited_provider_runtime_environment(&mut command);
             let current_path = env::var_os("PATH").unwrap_or_default();
             let mut paths = vec![runtime_shim.directory.clone()];
             paths.extend(env::split_paths(&current_path));
@@ -850,6 +868,20 @@ fn default_shell() -> (PathBuf, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_runtime_clears_an_outer_ccsm_wrapper_context() {
+        let mut command = CommandBuilder::new("provider-fixture");
+        for name in PROVIDER_RUNTIME_ENVIRONMENT {
+            command.env(name, "outer-runtime");
+        }
+
+        clear_inherited_provider_runtime_environment(&mut command);
+
+        for name in PROVIDER_RUNTIME_ENVIRONMENT {
+            assert_eq!(command.get_env(name), None, "inherited {name}");
+        }
+    }
 
     #[test]
     fn thread_join_returns_at_the_shared_shutdown_deadline() {

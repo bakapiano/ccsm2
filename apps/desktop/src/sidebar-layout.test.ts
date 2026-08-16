@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 import {
   DEFAULT_AGENTS_HEIGHT,
@@ -8,10 +9,15 @@ import {
   MAX_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
   normalizeAgentsHeight,
+  normalizeAgentsPreferredHeight,
   normalizeSidebarWidth,
   resizeAgentsHeight,
   resizeSidebarWidth,
+  SidebarLayoutController,
 } from "./sidebar-layout";
+
+beforeAll(() => GlobalRegistrator.register());
+afterAll(() => GlobalRegistrator.unregister());
 
 describe("resizable sidebar", () => {
   test("restores a bounded width from storage", () => {
@@ -30,9 +36,104 @@ describe("resizable sidebar", () => {
   test("resizes Agents while preserving a usable Space tree", () => {
     expect(maxAgentsHeight(900)).toBe(767);
     expect(normalizeAgentsHeight(null, 900)).toBe(DEFAULT_AGENTS_HEIGHT);
+    expect(normalizeAgentsPreferredHeight("420")).toBe(420);
+    expect(normalizeAgentsPreferredHeight(20)).toBe(MIN_AGENTS_HEIGHT);
     expect(normalizeAgentsHeight(20, 900)).toBe(MIN_AGENTS_HEIGHT);
     expect(normalizeAgentsHeight(2_000, 900)).toBe(767);
     expect(resizeAgentsHeight(280, -40, 900)).toBe(320);
     expect(resizeAgentsHeight(280, 500, 900)).toBe(MIN_AGENTS_HEIGHT);
   });
+
+  test("restores the preferred Agents height after a temporary window shrink", () => {
+    const storage = createMemoryStorage({
+      "ccsm.sidebar.width": "318",
+      "ccsm.sidebar.agentsHeight": "420",
+    });
+    const height = { value: 900 };
+    const { root } = createController(storage, height);
+
+    expect(root.style.getPropertyValue("--sidebar-width")).toBe("318px");
+    expect(root.style.getPropertyValue("--agents-height")).toBe("420px");
+
+    height.value = 400;
+    window.dispatchEvent(new Event("resize"));
+    expect(root.style.getPropertyValue("--agents-height")).toBe("267px");
+
+    height.value = 900;
+    window.dispatchEvent(new Event("resize"));
+    expect(root.style.getPropertyValue("--agents-height")).toBe("420px");
+  });
+
+  test("caches both drag sizes before pointer release", () => {
+    const storage = createMemoryStorage();
+    const height = { value: 900 };
+    const { sidebarResizer, agentsResizer } = createController(storage, height);
+
+    sidebarResizer.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 232,
+        pointerId: 1,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { clientX: 312, pointerId: 1 }),
+    );
+    expect(storage.values.get("ccsm.sidebar.width")).toBe("312");
+    window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+
+    agentsResizer.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientY: 500,
+        pointerId: 2,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { clientY: 450, pointerId: 2 }),
+    );
+    expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("330");
+    window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 2 }));
+  });
 });
+
+function createMemoryStorage(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    values,
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  };
+}
+
+function createController(
+  storage: ReturnType<typeof createMemoryStorage>,
+  height: { value: number },
+) {
+  const root = document.createElement("div");
+  root.innerHTML = `
+    <div id="agents-resizer"></div>
+    <div id="sidebar-resizer"></div>
+  `;
+  Object.defineProperty(root, "getBoundingClientRect", {
+    value: () => ({
+      bottom: height.value,
+      height: height.value,
+      left: 0,
+      right: 900,
+      top: 0,
+      width: 900,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }),
+  });
+  const sidebarResizer = root.querySelector<HTMLElement>("#sidebar-resizer")!;
+  const agentsResizer = root.querySelector<HTMLElement>("#agents-resizer")!;
+  sidebarResizer.setPointerCapture = () => {};
+  agentsResizer.setPointerCapture = () => {};
+  new SidebarLayoutController(root, storage);
+  return { root, sidebarResizer, agentsResizer };
+}

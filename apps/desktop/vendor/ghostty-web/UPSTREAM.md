@@ -32,5 +32,7 @@ Local changes:
   encoder, preserve modified Enter, and honor DEC Alt escape-prefix mode.
 - narrow nullable selection endpoints before destructuring so the vendored
   source passes the production TypeScript strict check without changing runtime behavior.
+- reconstruct soft-wrapped logical lines for plain-text URL detection and map
+  multi-row matches back to their terminal buffer cells.
 
 The checked-in WASM binary is the matching npm `ghostty-web@0.4.0` artifact.
