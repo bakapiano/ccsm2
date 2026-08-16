@@ -11,7 +11,7 @@ const fileExplorerProvider = await Bun.file(
 describe("Changes diff layout", () => {
   test("keeps the diff and file navigation in a bounded split", () => {
     expect(cssRule(".git-panel")).toContain(
-      "grid-template-rows: 36px 30px minmax(0, 1fr)",
+      "grid-template-rows: var(--toolbar-height) minmax(0, 1fr)",
     );
     expect(cssRule(".git-changes-layout")).toContain(
       "grid-template-columns: minmax(260px, 1fr) clamp(180px, 28%, 220px)",
@@ -31,6 +31,12 @@ describe("Changes diff layout", () => {
       "contain: layout style paint",
     );
     expect(cssRule(".git-diff-spacer")).toContain("contain: strict");
+    expect(cssRule(".git-toolbar")).toContain(
+      "grid-template-columns: auto auto minmax(0, 1fr) minmax(110px, 210px) var(--control-height)",
+    );
+    expect(cssRule(".git-navigation")).toContain(
+      "grid-template-rows: minmax(0, 1fr)",
+    );
   });
 
   test("shares file resource icons and keeps Git status lightweight", () => {
@@ -71,5 +77,6 @@ function cssRule(selector: string): string {
     .map((match) => match[1] ?? "")
     .join(" ")
     .replace(/\s+/g, " ")
+    .replace(/var\(\s+(--[^ )]+)\s+\)/g, "var($1)")
     .trim();
 }

@@ -15,6 +15,7 @@ import { affectedLoadedDirectories } from "../scan-routing";
 import { listWindow } from "../list-window";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
+import { uiIcon } from "../ui-icons";
 import type { TabProvider } from "./registry";
 
 interface FileExplorerState {
@@ -99,19 +100,23 @@ class FileExplorerPanel implements IContentRenderer {
       },
     );
     this.element.className = "file-explorer-panel";
+    this.element.dataset.busy = "true";
     this.element.innerHTML = `
-      <div class="files-toolbar">
+      <div class="files-toolbar panel-toolbar">
         <strong>Explorer</strong>
-        <span class="files-status">Loading…</span>
-        <button class="files-refresh" type="button" aria-label="Refresh Explorer" title="Refresh Explorer">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M13 3v4H9"></path>
-            <path d="M12.2 10.5A5 5 0 1 1 12 5"></path>
-          </svg>
+        <span class="files-location"></span>
+        <span class="files-status panel-status">Loading…</span>
+        <button class="files-refresh control-button control-button-icon" type="button" aria-label="Refresh Explorer" title="Refresh Explorer">
+          ${uiIcon("refresh")}
         </button>
       </div>
       <div class="files-tree" role="tree" aria-label="Files Explorer" tabindex="0"></div>
     `;
+    const location = this.element.querySelector<HTMLElement>(".files-location");
+    if (location) {
+      location.textContent = this.#state.rootRelativePath || "Workspace";
+      location.title = this.#state.rootRelativePath || "Workspace root";
+    }
   }
 
   init(_parameters: GroupPanelPartInitParameters): void {
@@ -518,8 +523,15 @@ class FileExplorerPanel implements IContentRenderer {
   }
 
   #setStatus(value: string): void {
-    if (this.#status && this.#status.textContent !== value)
+    const busy = /^(Loading|Refreshing)/.test(value);
+    this.element.dataset.busy = String(busy);
+    const refresh =
+      this.element.querySelector<HTMLButtonElement>(".files-refresh");
+    refresh?.setAttribute("aria-busy", String(busy));
+    if (this.#status && this.#status.textContent !== value) {
       this.#status.textContent = value;
+      this.#status.title = value;
+    }
   }
 }
 

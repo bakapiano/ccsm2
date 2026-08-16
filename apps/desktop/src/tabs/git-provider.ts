@@ -27,6 +27,7 @@ import { observePanelVisibility } from "../panel-visibility";
 import { gitChangeNeedsScan } from "../scan-routing";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
+import { uiIcon } from "../ui-icons";
 import type { TabProvider } from "./registry";
 
 interface GitTabState {
@@ -136,23 +137,23 @@ class GitPanel implements IContentRenderer {
     this.element.dataset.refreshRevision = "0";
     this.element.dataset.scanState = "idle";
     this.element.innerHTML = `
-      <div class="git-toolbar">
+      <div class="git-toolbar panel-toolbar">
         <strong>Changes</strong>
-        <span class="git-status">loading cache</span>
-        <button class="git-refresh" type="button" aria-label="Refresh changes" title="Refresh changes">↻</button>
-      </div>
-      <div class="git-summary">
-        <strong>Uncommitted</strong>
-        <span class="git-summary-count">0</span>
+        <span class="git-summary-count" aria-label="0 uncommitted changes" title="Uncommitted changes">0</span>
+        <span class="git-status panel-status">loading cache</span>
+        <label class="git-filter">
+          ${uiIcon("find")}
+          <input type="search" aria-label="Filter changed files" placeholder="Filter files…" autocomplete="off" spellcheck="false" />
+        </label>
+        <button class="git-refresh control-button control-button-icon" type="button" aria-label="Refresh changes" title="Refresh changes">
+          ${uiIcon("refresh")}
+        </button>
       </div>
       <div class="git-changes-layout">
         <div class="git-diff-pane" tabindex="0" aria-label="File changes">
           <div class="git-diff-list"></div>
         </div>
         <aside class="git-navigation" aria-label="Changed files">
-          <label class="git-filter">
-            <input type="search" aria-label="Filter changed files" placeholder="Filter files…" autocomplete="off" spellcheck="false" />
-          </label>
           <div class="git-navigation-list"></div>
         </aside>
       </div>
@@ -269,6 +270,9 @@ class GitPanel implements IContentRenderer {
   async #refresh(manual: boolean): Promise<void> {
     if (manual) this.#setStatus("scanning");
     this.element.dataset.scanState = "scanning";
+    this.element
+      .querySelector(".git-refresh")
+      ?.setAttribute("aria-busy", "true");
     try {
       const snapshot = await this.#client.backend.refreshGit({
         spaceId: this.#tab.spaceId,
@@ -284,6 +288,9 @@ class GitPanel implements IContentRenderer {
       );
     } finally {
       this.element.dataset.scanState = "idle";
+      this.element
+        .querySelector(".git-refresh")
+        ?.setAttribute("aria-busy", "false");
     }
   }
 
@@ -318,8 +325,13 @@ class GitPanel implements IContentRenderer {
       (total, repository) => total + repository.files.length,
       0,
     );
-    if (this.#summaryCount)
+    if (this.#summaryCount) {
       this.#summaryCount.textContent = String(totalChanges);
+      this.#summaryCount.setAttribute(
+        "aria-label",
+        `${totalChanges} uncommitted ${totalChanges === 1 ? "change" : "changes"}`,
+      );
+    }
     diffList.dataset.totalFiles = String(totalChanges);
 
     if (repositories.length === 0) {
@@ -728,8 +740,10 @@ class GitPanel implements IContentRenderer {
   }
 
   #setStatus(value: string): void {
-    if (this.#status && this.#status.textContent !== value)
+    if (this.#status && this.#status.textContent !== value) {
       this.#status.textContent = value;
+      this.#status.title = value;
+    }
   }
 }
 

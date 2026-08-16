@@ -48,6 +48,7 @@ import {
 } from "../terminal-links";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
+import { uiIcon } from "../ui-icons";
 import {
   FitAddon,
   Ghostty,
@@ -222,7 +223,10 @@ class TerminalPanel implements IContentRenderer {
       <div class="terminal-panel-toolbar">
         <span class="terminal-status" data-state="starting">loading terminal</span>
         <span class="terminal-meta">—</span>
-        <button class="terminal-action" type="button">Stop</button>
+        <button class="terminal-action control-button" type="button">
+          <span class="control-icon">${uiIcon("stop")}</span>
+          <span class="terminal-action-label">Stop</span>
+        </button>
       </div>
     `;
   }
@@ -1052,13 +1056,23 @@ class TerminalPanel implements IContentRenderer {
 
   #syncAction(): void {
     if (!this.#action) return;
-    this.#action.disabled = this.#starting;
-    this.#action.classList.toggle("danger", Boolean(this.#runtimeId));
-    this.#action.textContent = this.#runtimeId
+    const running = Boolean(this.#runtimeId);
+    const label = running
       ? "Stop"
       : this.#session?.nativeBindingState === "unavailable"
         ? "Start New"
         : "Start";
+    this.#action.disabled = this.#starting;
+    this.#action.classList.toggle("danger", running);
+    this.#action.dataset.intent = running ? "stop" : "start";
+    this.#action.title = label;
+    this.#action.setAttribute("aria-label", label);
+    const icon = this.#action.querySelector<HTMLElement>(".control-icon");
+    const labelElement = this.#action.querySelector<HTMLElement>(
+      ".terminal-action-label",
+    );
+    if (icon) icon.innerHTML = uiIcon(running ? "stop" : "play");
+    if (labelElement) labelElement.textContent = label;
   }
 
   #setStatus(state: string, text: string): void {

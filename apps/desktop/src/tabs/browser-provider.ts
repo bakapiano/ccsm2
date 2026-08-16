@@ -13,6 +13,7 @@ import { OrderedTaskQueue } from "../ordered-task-queue";
 import { observePanelVisibility } from "../panel-visibility";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
+import { uiIcon } from "../ui-icons";
 import type { TabProvider } from "./registry";
 
 const DEFAULT_BROWSER_URL = "https://example.com/";
@@ -108,12 +109,19 @@ class BrowserPanel implements IContentRenderer {
     this.#zoom = state.zoom ?? 1;
     this.element.className = "browser-panel";
     this.element.dataset.nativeVisible = "false";
+    this.element.dataset.busy = "false";
     this.element.innerHTML = `
-      <form class="browser-toolbar" autocomplete="off">
-        <button class="browser-reload" type="button" title="Reload">↻</button>
-        <input class="browser-address" aria-label="Browser address" spellcheck="false" />
-        <button class="browser-go" type="submit">Go</button>
-        <span class="browser-state" data-state="starting">starting</span>
+      <form class="browser-toolbar panel-toolbar" autocomplete="off">
+        <button class="browser-reload control-button control-button-icon" type="button" aria-label="Reload page" title="Reload page">
+          ${uiIcon("refresh")}
+        </button>
+        <div class="browser-address-group">
+          <input class="browser-address" aria-label="Browser address" spellcheck="false" />
+          <button class="browser-go control-button control-button-icon" type="submit" aria-label="Go to address" title="Go to address">
+            ${uiIcon("arrow-right")}
+          </button>
+        </div>
+        <span class="browser-state panel-status" data-state="starting">starting</span>
       </form>
       <div class="browser-anchor" data-snapshot-visible="false" aria-label="Native browser viewport">
         <img class="browser-snapshot" alt="" aria-hidden="true" hidden />
@@ -137,7 +145,7 @@ class BrowserPanel implements IContentRenderer {
     this.element
       .querySelector(".browser-reload")
       ?.addEventListener("click", () => {
-        if (this.#created) void this.#client.browser.reload(this.#surfaceId);
+        void this.#reload();
       });
     this.#resizeObserver = new ResizeObserver(() => this.#scheduleSync());
     this.#resizeObserver.observe(this.#anchor);
@@ -373,6 +381,7 @@ class BrowserPanel implements IContentRenderer {
 
   async #navigate(value: string): Promise<void> {
     this.#currentUrl = normalizeBrowserInput(value);
+    this.#setBusy(true);
     try {
       if (this.#created) {
         this.#currentUrl = await this.#client.browser.navigate(
@@ -387,13 +396,36 @@ class BrowserPanel implements IContentRenderer {
       await this.#client.browser.focus(this.#surfaceId);
     } catch (error) {
       this.#setStatus("error", `navigate · ${describeError(error)}`);
+    } finally {
+      this.#setBusy(false);
     }
+  }
+
+  async #reload(): Promise<void> {
+    if (!this.#created) return;
+    this.#setBusy(true);
+    try {
+      await this.#client.browser.reload(this.#surfaceId);
+      await this.#client.browser.focus(this.#surfaceId);
+    } catch (error) {
+      this.#setStatus("error", `reload · ${describeError(error)}`);
+    } finally {
+      this.#setBusy(false);
+    }
+  }
+
+  #setBusy(busy: boolean): void {
+    this.element.dataset.busy = String(busy);
+    const reload =
+      this.element.querySelector<HTMLButtonElement>(".browser-reload");
+    reload?.setAttribute("aria-busy", String(busy));
   }
 
   #setStatus(state: string, text: string): void {
     if (!this.#status) return;
     this.#status.dataset.state = state;
     this.#status.textContent = text;
+    this.#status.title = text;
   }
 
   #persistState(): Promise<void> {
