@@ -117,21 +117,18 @@ Upstream fix:
 The fix moves keyboard and IME PeekMessageW calls before the non-reentrant
 input-state locks and narrows related layout-cache guard lifetimes.
 
-Released and integrated dependency graph:
+Resolved fixed dependency graph:
 
-  tao 0.36.0 (tao-v0.36.0, crates.io)
-  wry 0.56.1 (crates.io)
+  tao 0.35.3
+    official tauri-apps/tao Git revision:
+      c704261c519c58cfdd0bc2d58ba24e06a0b71c92
+  wry 0.55.1 (crates.io)
   tauri 2.11.5 (crates.io)
   tauri-runtime 2.11.3 (crates.io)
   tauri-utils 2.9.3 (crates.io)
-  tauri-runtime-wry 2.11.4
-    vendored crates.io base checksum:
-      4e6fac707727b7a2f48e4ded90976324267371073edbb415ffb73bb0458d203f
-  tauri runtime integration revision:
-    7cc68e74ff6981f5c50a52a67d56c5eb2d227188
-    feat: update tao to 0.36 and wry to 0.56 (#15307)
+  tauri-runtime-wry 2.11.4 (crates.io)
 
-The vendored runtime-wry applies only the Tauri integration revision's adapter
-delta. The other numbered Tauri runtime packages remain at their latest stable
-crates.io versions. The workspace MSRV is Rust 1.90, matching the integration
-revision.
+Tao released the fix in 0.36.0. Tauri's development branch integrates Tao
+0.36/Wry 0.56 at revision 7cc68e74ff6981f5c50a52a67d56c5eb2d227188.
+The first stable Tauri runtime resolving Tao >=0.36.0 is the upgrade point for
+removing the Git patch. The workspace MSRV remains Rust 1.90.

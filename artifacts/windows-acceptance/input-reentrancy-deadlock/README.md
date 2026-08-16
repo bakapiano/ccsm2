@@ -6,8 +6,8 @@ PASS. The frozen `0.1.0-beta.3` Release executable was captured with full
 host and WebView renderer dumps. Its native UI thread is deadlocked by a
 reentrant Win32 input callback in Tao 0.35.3. The same deadlock was reproduced
 with an isolated profile and a deterministic message-race harness. A Release
-executable using the published Tao 0.36.0 fix completed three identical
-15-second rounds while remaining responsive.
+executable using the exact upstream fix backported to the Tao 0.35 line
+completed three identical 15-second rounds while remaining responsive.
 
 ## Environment and binaries
 
@@ -16,9 +16,9 @@ executable using the published Tao 0.36.0 fix completed three identical
 - frozen binary: `0.1.0-beta.3`, SHA-256
   `3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781`;
 - fixed binary: `0.1.0-beta.6`, SHA-256
-  `dfe1e15651819590f7cedb0f9539e934a78708dcb92e6e65edb966d4321c0ea0`,
+  `ee8ab61330bb373e9920a67d5aac7279a66b24761c64966b36ceb31573be629c`,
   built from clean source commit
-  `189848788c7ab3c7b8b4efcee507090b2f532e8c`.
+  `3c657a3b642e9627904cf335c3eae9a3b3d162ed`.
 
 ## Production hang capture
 
@@ -81,14 +81,16 @@ locks. Tao released the fix in
 
 Tauri `2.11.5`, JavaScript API `2.11.1`, and CLI `2.11.4` are the latest
 stable releases at verification time. The published `tauri-runtime-wry`
-`2.11.4` still constrains Tao to `^0.35.0`, so CCSM applies Tauri's merged
+`2.11.4` constrains Tao to `^0.35.0`, so CCSM patches Tao to the official
+upstream fix revision `c704261c` while retaining the published runtime.
+The locked graph resolves `tauri-runtime` `2.11.3`, `tauri-runtime-wry`
+`2.11.4`, `tauri-utils` `2.9.3`, and Wry `0.55.1` from crates.io, plus Tao
+`0.35.3` from the official `tauri-apps/tao` repository at that exact revision.
+The workspace MSRV remains Rust `1.90`. Tauri's development branch has merged
 [`7cc68e74`](https://github.com/tauri-apps/tauri/commit/7cc68e74ff6981f5c50a52a67d56c5eb2d227188)
-Tao 0.36/Wry 0.56 adapter delta to a vendored copy of the published runtime.
-The vendored base has crates.io checksum
-`4e6fac707727b7a2f48e4ded90976324267371073edbb415ffb73bb0458d203f`.
-Released `tauri-runtime` `2.11.3` and `tauri-utils` `2.9.3` stay on crates.io;
-the locked graph resolves Tao `0.36.0` and Wry `0.56.1` from crates.io. The
-workspace MSRV is Rust `1.90`, matching the upstream integration revision.
+for Tao 0.36/Wry 0.56; the Cargo comment records the future upgrade condition:
+use the first stable Tauri runtime resolving Tao `>=0.36.0`, then remove the
+Git patch.
 
 ## Deterministic reproduction
 
@@ -118,13 +120,13 @@ Two fresh beta.3 control runs independently reproduced the freeze:
 
 | Run | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Hung |
 | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 0 | 212,765 | 0 | 212,818 | 15,005 ms | yes |
-| 2 | 0 | 210,577 | 0 | 210,597 | 15,007 ms | yes |
+| 1 | 0 | 207,260 | 0 | 207,221 | 15,001 ms | yes |
+| 2 | 0 | 197,922 | 0 | 197,800 | 15,016 ms | yes |
 
-Run 1 began with `32,944,128` working-set bytes, `7,761,920` private bytes,
-`385` handles, and `41` threads. Run 2 began with `32,890,880` working-set
-bytes, `8,261,632` private bytes, `385` handles, and `41` threads. The runs
-accepted `10,000` and `9,999` posted keyboard messages before the dead UI
+Run 1 began with `35,254,272` working-set bytes, `7,954,432` private bytes,
+`414` handles, and `41` threads. Run 2 began with `35,106,816` working-set
+bytes, `7,634,944` private bytes, `408` handles, and `41` threads. The runs
+accepted `10,000` and `10,007` posted keyboard messages before the dead UI
 queue filled and `PostMessageW` returned `ERROR_NOT_ENOUGH_QUOTA` (`1816`).
 Both windows failed the `WM_NULL` probe, reported hung through
 `IsHungAppWindow`, and had `Process.Responding == false`. Each pre-termination
@@ -143,29 +145,29 @@ return remains RVA `0x2b9cfd`; the outer keyboard-case return is RVA
 
 ## Fixed Release verification
 
-The final fixed beta.6 Release executable (`6,002,176` bytes) was built from
-clean source commit `189848788c7ab3c7b8b4efcee507090b2f532e8c` and ran the
+The final fixed beta.6 Release executable (`6,002,688` bytes) was built from
+clean source commit `3c657a3b642e9627904cf335c3eae9a3b3d162ed` and ran the
 reviewed harness for three consecutive 15-second rounds starting at
-`2026-08-16T11:57:13.6180864+08:00`:
+`2026-08-16T18:51:19.6325698+08:00`:
 
 | Round | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Responsive |
 | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 31,399 | 0 | 62,770 | 0 | 0 ms | yes |
-| 2 | 31,023 | 0 | 62,018 | 0 | 0 ms | yes |
-| 3 | 31,623 | 0 | 63,215 | 0 | 0 ms | yes |
-| **Total** | **94,045** | **0** | **188,003** | **0** | **0 ms** | **yes** |
+| 1 | 28,635 | 0 | 57,107 | 0 | 0 ms | yes |
+| 2 | 29,932 | 0 | 59,846 | 0 | 0 ms | yes |
+| 3 | 29,600 | 0 | 59,209 | 0 | 0 ms | yes |
+| **Total** | **88,167** | **0** | **176,162** | **0** | **0 ms** | **yes** |
 
-The fixed process started at `33,292,288` working-set bytes, `8,646,656`
-private bytes, `385` handles, and `42` threads. After round three it remained
-responsive at `54,550,528` working-set bytes, `30,724,096` private bytes,
-`395` handles, and `40` threads. The harness then terminated and waited for
+The fixed process started at `35,196,928` working-set bytes, `7,782,400`
+private bytes, `399` handles, and `37` threads. After round three it remained
+responsive at `51,625,984` working-set bytes, `30,953,472` private bytes,
+`416` handles, and `40` threads. The harness then terminated and waited for
 its owned process tree. Its pre-termination snapshot contained 15 process
 identities; verification by PID plus creation time found zero survivors. The
 harness removed its generated profile and verified the directory absent.
 
 An additional two-second run passed with an explicitly supplied data-directory
-argument ending in `\`. It completed `4,320` synchronous keyboard messages and
-`8,561` focus messages with zero failures. `data.db` was created at the exact
+argument ending in `\`. It completed `3,889` synchronous keyboard messages and
+`7,677` focus messages with zero failures. `data.db` was created at the exact
 supplied path, the process tree was verified empty, and the test directory was
 removed after a guarded path check.
 
