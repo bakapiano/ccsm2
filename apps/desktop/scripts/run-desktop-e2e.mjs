@@ -119,6 +119,7 @@ if (!existsSync(sourceAppBinary)) {
       CCSM_E2E_REAL_PROVIDERS: "1",
       CCSM_E2E_RUN_ID: runId,
       CCSM_E2E_RUN_MODE: runMode,
+      CCSM_E2E_SCENARIO: process.env.CCSM_E2E_SCENARIO ?? "all",
       CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
       CCSM_HOOK_REPORTER_STRICT: "1",
       CI: "1",

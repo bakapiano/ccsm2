@@ -977,19 +977,6 @@ describe('InputHandler', () => {
       terminal.free();
     });
 
-    test('resets negotiated keyboard state for a new PTY without a VT reset', () => {
-      const terminal = ghostty.createTerminal();
-      terminal.write('\x1b[>4;2m\x1b[>7u');
-      expect(terminal.hasModifyOtherKeysState2()).toBe(true);
-      expect(terminal.getKittyKeyFlags()).toBe(7);
-
-      terminal.resetKeyboardProtocol();
-
-      expect(terminal.hasModifyOtherKeysState2()).toBe(false);
-      expect(terminal.getKittyKeyFlags()).toBe(0);
-      terminal.free();
-    });
-
     test('uses the DEC Alt escape-prefix mode for Alt+V', () => {
       const terminal = ghostty.createTerminal();
       expect(terminal.getMode(1036)).toBe(true);

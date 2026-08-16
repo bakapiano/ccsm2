@@ -21,6 +21,7 @@ interface TerminalSnapshot {
   bindingState: string | null;
   nativeSessionId: string | null;
   inputEnabled: boolean;
+  lastOutputRuntimeId: string | null;
   text: string;
 }
 
@@ -67,6 +68,7 @@ describe("real provider CLI with stubbed model API", () => {
         const started = await waitForProvider(provider, (snapshot) =>
           Boolean(
             snapshot.runtimeId &&
+              snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
               snapshot.inputEnabled &&
               ["pending", "bound"].includes(snapshot.bindingState ?? "") &&
               terminalLooksReady(provider, snapshot.text) &&
@@ -103,8 +105,11 @@ describe("real provider CLI with stubbed model API", () => {
           Boolean(
             snapshot.runtimeId &&
               snapshot.runtimeId !== firstRuntimeId &&
+              snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
               snapshot.inputEnabled &&
               snapshot.nativeSessionId === nativeSessionId &&
+              snapshot.text.includes(firstPrompt) &&
+              snapshot.text.includes(firstResponse) &&
               terminalPromptReady(provider, snapshot.text),
           ),
         );
@@ -358,6 +363,7 @@ async function terminalSnapshot(
         bindingState: snapshot.bindingState ?? null,
         nativeSessionId: snapshot.nativeSessionId ?? null,
         inputEnabled: Boolean(snapshot.inputEnabled),
+        lastOutputRuntimeId: snapshot.lastOutputRuntimeId ?? null,
         text: String(snapshot.text ?? ""),
       };
     }
@@ -394,7 +400,15 @@ async function sendTerminalLine(
   provider: Provider,
   input: string,
 ): Promise<void> {
-  await waitForProvider(provider, (snapshot) => snapshot.inputEnabled);
+  await waitForProvider(
+    provider,
+    (snapshot) =>
+      snapshot.inputEnabled &&
+      Boolean(
+        snapshot.runtimeId &&
+          snapshot.lastOutputRuntimeId === snapshot.runtimeId,
+      ),
+  );
   const panel = await terminalPanel(provider);
   const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
   await terminalInput.waitForExist({ timeout: 20_000 });
@@ -431,6 +445,7 @@ async function acknowledgeProviderStartup(provider: Provider): Promise<void> {
       async () => {
         const snapshot = await terminalSnapshot(provider);
         if (!snapshot?.runtimeId) return false;
+        if (snapshot.lastOutputRuntimeId !== snapshot.runtimeId) return false;
         if (!trustHandled && hasCopilotTrustPrompt(snapshot.text)) {
           trustHandled = true;
           await sendTerminalKeys(provider, ["Enter"]);
@@ -454,6 +469,7 @@ async function acknowledgeProviderStartup(provider: Provider): Promise<void> {
       async () => {
         const snapshot = await terminalSnapshot(provider);
         if (!snapshot?.runtimeId) return false;
+        if (snapshot.lastOutputRuntimeId !== snapshot.runtimeId) return false;
         const prompts = [
           {
             id: "workspace-trust",
@@ -493,6 +509,7 @@ async function acknowledgeProviderStartup(provider: Provider): Promise<void> {
     async () => {
       const snapshot = await terminalSnapshot(provider);
       if (!snapshot?.runtimeId) return false;
+      if (snapshot.lastOutputRuntimeId !== snapshot.runtimeId) return false;
       writeFileSync(
         join(artifactDirectory, `${provider}-latest.json`),
         `${JSON.stringify(snapshot, null, 2)}\n`,
@@ -609,6 +626,7 @@ async function waitForStablePrompt(
       const snapshot = await terminalSnapshot(provider);
       if (
         snapshot?.runtimeId !== runtimeId ||
+        snapshot.lastOutputRuntimeId !== runtimeId ||
         !terminalPromptReady(provider, snapshot.text)
       ) {
         previousTail = "";

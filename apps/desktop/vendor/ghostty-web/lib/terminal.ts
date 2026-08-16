@@ -964,12 +964,6 @@ export class Terminal implements ITerminalCore {
     this.currentTitle = "";
   }
 
-  /** Reset negotiated keyboard encoding for a new PTY without clearing history. */
-  resetKeyboardProtocol(): void {
-    this.assertOpen();
-    this.wasmTerm!.resetKeyboardProtocol();
-  }
-
   /**
    * Atomically replace the primary screen and scrollback with a validated
    * application repaint while preserving input and terminal modes.
