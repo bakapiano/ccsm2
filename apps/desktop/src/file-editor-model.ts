@@ -22,6 +22,16 @@ export type EditorLanguage =
   | "text"
   | "yaml";
 
+export type FileEditorEngine = "codemirror6" | "vditor-ir";
+
+export function editorEngineForPath(path: string): FileEditorEngine {
+  const name = fileName(path).toLowerCase();
+  const extension = name.includes(".") ? name.split(".").at(-1) : "";
+  return extension === "md" || extension === "markdown"
+    ? "vditor-ir"
+    : "codemirror6";
+}
+
 export function parseFileEditorState(tab: TabDto): FileEditorTabState {
   const value =
     tab.state && typeof tab.state === "object"
@@ -100,7 +110,7 @@ export function languageForPath(path: string): EditorLanguage {
   if (["html", "htm", "xml", "svg", "vue", "svelte"].includes(extension ?? ""))
     return "html";
   if (["css", "scss", "less"].includes(extension ?? "")) return "css";
-  if (["md", "mdx"].includes(extension ?? "")) return "markdown";
+  if (["md", "markdown", "mdx"].includes(extension ?? "")) return "markdown";
   if (extension === "py") return "python";
   if (extension === "rs") return "rust";
   if (

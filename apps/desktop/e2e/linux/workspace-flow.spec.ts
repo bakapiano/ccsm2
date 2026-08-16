@@ -8,11 +8,36 @@ if (!fixtureRoot) {
   throw new Error("CCSM_E2E_FIXTURE_ROOT must point to the Linux L4 fixture");
 }
 
-const fixtureFileName = "acceptance.md";
+const fixtureFileName = "acceptance.txt";
 const fixtureFile = join(fixtureRoot, fixtureFileName);
+const markdownFileName = "markdown-showcase.md";
+const markdownFile = join(fixtureRoot, markdownFileName);
 const workspaceName = "L4 Workspace";
 const folderName = "Acceptance Folder";
 const unicodeMarker = "Linux L4 中文编辑 ✓";
+const markdownMarker = "Vditor keyboard edit ✓";
+const markdownFixture = `# Vditor IR
+
+- [x] GFM task list
+
+| Feature | State |
+| --- | --- |
+| Markdown | Live |
+
+\`\`\`typescript
+const greeting: string = "hello";
+\`\`\`
+
+$$E = mc^2$$
+
+\`\`\`mermaid
+graph LR; Edit --> Render
+\`\`\`
+
+\`\`\`graphviz
+digraph G { Markdown -> Preview }
+\`\`\`
+`;
 
 interface WorkspaceUiState {
   activeName: string;
@@ -414,6 +439,7 @@ describe("Linux workspace workflows", () => {
     mkdirSync(artifactDirectory, { recursive: true });
     mkdirSync(fixtureRoot, { recursive: true });
     writeFileSync(fixtureFile, "Baseline\r\n");
+    writeFileSync(markdownFile, markdownFixture);
     execFileSync("git", ["init", "-b", "main"], {
       cwd: fixtureRoot,
       stdio: "ignore",
@@ -424,7 +450,9 @@ describe("Linux workspace workflows", () => {
     execFileSync("git", ["config", "user.email", "ccsm-l4@example.invalid"], {
       cwd: fixtureRoot,
     });
-    execFileSync("git", ["add", fixtureFileName], { cwd: fixtureRoot });
+    execFileSync("git", ["add", fixtureFileName, markdownFileName], {
+      cwd: fixtureRoot,
+    });
     execFileSync("git", ["commit", "-m", "baseline"], {
       cwd: fixtureRoot,
       stdio: "ignore",
@@ -603,6 +631,110 @@ describe("Linux workspace workflows", () => {
     await writeState("editor-saved-state");
   });
 
+  it("edits Markdown in Vditor IR and renders every bundled feature", async () => {
+    await activateTab("file-explorer");
+    await clickVisibleFileRow(markdownFileName);
+
+    const editor = await $(
+      ".file-editor-panel[data-editor-engine='vditor-ir']",
+    );
+    await editor.waitForDisplayed({ timeout: 15_000 });
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const panel = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              ".file-editor-panel[data-editor-engine='vditor-ir']",
+            ),
+          ).find((candidate) => candidate.checkVisibility());
+          return Boolean(
+            panel?.dataset.state === "clean" &&
+              panel.querySelector(".vditor-ir > .vditor-reset"),
+          );
+        }),
+      { timeout: 30_000, timeoutMsg: "Vditor IR did not initialize" },
+    );
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() => {
+          const panel = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              ".file-editor-panel[data-editor-engine='vditor-ir']",
+            ),
+          ).find((candidate) => candidate.checkVisibility());
+          return Boolean(
+            panel?.querySelector(".hljs.vditor-linenumber") &&
+              panel.querySelector(".language-math .katex") &&
+              panel.querySelector(
+                ".language-mermaid[data-processed='true'] svg",
+              ) &&
+              panel.querySelector(
+                ".language-graphviz[data-processed='true'] svg",
+              ),
+          );
+        }),
+      {
+        timeout: 30_000,
+        interval: 250,
+        timeoutMsg: "Markdown renderers did not finish",
+      },
+    );
+
+    const heading = await $(
+      ".file-editor-panel[data-editor-engine='vditor-ir'] .vditor-ir h1",
+    );
+    await heading.click();
+    await browser.keys("End");
+    await browser.keys(` ${markdownMarker}`);
+    await browser.waitUntil(
+      async () => (await editor.getAttribute("data-state")) === "dirty",
+      { timeoutMsg: "Vditor edit did not become dirty" },
+    );
+    await browser.pause(1_000);
+    await browser.keys(["Control", "z"]);
+    await browser.waitUntil(
+      async () => (await editor.getAttribute("data-state")) === "clean",
+      { timeoutMsg: "Vditor undo did not restore the clean baseline" },
+    );
+    await heading.click();
+    await browser.keys("End");
+    await browser.keys(` ${markdownMarker}`);
+    await browser.waitUntil(
+      async () => (await editor.getAttribute("data-state")) === "dirty",
+      { timeoutMsg: "Second Vditor edit did not become dirty" },
+    );
+    await browser.keys(["Control", "s"]);
+    await browser.waitUntil(
+      async () => (await editor.getAttribute("data-state")) === "clean",
+      { timeout: 15_000, timeoutMsg: "Vditor edit did not save" },
+    );
+    expect(readFileSync(markdownFile, "utf8")).toContain(markdownMarker);
+    await browser.saveScreenshot(
+      join(artifactDirectory, "markdown-vditor-full.png"),
+    );
+
+    expect(
+      await browser.execute(() => {
+        const tab = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            ".ccsm-tab[data-tab-kind='file-editor']",
+          ),
+        ).find(
+          (candidate) =>
+            candidate.querySelector(".ccsm-tab-label")?.textContent ===
+            "markdown-showcase.md",
+        );
+        tab?.querySelector<HTMLButtonElement>(".ccsm-tab-close")?.click();
+        return Boolean(tab);
+      }),
+    ).toBe(true);
+    await browser.waitUntil(
+      async () =>
+        (await $$(".ccsm-tab[data-tab-kind='file-editor']")).length === 1,
+      { timeoutMsg: "Markdown tab did not close" },
+    );
+  });
+
   it("refreshes Git and leaves a restorable workspace", async () => {
     await activateTab("git");
     expect(
@@ -618,7 +750,7 @@ describe("Linux workspace workflows", () => {
     await browser.waitUntil(
       async () => {
         const status = (await workspaceUiState()).git?.status ?? "";
-        return status.includes("1 repos") && status.includes("1 changes");
+        return status.includes("1 repos") && status.includes("2 changes");
       },
       {
         timeout: 30_000,
@@ -627,6 +759,7 @@ describe("Linux workspace workflows", () => {
       },
     );
     expect((await workspaceUiState()).git?.files).toContain(fixtureFileName);
+    expect((await workspaceUiState()).git?.files).toContain(markdownFileName);
     await browser.saveScreenshot(join(artifactDirectory, "git-change.png"));
 
     await activateTab("file-editor");
