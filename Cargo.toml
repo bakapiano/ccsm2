@@ -4,14 +4,15 @@ members = [
   "crates/ccsm-platform",
   "apps/desktop/src-tauri",
 ]
+exclude = ["crates/vendor/tauri-runtime-wry"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 edition = "2024"
 license = "MIT"
 authors = ["CCSM contributors"]
-rust-version = "1.85"
+rust-version = "1.90"
 
 [workspace.dependencies]
 base64 = "0.22.1"
@@ -32,9 +33,6 @@ strip = true
 
 [patch.crates-io]
 # Tauri 2.11.5 is the latest release, but its published runtime still requires
-# Tao 0.35. Use Tauri's merged Tao 0.36/Wry 0.56 integration until the next
-# runtime release. Pinning one upstream revision keeps the three runtime crates
-# on a single source and lets Cargo resolve the released Tao 0.36.0.
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
-tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+# Tao 0.35. This vendored 2.11.4 runtime applies Tauri's merged Tao 0.36/Wry
+# 0.56 adapter delta while retaining released tauri-runtime and tauri-utils.
+tauri-runtime-wry = { path = "crates/vendor/tauri-runtime-wry" }
