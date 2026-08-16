@@ -341,10 +341,10 @@ public static class CcsmInputDeadlockProbe
 
 Add-Type -TypeDefinition $source -Language CSharp
 
-function Get-ProcessTreeIds {
+function Get-ProcessTreeSnapshot {
     param([Parameter(Mandatory = $true)][int]$RootProcessId)
 
-    $processTable = @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, ParentProcessId)
+    $processTable = @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, ParentProcessId, CreationDate, Name)
     $knownParents = [System.Collections.Generic.HashSet[uint32]]::new()
     $ownedIds = [System.Collections.Generic.HashSet[uint32]]::new()
     $null = $knownParents.Add([uint32]$RootProcessId)
@@ -367,7 +367,41 @@ function Get-ProcessTreeIds {
         }
     } while ($added)
 
-    return @($ownedIds | Sort-Object)
+    return @(
+        $processTable |
+            Where-Object { $ownedIds.Contains([uint32]$_.ProcessId) } |
+            Sort-Object ProcessId |
+            ForEach-Object {
+                [pscustomobject]@{
+                    processId = [uint32]$_.ProcessId
+                    creationTimeUtcTicks = ([DateTime]$_.CreationDate).ToUniversalTime().Ticks
+                    name = $_.Name
+                }
+            }
+    )
+}
+
+function Get-RemainingProcessTreeMembers {
+    param([Parameter(Mandatory = $true)][object[]]$Snapshot)
+
+    if ($Snapshot.Count -eq 0) {
+        return @()
+    }
+
+    $currentProcesses = @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, CreationDate)
+    $currentIdentities = @{}
+    foreach ($entry in $currentProcesses) {
+        if ($null -ne $entry.CreationDate) {
+            $currentIdentities[[uint32]$entry.ProcessId] = ([DateTime]$entry.CreationDate).ToUniversalTime().Ticks
+        }
+    }
+
+    return @(
+        $Snapshot | Where-Object {
+            $currentIdentities.ContainsKey([uint32]$_.processId) -and
+            $currentIdentities[[uint32]$_.processId] -eq [long]$_.creationTimeUtcTicks
+        }
+    )
 }
 
 $exePath = (Resolve-Path -LiteralPath $Executable).Path
@@ -389,6 +423,7 @@ $productVersion = $null
 $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $processTreeCleanupRequested = $false
 $processTreeTerminated = $null
+$processTreeSnapshot = @()
 $remainingProcessIds = @()
 $dataDirectoryCleanupRequested = $false
 $dataDirectoryRemoved = $null
@@ -497,13 +532,20 @@ finally {
     if ($process -and -not $KeepProcess) {
         $processTreeCleanupRequested = $true
         try {
+            $processTreeSnapshot = @(Get-ProcessTreeSnapshot -RootProcessId $process.Id)
+            if ($process.Id -notin @($processTreeSnapshot | ForEach-Object processId)) {
+                throw "Failed to capture the live CCSM root process before cleanup"
+            }
             if (-not $process.HasExited) {
                 $process.Kill($true)
             }
             $waitCompleted = $process.WaitForExit(10000)
             $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(10)
             do {
-                $remainingProcessIds = @(Get-ProcessTreeIds -RootProcessId $process.Id)
+                $remainingProcessIds = @(
+                    Get-RemainingProcessTreeMembers -Snapshot $processTreeSnapshot |
+                        ForEach-Object processId
+                )
                 if ($remainingProcessIds.Count -eq 0) {
                     break
                 }
@@ -572,6 +614,8 @@ $passed = $stressPassed -and $cleanupPassed
     cleanup = [pscustomobject]@{
         processTreeCleanupRequested = $processTreeCleanupRequested
         processTreeTerminated = $processTreeTerminated
+        observedProcessCount = $processTreeSnapshot.Count
+        observedProcessTree = $processTreeSnapshot
         remainingProcessIds = $remainingProcessIds
         ownedDataDirectory = $ownsDataDirectory
         dataDirectoryCleanupRequested = $dataDirectoryCleanupRequested

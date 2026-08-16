@@ -107,27 +107,30 @@ pwsh -File scripts/windows-input-deadlock-repro.ps1 `
   -Executable <release-executable> -Seconds 15 -Rounds 1
 ```
 
-The harness emits its result after cleanup. Successful generated profiles are
-removed and verified absent; every owned process tree is killed, awaited, and
-verified empty. Failed runs retain their profile for diagnosis. `-KeepProcess`
-preserves the tested process tree for a dump, and `-KeepData` preserves a
-successful run's generated profile.
+The harness emits its result after cleanup. It snapshots the full owned tree
+before termination, records each PID with its UTC creation-time ticks, kills
+and awaits the tree, and verifies every captured identity is gone. Successful
+generated profiles are removed and verified absent. Failed runs retain their
+profile for diagnosis. `-KeepProcess` preserves the tested process tree for a
+dump, and `-KeepData` preserves a successful run's generated profile.
 
 Two fresh beta.3 control runs independently reproduced the freeze:
 
 | Run | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Hung |
 | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 0 | 206,096 | 0 | 206,121 | 15,015 ms | yes |
-| 2 | 0 | 206,103 | 0 | 206,072 | 15,007 ms | yes |
+| 1 | 0 | 212,765 | 0 | 212,818 | 15,005 ms | yes |
+| 2 | 0 | 210,577 | 0 | 210,597 | 15,007 ms | yes |
 
-Run 1 began with `32,628,736` working-set bytes, `8,007,680` private bytes,
-`374` handles, and `36` threads. Run 2 began with `32,817,152` working-set
-bytes, `7,479,296` private bytes, `386` handles, and `41` threads. Each run
-accepted exactly `10,000` posted keyboard messages before the dead UI queue
-filled and `PostMessageW` returned `ERROR_NOT_ENOUGH_QUOTA` (`1816`). Both
-windows failed the `WM_NULL` probe, reported hung through `IsHungAppWindow`,
-and had `Process.Responding == false`. Each owned process tree was terminated
-and verified empty; both isolated profiles were retained for diagnosis.
+Run 1 began with `32,944,128` working-set bytes, `7,761,920` private bytes,
+`385` handles, and `41` threads. Run 2 began with `32,890,880` working-set
+bytes, `8,261,632` private bytes, `385` handles, and `41` threads. The runs
+accepted `10,000` and `9,999` posted keyboard messages before the dead UI
+queue filled and `PostMessageW` returned `ERROR_NOT_ENOUGH_QUOTA` (`1816`).
+Both windows failed the `WM_NULL` probe, reported hung through
+`IsHungAppWindow`, and had `Process.Responding == false`. Each pre-termination
+snapshot contained 15 host/WebView/terminal process identities; verification
+by PID plus creation time found zero survivors. Both isolated profiles were
+retained for diagnosis.
 
 The harness clears and reads `LastError` on every synchronous call and checks
 `IsHungAppWindow`, preserving the distinction between `ERROR_TIMEOUT` and
@@ -143,25 +146,26 @@ return remains RVA `0x2b9cfd`; the outer keyboard-case return is RVA
 The final fixed beta.6 Release executable (`6,002,176` bytes) was built from
 clean source commit `189848788c7ab3c7b8b4efcee507090b2f532e8c` and ran the
 reviewed harness for three consecutive 15-second rounds starting at
-`2026-08-16T11:42:22.775687+08:00`:
+`2026-08-16T11:57:13.6180864+08:00`:
 
 | Round | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Responsive |
 | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 31,656 | 0 | 63,155 | 0 | 0 ms | yes |
-| 2 | 31,458 | 0 | 62,882 | 0 | 0 ms | yes |
-| 3 | 31,789 | 0 | 63,567 | 0 | 0 ms | yes |
-| **Total** | **94,903** | **0** | **189,604** | **0** | **0 ms** | **yes** |
+| 1 | 31,399 | 0 | 62,770 | 0 | 0 ms | yes |
+| 2 | 31,023 | 0 | 62,018 | 0 | 0 ms | yes |
+| 3 | 31,623 | 0 | 63,215 | 0 | 0 ms | yes |
+| **Total** | **94,045** | **0** | **188,003** | **0** | **0 ms** | **yes** |
 
-The fixed process started at `33,116,160` working-set bytes, `7,778,304`
-private bytes, `375` handles, and `37` threads. After round three it remained
-responsive at `54,403,072` working-set bytes, `30,588,928` private bytes,
+The fixed process started at `33,292,288` working-set bytes, `8,646,656`
+private bytes, `385` handles, and `42` threads. After round three it remained
+responsive at `54,550,528` working-set bytes, `30,724,096` private bytes,
 `395` handles, and `40` threads. The harness then terminated and waited for
-its owned process tree, verified zero remaining PIDs, removed its generated
-profile, and verified the directory absent.
+its owned process tree. Its pre-termination snapshot contained 15 process
+identities; verification by PID plus creation time found zero survivors. The
+harness removed its generated profile and verified the directory absent.
 
 An additional two-second run passed with an explicitly supplied data-directory
-argument ending in `\`. It completed `4,364` synchronous keyboard messages and
-`8,707` focus messages with zero failures. `data.db` was created at the exact
+argument ending in `\`. It completed `4,320` synchronous keyboard messages and
+`8,561` focus messages with zero failures. `data.db` was created at the exact
 supplied path, the process tree was verified empty, and the test directory was
 removed after a guarded path check.
 
