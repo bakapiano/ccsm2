@@ -11,7 +11,7 @@ describe("Terminal status layout", () => {
       provider.indexOf('class="terminal-panel-toolbar"'),
     );
     expect(cssRule(".terminal-panel")).toContain(
-      "grid-template-rows: minmax(0, 1fr) 30px",
+      "grid-template-rows: minmax(0, 1fr) var(--statusbar-height)",
     );
     expect(cssRule(".terminal-panel-toolbar")).toContain(
       "border-top: 1px solid var(--term-rule)",

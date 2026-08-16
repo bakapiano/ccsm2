@@ -43,6 +43,7 @@ import type { TabDto } from "../generated/TabDto";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
 import type { ThemeMode } from "../theme";
+import { uiIcon } from "../ui-icons";
 import type { VditorEditor } from "../vditor-editor";
 import type { TabProvider } from "./registry";
 
@@ -667,9 +668,9 @@ const codeMirrorTheme = EditorView.theme({
   ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--border)" },
   ".cm-search": { padding: "5px 7px" },
   ".cm-search input, .cm-textfield": {
-    height: "25px",
+    height: "var(--control-height)",
     border: "1px solid var(--border-strong)",
-    borderRadius: "4px",
+    borderRadius: "var(--control-radius)",
     padding: "0 7px",
     color: "var(--ink)",
     backgroundColor: "var(--bg-elev)",
@@ -677,10 +678,10 @@ const codeMirrorTheme = EditorView.theme({
     fontSize: "11px",
   },
   ".cm-search button, .cm-button": {
-    height: "25px",
+    height: "var(--control-height)",
     border: "1px solid var(--border-strong)",
-    borderRadius: "4px",
-    padding: "1px 8px",
+    borderRadius: "var(--control-radius)",
+    padding: "0 9px",
     color: "var(--ink-mid)",
     backgroundImage: "none",
     backgroundColor: "var(--bg-elev)",
@@ -688,7 +689,7 @@ const codeMirrorTheme = EditorView.theme({
   },
   ".cm-search button:hover, .cm-button:hover": {
     color: "var(--ink)",
-    backgroundColor: "var(--sidebar-hover)",
+    backgroundColor: "var(--control-hover)",
   },
   ".cm-tooltip": {
     border: "1px solid var(--border-strong)",
@@ -760,13 +761,24 @@ class FileEditorPanel implements IContentRenderer {
         },
       });
     this.element.innerHTML = `
-      <div class="file-editor-toolbar">
-        <button type="button" data-editor-action="save">Save</button>
-        <span class="file-editor-status"></span>
-        <button type="button" data-editor-action="find" data-codemirror-action>Find</button>
-        <button type="button" data-editor-action="replace" data-codemirror-action>Replace</button>
-        <button type="button" data-editor-action="goto" data-codemirror-action>Go to Line</button>
-        <button type="button" data-editor-action="wrap" data-codemirror-action aria-pressed="false">Wrap</button>
+      <div class="file-editor-toolbar panel-toolbar">
+        <button class="file-editor-save control-button" type="button" data-editor-action="save" title="Save (Ctrl+S)" aria-keyshortcuts="Control+S Meta+S">
+          <span class="control-icon">${uiIcon("save")}</span>
+          <span class="file-editor-save-label">Save</span>
+        </button>
+        <div class="file-editor-actions" role="toolbar" aria-label="Editor commands">
+          <button class="control-button control-button-icon" type="button" data-editor-action="find" data-codemirror-action aria-label="Find" title="Find (Ctrl+F)">${uiIcon("find")}</button>
+          <button class="control-button control-button-icon file-editor-secondary-action" type="button" data-editor-action="replace" data-codemirror-action aria-label="Replace" title="Replace (Ctrl+H)">${uiIcon("replace")}</button>
+          <button class="control-button control-button-icon file-editor-secondary-action" type="button" data-editor-action="goto" data-codemirror-action aria-label="Go to line" title="Go to line (Ctrl+G)">${uiIcon("goto-line")}</button>
+          <button class="control-button control-button-icon" type="button" data-editor-action="wrap" data-codemirror-action aria-label="Toggle word wrap" title="Toggle word wrap" aria-pressed="false">${uiIcon("wrap")}</button>
+          <details class="file-editor-overflow" data-codemirror-action>
+            <summary aria-label="More editor commands" title="More editor commands">${uiIcon("ellipsis")}</summary>
+            <div class="file-editor-overflow-menu" role="menu">
+              <button type="button" role="menuitem" data-editor-action="replace">${uiIcon("replace")}<span>Replace</span></button>
+              <button type="button" role="menuitem" data-editor-action="goto">${uiIcon("goto-line")}<span>Go to Line</span></button>
+            </div>
+          </details>
+        </div>
       </div>
       <div class="file-editor-banner" hidden></div>
       <div class="file-editor-body">
@@ -775,6 +787,8 @@ class FileEditorPanel implements IContentRenderer {
         <div class="file-editor-empty-state" role="status">Loading…</div>
       </div>
       <footer class="file-editor-footer">
+        <span class="file-editor-status panel-status"></span>
+        <span class="file-editor-footer-spacer"></span>
         <span class="file-editor-position">Ln 1, Col 1</span>
         <span class="file-editor-format"></span>
       </footer>
@@ -793,7 +807,13 @@ class FileEditorPanel implements IContentRenderer {
           event.target as Element | null
         )?.closest<HTMLButtonElement>("button[data-editor-action]")?.dataset
           .editorAction;
-        if (action) this.#runToolbarAction(action);
+        if (action) {
+          this.#runToolbarAction(action);
+          const details = (event.target as Element | null)?.closest(
+            ".file-editor-overflow",
+          ) as HTMLDetailsElement | null;
+          if (details) details.open = false;
+        }
       });
   }
 
@@ -900,6 +920,7 @@ class FileEditorPanel implements IContentRenderer {
         ariaLabel: `Edit ${snapshot.relativePath}`,
         theme: this.#theme,
         editable: snapshot.canEdit,
+        canSave: snapshot.canSave,
         onInput: (value) => {
           if (this.#synchronizing || this.#destroyed) return;
           this.element.dataset.documentLength = String(value.length);
@@ -1160,6 +1181,7 @@ class FileEditorPanel implements IContentRenderer {
       "[data-editor-action='save']",
     );
     if (save) save.disabled = !snapshot.canSave;
+    this.#vditor?.setSaveEnabled(snapshot.canSave);
     const wrap = this.element.querySelector<HTMLButtonElement>(
       "[data-editor-action='wrap']",
     );
