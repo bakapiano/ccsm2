@@ -30,6 +30,7 @@ import {
 import { codeHighlightStyle } from "../code-highlighting";
 import { FileEditorChangeTracker } from "../file-editor-change-tracker";
 import {
+  editorEngineForPath,
   fileChangeAffectsPath,
   fileName,
   languageForPath,
@@ -41,6 +42,8 @@ import type { FileLineEnding } from "../generated/FileLineEnding";
 import type { TabDto } from "../generated/TabDto";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
+import type { ThemeMode } from "../theme";
+import type { VditorEditor } from "../vditor-editor";
 import type { TabProvider } from "./registry";
 
 type EditorStatus =
@@ -53,6 +56,7 @@ type EditorStatus =
   | "error";
 
 export interface FileEditorProviderOptions {
+  theme: ThemeMode;
   presentationChanged(): void;
   setDialogVisible(visible: boolean): Promise<void>;
 }
@@ -77,16 +81,19 @@ export class FileEditorTabProvider implements TabProvider {
   readonly #sessions = new Map<string, FileEditorSession>();
   readonly #panels = new Map<string, FileEditorPanel>();
   readonly #pendingReveals = new Map<string, EditorRevealPosition>();
+  #theme: ThemeMode;
 
   constructor(
     private readonly client: CcsmDesktopClient,
     private readonly options: FileEditorProviderOptions,
-  ) {}
+  ) {
+    this.#theme = options.theme;
+  }
 
   createRenderer(tab: TabDto): IContentRenderer {
     let panel = this.#panels.get(tab.id);
     if (!panel) {
-      panel = new FileEditorPanel(this.#session(tab));
+      panel = new FileEditorPanel(this.#session(tab), this.#theme);
       this.#panels.set(tab.id, panel);
       const pending = this.#pendingReveals.get(tab.id);
       if (pending) {
@@ -95,6 +102,11 @@ export class FileEditorTabProvider implements TabProvider {
       }
     }
     return panel;
+  }
+
+  setTheme(theme: ThemeMode): void {
+    this.#theme = theme;
+    for (const panel of this.#panels.values()) panel.setTheme(theme);
   }
 
   revealPosition(tabId: string, position: EditorRevealPosition): void {
@@ -108,16 +120,22 @@ export class FileEditorTabProvider implements TabProvider {
   }
 
   isDirty(tabId: string): boolean {
-    return this.#sessions.get(tabId)?.isDirty() ?? false;
+    const session = this.#sessions.get(tabId);
+    session?.synchronizeSerializedEditorContent();
+    return session?.isDirty() ?? false;
   }
 
   dirtyCount(): number {
+    for (const session of this.#sessions.values()) {
+      session.synchronizeSerializedEditorContent();
+    }
     return [...this.#sessions.values()].filter((session) => session.isDirty())
       .length;
   }
 
   async requestClose(tab: TabDto): Promise<boolean> {
     const session = this.#sessions.get(tab.id);
+    session?.synchronizeSerializedEditorContent();
     if (!session?.isDirty()) return true;
     const choice = await this.#prompt({
       title: `Save changes to ${fileName(session.relativePath)}?`,
@@ -137,7 +155,11 @@ export class FileEditorTabProvider implements TabProvider {
 
   async requestCloseMany(tabs: readonly TabDto[]): Promise<boolean> {
     const sessions = tabs
-      .map((tab) => this.#sessions.get(tab.id))
+      .map((tab) => {
+        const session = this.#sessions.get(tab.id);
+        session?.synchronizeSerializedEditorContent();
+        return session;
+      })
       .filter((session): session is FileEditorSession =>
         Boolean(session?.isDirty()),
       );
@@ -145,6 +167,9 @@ export class FileEditorTabProvider implements TabProvider {
   }
 
   async requestCloseAll(): Promise<boolean> {
+    for (const session of this.#sessions.values()) {
+      session.synchronizeSerializedEditorContent();
+    }
     return this.#requestCloseSessions(
       [...this.#sessions.values()].filter((session) => session.isDirty()),
     );
@@ -221,6 +246,10 @@ class FileEditorSession {
   #status: EditorStatus = "loading";
   #diskContent = "";
   readonly #changes = new FileEditorChangeTracker();
+  #serializedContent: string | null = null;
+  #serializedBaseline: string | null = null;
+  #serializedVersion = 0;
+  #serializedContentReader: (() => string) | null = null;
   #revision: string | null = null;
   #utf8Bom = false;
   #lineEnding: FileLineEnding = "lf";
@@ -289,7 +318,7 @@ class FileEditorSession {
   snapshot(): SessionSnapshot {
     return {
       status: this.#status,
-      content: this.#diskContent,
+      content: this.#serializedContent ?? this.#diskContent,
       relativePath: this.relativePath,
       message: this.#message,
       notice: this.#notice,
@@ -306,7 +335,9 @@ class FileEditorSession {
   }
 
   isDirty(): boolean {
-    return this.#changes.dirty;
+    return this.#serializedContent === null
+      ? this.#changes.dirty
+      : this.#serializedContent !== this.#serializedBaseline;
   }
 
   applyEditorChanges(changes: ChangeSet, readCurrent: () => string): void {
@@ -317,6 +348,38 @@ class FileEditorSession {
       this.#message = null;
     }
     this.#emit(wasDirty);
+  }
+
+  applySerializedEditorContent(content: string): void {
+    const wasDirty = this.isDirty();
+    this.#serializedContent = content;
+    this.#serializedVersion += 1;
+    if (this.#status !== "conflict" && this.#status !== "read-only") {
+      this.#status = this.isDirty() ? "dirty" : "clean";
+      this.#message = null;
+    }
+    this.#emit(wasDirty);
+  }
+
+  initializeSerializedEditorContent(content: string): void {
+    if (this.#serializedBaseline !== null) return;
+    this.#serializedBaseline = content;
+    this.#serializedContent = content;
+    this.#serializedVersion += 1;
+  }
+
+  setSerializedEditorContentReader(reader: (() => string) | null): void {
+    this.#serializedContentReader = reader;
+  }
+
+  synchronizeSerializedEditorContent(): void {
+    if (!this.#serializedContentReader || this.#serializedBaseline === null) {
+      return;
+    }
+    const content = this.#serializedContentReader();
+    if (content !== this.#serializedContent) {
+      this.applySerializedEditorContent(content);
+    }
   }
 
   updateViewState(
@@ -342,6 +405,7 @@ class FileEditorSession {
   }
 
   async save(): Promise<void> {
+    this.synchronizeSerializedEditorContent();
     if (
       !this.isDirty() ||
       ["loading", "saving", "read-only"].includes(this.#status)
@@ -361,6 +425,7 @@ class FileEditorSession {
     this.#unlisten = null;
     if (this.#persistTimer !== null) window.clearTimeout(this.#persistTimer);
     if (this.#noticeTimer !== null) window.clearTimeout(this.#noticeTimer);
+    this.#serializedContentReader = null;
     this.#listeners.clear();
   }
 
@@ -410,6 +475,9 @@ class FileEditorSession {
     this.#notice = notice;
     const content = document.content ?? "";
     this.#diskContent = content;
+    this.#serializedContent = null;
+    this.#serializedBaseline = null;
+    this.#serializedVersion += 1;
     this.#changes.reset(content.length);
     this.#documentGeneration += 1;
     this.#status = document.status === "editable" ? "clean" : "read-only";
@@ -471,6 +539,9 @@ class FileEditorSession {
     if (choice === "reload") {
       if (this.#deleted) {
         const wasDirty = this.isDirty();
+        this.#serializedContent = null;
+        this.#serializedBaseline = null;
+        this.#serializedVersion += 1;
         this.#changes.reset(this.#diskContent.length);
         this.#documentGeneration += 1;
         this.#emit(wasDirty);
@@ -483,8 +554,15 @@ class FileEditorSession {
 
   async #performSave(overwrite: boolean, recreate: boolean): Promise<void> {
     const wasDirty = this.isDirty();
-    const saveSnapshot = this.#changes.snapshotForSave(this.#diskContent);
-    const savedContent = saveSnapshot.content;
+    const serializedSave = this.#serializedContent !== null;
+    const changeSnapshot = serializedSave
+      ? null
+      : this.#changes.snapshotForSave(this.#diskContent);
+    const savedContent =
+      this.#serializedContent ?? changeSnapshot?.content ?? "";
+    const saveVersion = serializedSave
+      ? this.#serializedVersion
+      : (changeSnapshot?.version ?? 0);
     this.#status = "saving";
     this.#message = null;
     this.#emit(wasDirty);
@@ -501,7 +579,12 @@ class FileEditorSession {
       });
       this.#revision = result.revision;
       this.#diskContent = savedContent;
-      this.#changes.markSaved(savedContent, saveSnapshot.version);
+      if (serializedSave) {
+        this.#serializedBaseline = savedContent;
+        this.#changes.reset(savedContent.length);
+      } else {
+        this.#changes.markSaved(savedContent, saveVersion);
+      }
       this.#deleted = false;
       this.#status = this.isDirty() ? "dirty" : "clean";
       this.#notice = "Saved";
@@ -618,6 +701,7 @@ const codeMirrorTheme = EditorView.theme({
 class FileEditorPanel implements IContentRenderer {
   readonly element = document.createElement("section");
   readonly #host: HTMLElement;
+  readonly #vditorHost: HTMLElement;
   readonly #banner: HTMLElement;
   readonly #empty: HTMLElement;
   readonly #position: HTMLElement;
@@ -626,7 +710,12 @@ class FileEditorPanel implements IContentRenderer {
   readonly #languageCompartment = new Compartment();
   readonly #wrapCompartment = new Compartment();
   readonly #editableCompartment = new Compartment();
+  readonly #engine;
   #view: EditorView | null = null;
+  #vditor: VditorEditor | null = null;
+  #vditorPromise: Promise<VditorEditor> | null = null;
+  #vditorRequest = 0;
+  #editorError: string | null = null;
   #unsubscribe: (() => void) | null = null;
   #attached = false;
   #destroyed = false;
@@ -640,14 +729,28 @@ class FileEditorPanel implements IContentRenderer {
   #languageSupport: Extension = [];
   #languageRequest = 0;
   #pendingReveal: EditorRevealPosition | null = null;
+  #theme: ThemeMode;
 
-  constructor(private readonly session: FileEditorSession) {
+  constructor(
+    private readonly session: FileEditorSession,
+    theme: ThemeMode,
+  ) {
+    this.#engine = editorEngineForPath(session.relativePath);
+    this.#theme = theme;
     this.element.className = "file-editor-panel";
-    this.element.dataset.editorEngine = "codemirror6";
+    this.element.dataset.editorEngine = this.#engine;
     (this.element as FileEditorDebugElement).__CCSM_FILE_EDITOR_DEBUG__ =
       () => ({
-        documentLength: this.#view?.state.doc.length ?? 0,
+        documentLength:
+          this.#engine === "vditor-ir"
+            ? (this.#vditor?.getValue().length ?? 0)
+            : (this.#view?.state.doc.length ?? 0),
         insertText: (text: string) => {
+          if (this.#engine === "vditor-ir") {
+            if (!this.#vditor) return false;
+            this.#vditor.appendText(text);
+            return true;
+          }
           const view = this.#view;
           if (!view) return false;
           view.dispatch({
@@ -660,14 +763,15 @@ class FileEditorPanel implements IContentRenderer {
       <div class="file-editor-toolbar">
         <button type="button" data-editor-action="save">Save</button>
         <span class="file-editor-status"></span>
-        <button type="button" data-editor-action="find">Find</button>
-        <button type="button" data-editor-action="replace">Replace</button>
-        <button type="button" data-editor-action="goto">Go to Line</button>
-        <button type="button" data-editor-action="wrap" aria-pressed="false">Wrap</button>
+        <button type="button" data-editor-action="find" data-codemirror-action>Find</button>
+        <button type="button" data-editor-action="replace" data-codemirror-action>Replace</button>
+        <button type="button" data-editor-action="goto" data-codemirror-action>Go to Line</button>
+        <button type="button" data-editor-action="wrap" data-codemirror-action aria-pressed="false">Wrap</button>
       </div>
       <div class="file-editor-banner" hidden></div>
       <div class="file-editor-body">
         <div class="file-editor-codemirror"></div>
+        <div class="file-editor-vditor"></div>
         <div class="file-editor-empty-state" role="status">Loading…</div>
       </div>
       <footer class="file-editor-footer">
@@ -676,6 +780,7 @@ class FileEditorPanel implements IContentRenderer {
       </footer>
     `;
     this.#host = required(this.element, ".file-editor-codemirror");
+    this.#vditorHost = required(this.element, ".file-editor-vditor");
     this.#banner = required(this.element, ".file-editor-banner");
     this.#empty = required(this.element, ".file-editor-empty-state");
     this.#position = required(this.element, ".file-editor-position");
@@ -696,7 +801,9 @@ class FileEditorPanel implements IContentRenderer {
     if (this.#destroyed || this.#attached) return;
     this.#attached = true;
     this.session.attach();
-    if (!this.#view) this.#createView(this.session.snapshot());
+    if (this.#engine === "codemirror6" && !this.#view) {
+      this.#createView(this.session.snapshot());
+    }
     this.#unsubscribe = this.session.subscribe(() => this.#render());
     requestAnimationFrame(() => {
       if (parameters.api.group.activePanel?.id === parameters.api.id) {
@@ -710,6 +817,10 @@ class FileEditorPanel implements IContentRenderer {
   }
 
   focus(): void {
+    if (this.#engine === "vditor-ir") {
+      this.#vditor?.focus();
+      return;
+    }
     const view = this.#view;
     if (!view || view.dom.contains(document.activeElement)) return;
     view.focus();
@@ -732,10 +843,19 @@ class FileEditorPanel implements IContentRenderer {
     if (this.#destroyed) return;
     this.#destroyed = true;
     this.#languageRequest += 1;
+    this.#vditorRequest += 1;
     this.dispose();
     this.#view?.destroy();
     this.#view = null;
+    this.#vditor?.destroy();
+    this.#vditor = null;
+    this.session.setSerializedEditorContentReader(null);
     delete (this.element as FileEditorDebugElement).__CCSM_FILE_EDITOR_DEBUG__;
+  }
+
+  setTheme(theme: ThemeMode): void {
+    this.#theme = theme;
+    this.#vditor?.setTheme(theme);
   }
 
   #createView(snapshot: SessionSnapshot): void {
@@ -761,6 +881,71 @@ class FileEditorPanel implements IContentRenderer {
       this.#view.scrollDOM.scrollTop = snapshot.state.scrollTop;
       this.#renderPosition();
     });
+  }
+
+  #ensureVditor(snapshot: SessionSnapshot): void {
+    if (
+      this.#vditor ||
+      this.#vditorPromise ||
+      this.#editorError ||
+      snapshot.status === "loading"
+    ) {
+      return;
+    }
+    const request = ++this.#vditorRequest;
+    const initialGeneration = snapshot.documentGeneration;
+    const creation = import("../vditor-editor").then(({ VditorEditor }) =>
+      VditorEditor.create(this.#vditorHost, {
+        value: snapshot.content,
+        ariaLabel: `Edit ${snapshot.relativePath}`,
+        theme: this.#theme,
+        editable: snapshot.canEdit,
+        onInput: (value) => {
+          if (this.#synchronizing || this.#destroyed) return;
+          this.element.dataset.documentLength = String(value.length);
+          this.session.applySerializedEditorContent(value);
+          this.#renderPosition();
+        },
+        onSave: () => void this.session.save(),
+        onScroll: (scrollTop) => {
+          if (!this.#synchronizing && !this.#destroyed) {
+            this.session.updateViewState({ scrollTop });
+          }
+        },
+      }),
+    );
+    this.#vditorPromise = creation;
+    void creation
+      .then((editor) => {
+        if (this.#destroyed || request !== this.#vditorRequest) {
+          editor.destroy();
+          return;
+        }
+        this.#vditor = editor;
+        const current = this.session.snapshot();
+        if (current.documentGeneration !== initialGeneration) {
+          editor.setValue(current.content, true);
+        }
+        this.#documentGeneration = current.documentGeneration;
+        this.#canEdit = current.canEdit;
+        this.session.initializeSerializedEditorContent(editor.getValue());
+        this.session.setSerializedEditorContentReader(() => editor.getValue());
+        this.element.dataset.documentLength = String(editor.getValue().length);
+        editor.scrollTop = current.state.scrollTop;
+        this.#restorePersistedViewState = false;
+        this.#render();
+        requestAnimationFrame(() => {
+          if (this.#attached && this.element.checkVisibility()) editor.focus();
+        });
+      })
+      .catch((error) => {
+        if (this.#destroyed || request !== this.#vditorRequest) return;
+        this.#editorError = describeError(error);
+        this.#renderChrome(this.session.snapshot());
+      })
+      .finally(() => {
+        if (this.#vditorPromise === creation) this.#vditorPromise = null;
+      });
   }
 
   #createState(
@@ -845,6 +1030,43 @@ class FileEditorPanel implements IContentRenderer {
 
   #render(): void {
     const snapshot = this.session.snapshot();
+    if (this.#engine === "vditor-ir") {
+      this.#ensureVditor(snapshot);
+      const editor = this.#vditor;
+      if (editor) {
+        const documentChanged =
+          this.#documentGeneration !== snapshot.documentGeneration;
+        if (documentChanged) {
+          const scrollTop = this.#restorePersistedViewState
+            ? snapshot.state.scrollTop
+            : editor.scrollTop;
+          this.#synchronizing = true;
+          try {
+            editor.setValue(snapshot.content, true);
+            this.session.initializeSerializedEditorContent(editor.getValue());
+            this.element.dataset.documentLength = String(
+              editor.getValue().length,
+            );
+          } finally {
+            this.#synchronizing = false;
+          }
+          this.#documentGeneration = snapshot.documentGeneration;
+          this.#restorePersistedViewState = false;
+          requestAnimationFrame(() => {
+            if (!this.#vditor || this.#destroyed) return;
+            this.#vditor.scrollTop = scrollTop;
+          });
+        }
+        if (this.#canEdit !== snapshot.canEdit) {
+          this.#canEdit = snapshot.canEdit;
+          editor.setEditable(snapshot.canEdit);
+        }
+      }
+      this.#renderChrome(snapshot);
+      this.#renderPosition();
+      this.#applyPendingReveal();
+      return;
+    }
     const view = this.#view;
     this.#updateLanguage(snapshot);
     if (view) {
@@ -907,6 +1129,16 @@ class FileEditorPanel implements IContentRenderer {
 
   #applyPendingReveal(): void {
     const position = this.#pendingReveal;
+    if (
+      this.#engine === "vditor-ir" &&
+      position &&
+      this.#vditor &&
+      this.session.snapshot().status !== "loading"
+    ) {
+      this.#pendingReveal = null;
+      this.#vditor.focus();
+      return;
+    }
     const view = this.#view;
     if (!position || !view || this.session.snapshot().status === "loading")
       return;
@@ -933,22 +1165,37 @@ class FileEditorPanel implements IContentRenderer {
     );
     wrap?.setAttribute("aria-pressed", String(snapshot.state.wordWrap));
     this.#status.textContent = snapshot.notice ?? statusLabel(snapshot.status);
-    this.#format.textContent = `${this.#languageLabel} · ${
+    const languageLabel =
+      this.#engine === "vditor-ir" ? "Markdown" : this.#languageLabel;
+    this.#format.textContent = `${languageLabel} · ${
       snapshot.utf8Bom ? "UTF-8 BOM" : "UTF-8"
     } · ${snapshot.lineEnding === "crlf" ? "CRLF" : "LF"}`;
     this.#banner.hidden = !snapshot.message;
     this.#banner.textContent = snapshot.message ?? "";
-    this.#empty.hidden =
-      snapshot.status !== "loading" &&
-      !(snapshot.status === "error" && snapshot.content.length === 0) &&
-      !(snapshot.status === "read-only" && snapshot.content.length === 0);
-    this.#empty.textContent =
-      snapshot.status === "loading"
-        ? "Loading…"
-        : (snapshot.message ?? "This file cannot be edited.");
+    const editorPending =
+      this.#engine === "vditor-ir" && !this.#vditor && !this.#editorError;
+    this.#empty.hidden = !(
+      editorPending ||
+      this.#editorError ||
+      snapshot.status === "loading" ||
+      (snapshot.status === "error" && snapshot.content.length === 0) ||
+      (snapshot.status === "read-only" && snapshot.content.length === 0)
+    );
+    this.#empty.textContent = this.#editorError
+      ? `Markdown editor · ${this.#editorError}`
+      : editorPending
+        ? "Loading Markdown editor…"
+        : snapshot.status === "loading"
+          ? "Loading…"
+          : (snapshot.message ?? "This file cannot be edited.");
   }
 
   #renderPosition(): void {
+    if (this.#engine === "vditor-ir") {
+      const length = this.#vditor?.getValue().length ?? 0;
+      this.#position.textContent = `IR · ${length} chars`;
+      return;
+    }
     const view = this.#view;
     if (!view) return;
     const head = view.state.selection.main.head;

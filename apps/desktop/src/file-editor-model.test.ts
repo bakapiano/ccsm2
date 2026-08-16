@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   distinctFileEditorTitles,
+  editorEngineForPath,
   fileChangeAffectsPath,
   languageForPath,
   normalizeRelativePath,
@@ -24,6 +25,13 @@ describe("file editor model", () => {
     expect(languageForPath("src/main.rs")).toBe("rust");
     expect(languageForPath("package.json")).toBe("json");
     expect(languageForPath("Dockerfile")).toBe("text");
+  });
+
+  test("uses Vditor IR for Markdown documents", () => {
+    expect(editorEngineForPath("README.md")).toBe("vditor-ir");
+    expect(editorEngineForPath("docs/guide.markdown")).toBe("vditor-ir");
+    expect(editorEngineForPath("component.mdx")).toBe("codemirror6");
+    expect(editorEngineForPath("src/main.ts")).toBe("codemirror6");
   });
 
   test("normalizes paths and matches filesystem hints", () => {

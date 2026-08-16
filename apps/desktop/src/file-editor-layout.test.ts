@@ -12,6 +12,8 @@ describe("File Editor layout", () => {
     expect(cssRule(".file-editor-body")).toContain("grid-row: 3");
     expect(cssRule(".file-editor-footer")).toContain("grid-row: 4");
     expect(cssRule(".file-editor-codemirror")).toContain("height: 100%");
+    expect(cssRule(".file-editor-vditor")).toContain("height: 100%");
+    expect(css).toContain('[data-editor-engine="vditor-ir"]');
   });
 });
 
