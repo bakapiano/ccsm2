@@ -14,10 +14,11 @@ activity, responsiveness, posted-message quality, and cleanup gate passed.
 - WinDbg `10.0.29617.1000`;
 - frozen binary: `0.1.0-beta.3`, `5,880,832` bytes, SHA-256
   `3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781`;
-- fixed binary: `0.1.0-beta.6`, `6,001,152` bytes, SHA-256
-  `e67dac52f21c6ac2eb227f8ebdaccdff858005a7e93caaec904897d8dbb4adbf`,
+- fixed binary: `0.1.0-beta.6`, `8,247,296` bytes, SHA-256
+  `cab8b0165fd65f61c35dea5be876a67fcb9022c7e83e81802a359f6682305d37`,
   built from clean source commit
-  `132b77ce6a0b97da6a7e84ecc6947654c72e3230`.
+  `a281585dabc0fd67aa7ce51e706dfdee3fc0675b` after merging
+  `origin/main` at `15686cd`.
 
 ## Production hang capture
 
@@ -133,15 +134,15 @@ Two fresh beta.3 control runs independently reproduced the freeze:
 
 | Run | Posted / failures | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Hung |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 1,926 / 0 | 0 | 444,216 | 0 | 444,448 | 15,004 ms | yes |
-| 2 | 1,926 / 0 | 0 | 427,652 | 0 | 426,469 | 15,015 ms | yes |
+| 1 | 1,922 / 0 | 1 | 445,442 | 1 | 446,583 | 14,919 ms | yes |
+| 2 | 1,922 / 0 | 0 | 429,700 | 0 | 430,643 | 15,015 ms | yes |
 
-Run 1 began with `34,844,672` working-set bytes, `7,520,256` private bytes,
-`384` handles, and `36` threads. Run 2 began with `34,844,672` working-set
-bytes, `7,675,904` private bytes, `395` handles, and `36` threads. Every
+Run 1 began with `34,783,232` working-set bytes, `7,467,008` private bytes,
+`390` handles, and `36` threads. Run 2 began with `35,147,776` working-set
+bytes, `7,696,384` private bytes, `400` handles, and `41` threads. Every
 posted message succeeded, while both windows failed the `WM_NULL` probe,
 reported hung through `IsHungAppWindow`, and had
-`Process.Responding == false`. The Job snapshots contained 13 and 15 process
+`Process.Responding == false`. Both Job snapshots contained 15 process
 identities; each cleanup enabled kill-on-close, requested Job termination, used
 no fallback, and verified zero Job or identity survivors. Both isolated
 profiles were retained for diagnosis.
@@ -154,28 +155,28 @@ return remains RVA `0x2b9cfd`; the outer keyboard-case return is RVA
 ## Fixed Release verification
 
 The final fixed beta.6 Release was built from clean source commit
-`132b77ce6a0b97da6a7e84ecc6947654c72e3230` and ran the final harness for
+`a281585dabc0fd67aa7ce51e706dfdee3fc0675b` and ran the final harness for
 three consecutive 15-second rounds beginning at
-`2026-08-16T19:38:59.2898643+08:00`:
+`2026-08-16T19:56:43.4746428+08:00`:
 
 | Round | Posted / failures | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Responsive |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 1,924 / 0 | 97,298 | 0 | 181,271 | 0 | 0 ms | yes |
-| 2 | 1,918 / 0 | 97,618 | 0 | 187,762 | 0 | 0 ms | yes |
-| 3 | 1,922 / 0 | 96,908 | 0 | 186,010 | 0 | 0 ms | yes |
-| **Total** | **5,764 / 0** | **291,824** | **0** | **555,043** | **0** | **0 ms** | **yes** |
+| 1 | 1,924 / 0 | 97,065 | 0 | 181,522 | 0 | 0 ms | yes |
+| 2 | 1,924 / 0 | 97,326 | 0 | 187,645 | 0 | 0 ms | yes |
+| 3 | 1,916 / 0 | 97,500 | 0 | 185,688 | 0 | 0 ms | yes |
+| **Total** | **5,764 / 0** | **291,891** | **0** | **554,855** | **0** | **0 ms** | **yes** |
 
-The fixed process started at `32,616,448` working-set bytes, `8,282,112`
-private bytes, `389` handles, and `36` threads. After round three it remained
-responsive at `33,325,056` working-set bytes, `8,445,952` private bytes,
+The fixed process started at `37,367,808` working-set bytes, `7,757,824`
+private bytes, `390` handles, and `36` threads. After round three it remained
+responsive at `38,023,168` working-set bytes, `8,650,752` private bytes,
 `407` handles, and `40` threads. Its Job snapshot contained 15
 host/WebView/terminal identities. Cleanup enabled kill-on-close, requested Job
 termination, used no fallback, verified zero Job and identity survivors,
 closed the Job handle, removed the generated profile, and verified absence.
 
 An additional two-second run used an explicitly supplied data-directory path
-that contained spaces and ended in `\`. It accepted 262/262 posted messages,
-completed `12,523` synchronous keyboard messages and `24,072` focus messages
+that contained spaces and ended in `\`. It accepted 258/258 posted messages,
+completed `11,789` synchronous keyboard messages and `22,290` focus messages
 with zero failures, created `data.db` at the exact supplied path, verified zero
 process survivors, and removed the guarded test directory.
 
@@ -211,7 +212,7 @@ Rust 1.88 MSRV, source commit, and executable hash.
 - `pnpm check`: Cargo metadata dependency edges, TypeScript, and the Rust
   workspace passed with the locked graph;
 - `cargo +1.88.0 check --workspace --locked`: passed at the declared MSRV;
-- `pnpm test`: 166 Rust tests and 288 frontend tests passed;
+- `pnpm test`: 166 Rust tests and 290 frontend tests passed;
 - `pnpm verify:version`: passed;
 - `pnpm desktop:build:release`: passed and produced the fixed hash above;
 - PowerShell parser, Job cleanup smoke, and already-exited-root cleanup:
