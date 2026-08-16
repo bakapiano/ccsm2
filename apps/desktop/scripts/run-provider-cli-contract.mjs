@@ -39,6 +39,16 @@ const installRoot = configuredInstallRoot
   ? resolve(configuredInstallRoot)
   : mkdtempSync(join(localInstallParent, `.provider-clis-${platform}-`));
 const cleanupInstallRoot = !configuredInstallRoot;
+const runtimeRootParent = resolve(
+  process.env.CCSM_E2E_RUNTIME_PARENT ??
+    join(repositoryRoot, "..", ".ccsm-e2e-runtime"),
+);
+mkdirSync(runtimeRootParent, { recursive: true });
+const contractRuntimeRoot = mkdtempSync(
+  join(runtimeRootParent, `.provider-contract-${platform}-`),
+);
+const contractWorkingDirectory = join(contractRuntimeRoot, "workspace");
+const executionHome = join(contractRuntimeRoot, "home");
 const binaryName =
   process.platform === "win32" ? "ccsm-desktop.exe" : "ccsm-desktop";
 const appBinary = resolve(
@@ -65,6 +75,8 @@ let modelStub;
 
 mkdirSync(artifactDirectory, { recursive: true });
 mkdirSync(installRoot, { recursive: true });
+mkdirSync(contractWorkingDirectory, { recursive: true });
+mkdirSync(executionHome, { recursive: true });
 
 try {
   assertSupportedTarget();
@@ -93,9 +105,6 @@ try {
       finalError ??= error instanceof Error ? error.message : String(error);
     }
   }
-  if (finalStatus !== "passed") {
-    rmSync(providerEnvironmentPath, { force: true });
-  }
   if (cleanupInstallRoot && process.env.CCSM_PROVIDER_CLI_KEEP !== "1") {
     try {
       const resolvedRoot = realpathSync(installRoot);
@@ -111,6 +120,15 @@ try {
       finalStatus = "failed";
       finalError ??= `remove provider CLI runtime: ${error instanceof Error ? error.message : String(error)}`;
     }
+  }
+  try {
+    removeContractRuntimeRoot();
+  } catch (error) {
+    finalStatus = "failed";
+    finalError ??= `remove provider contract runtime: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  if (finalStatus !== "passed") {
+    rmSync(providerEnvironmentPath, { force: true });
   }
   writeResult();
 }
@@ -169,7 +187,18 @@ function installPinnedPackages() {
 }
 
 function installEnvironment() {
-  const environment = cleanEnvironment();
+  const environment = {
+    ...cleanEnvironment(),
+    ...selectedHostEnvironment([
+      "ALL_PROXY",
+      "HTTP_PROXY",
+      "HTTPS_PROXY",
+      "NO_PROXY",
+      "NODE_EXTRA_CA_CERTS",
+      "SSL_CERT_DIR",
+      "SSL_CERT_FILE",
+    ]),
+  };
   return {
     ...environment,
     npm_config_registry: "https://registry.npmjs.org/",
@@ -188,28 +217,46 @@ function providerDefinitions() {
           claude: {
             name: "@anthropic-ai/claude-code-win32-x64",
             binary: ["claude.exe"],
+            observedVersion: "2.1.233 (Claude Code)",
+            sha256:
+              "8ae35d41252b02a7b747097ececf368b6872fab93ca104832b99a8ec5942fabd",
           },
           codex: {
             name: "@openai/codex-win32-x64",
             binary: ["vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe"],
+            observedVersion: "codex-cli 0.147.0",
+            sha256:
+              "935a1911ed2556e4ffcec995f4886ac2ac425863ba26fed264df62e30272ad9d",
           },
           copilot: {
             name: "@github/copilot-win32-x64",
             binary: ["copilot.exe"],
+            observedVersion: "GitHub Copilot CLI 1.0.80.",
+            sha256:
+              "4f590f1f60f3f2bd4cf731cddf50360672d3c97d93150bd05ffa496d65e326f8",
           },
         }
       : {
           claude: {
             name: "@anthropic-ai/claude-code-linux-x64",
             binary: ["claude"],
+            observedVersion: "2.1.233 (Claude Code)",
+            sha256:
+              "55d281096f57d411ebbdd94dbf5e9ff3accb7c05713e37348c2c11d4b83bf9d9",
           },
           codex: {
             name: "@openai/codex-linux-x64",
             binary: ["vendor", "x86_64-unknown-linux-musl", "bin", "codex"],
+            observedVersion: "codex-cli 0.147.0",
+            sha256:
+              "cb0a15567e9a60a5820d54b0f6ae86d504dc3805c1eab21a47f70e3eb7b73a40",
           },
           copilot: {
             name: "@github/copilot-linux-x64",
             binary: ["copilot"],
+            observedVersion: "GitHub Copilot CLI 1.0.80.",
+            sha256:
+              "2ebb491db8bbbad58fb111a34b3f92798da44341976e5a6021bc13c7e57ae9e6",
           },
         };
 
@@ -225,7 +272,6 @@ function providerDefinitions() {
       helpArguments: ["--help"],
       helpTokens: ["--resume", "--session-id", "--settings"],
       realPathVariable: "CCSM_REAL_CLAUDE_PATH",
-      wrapperResumeArguments: ["--help"],
     },
     {
       provider: "codex",
@@ -237,7 +283,6 @@ function providerDefinitions() {
       helpArguments: ["resume", "--help"],
       helpTokens: ["SESSION_ID", "--last", "--config"],
       realPathVariable: "CCSM_REAL_CODEX_PATH",
-      wrapperResumeArguments: ["resume", "--help"],
     },
     {
       provider: "copilot",
@@ -246,14 +291,14 @@ function providerDefinitions() {
       platformPackage: platformPackages.copilot,
       versionArguments: ["--version"],
       versionPattern: /GitHub Copilot CLI/i,
-      assertPinnedVersionInOutput: false,
       helpArguments: ["--help"],
       helpTokens: ["--resume", "--plugin-dir", "--session-id"],
       realPathVariable: "CCSM_REAL_COPILOT_PATH",
-      wrapperResumeArguments: ["--help"],
     },
   ].map((provider) => ({
     ...provider,
+    expectedObservedVersion: provider.platformPackage.observedVersion,
+    expectedSha256: provider.platformPackage.sha256,
     binary: join(
       installRoot,
       "node_modules",
@@ -304,11 +349,10 @@ async function inspectProvider(provider) {
     kind: "version",
     program: provider.binary,
     args: provider.versionArguments,
+    environment: providerInspectionEnvironment(provider.provider),
     requiredPatterns: [
       provider.versionPattern,
-      ...(provider.assertPinnedVersionInOutput === false
-        ? []
-        : [new RegExp(escapeRegex(provider.expectedVersion))]),
+      new RegExp(`^${escapeRegex(provider.expectedObservedVersion)}$`, "m"),
     ],
   });
   runCommandCheck({
@@ -317,30 +361,60 @@ async function inspectProvider(provider) {
     kind: "resume-interface",
     program: provider.binary,
     args: provider.helpArguments,
+    environment: providerInspectionEnvironment(provider.provider),
     requiredTokens: provider.helpTokens,
   });
+  const executableSha256 = await sha256File(provider.binary);
+  const integrityCheck = {
+    id: `${provider.provider}-binary-integrity`,
+    provider: provider.provider,
+    kind: "binary-integrity",
+    status: executableSha256 === provider.expectedSha256 ? "passed" : "failed",
+    durationMs: 0,
+    exitCode: 0,
+    output: JSON.stringify({
+      expectedSha256: provider.expectedSha256,
+      observedSha256: executableSha256,
+    }),
+  };
+  checks.push(integrityCheck);
+  if (integrityCheck.status !== "passed") {
+    throw new Error(`${provider.provider} native executable SHA-256 changed`);
+  }
   packages.push({
     provider: provider.provider,
     package: provider.packageName,
     pinnedVersion: provider.expectedVersion,
     platformPackage: provider.platformPackage.name,
     platformPackageVersion: platformPackage.version,
+    expectedNativeVersion: provider.expectedObservedVersion,
     observedVersion: firstNonEmptyLine(version.output),
     executable: basename(provider.binary),
-    sha256: await sha256File(provider.binary),
+    expectedSha256: provider.expectedSha256,
+    sha256: executableSha256,
   });
 }
 
+function providerInspectionEnvironment(provider) {
+  const environment = executionEnvironment();
+  if (provider !== "copilot") return environment;
+  return {
+    ...environment,
+    COPILOT_AUTO_UPDATE: "false",
+    COPILOT_OFFLINE: "true",
+  };
+}
+
 function runWrapperContracts(providers) {
-  const contractRoot = join(installRoot, "ccsm-wrapper-contract");
+  const contractRoot = join(contractRuntimeRoot, "ccsm-wrapper-contract");
   rmSync(contractRoot, { recursive: true, force: true });
-  rmSync(join(installRoot, "isolated-home"), { recursive: true, force: true });
   const pluginRoot = join(contractRoot, "copilot-hook-plugin");
   const wrapperName =
     process.platform === "win32" ? "ccsm-provider.exe" : "ccsm-provider";
   const wrapper = join(contractRoot, wrapperName);
   mkdirSync(pluginRoot, { recursive: true });
   const hook = createHookReporter(contractRoot);
+  const argvCapture = createArgumentCapture(contractRoot);
   writeFileSync(
     join(pluginRoot, "plugin.json"),
     `${JSON.stringify({ name: "ccsm-provider-contract", version: "1.0.0", hooks: "hooks.json" }, null, 2)}\n`,
@@ -368,33 +442,133 @@ function runWrapperContracts(providers) {
   if (process.platform !== "win32") chmodSync(wrapper, 0o755);
 
   for (const provider of providers) {
-    const context = { contractRoot, hook, pluginRoot, wrapper };
-    const environment = wrapperEnvironment(provider, context);
-    runCommandCheck({
+    const context = { argvCapture, contractRoot, hook, pluginRoot, wrapper };
+    runCapturedWrapperCheck({
       id: `${provider.provider}-wrapper-cold`,
-      provider: provider.provider,
-      kind: "wrapper-cold",
-      program: wrapper,
-      args: ["--help"],
-      environment,
-      requiredTokens:
-        provider.provider === "codex" ? ["Usage:", "resume"] : ["--resume"],
+      provider,
+      context,
+      mode: "cold",
     });
-    runCommandCheck({
+    runCapturedWrapperCheck({
       id: `${provider.provider}-wrapper-resume`,
-      provider: provider.provider,
-      kind: "wrapper-resume",
-      program: wrapper,
-      args: provider.wrapperResumeArguments,
-      environment: {
-        ...environment,
-        CCSM_NATIVE_SESSION_ID: "00000000-0000-4000-8000-000000000001",
-      },
-      requiredTokens:
-        provider.provider === "codex" ? ["SESSION_ID", "--last"] : ["--resume"],
+      provider,
+      context,
+      mode: "resume",
     });
   }
-  return { contractRoot, hook, pluginRoot, wrapper };
+  return { argvCapture, contractRoot, hook, pluginRoot, wrapper };
+}
+
+function runCapturedWrapperCheck({ id, provider, context, mode }) {
+  const nativeSessionId = "00000000-0000-4000-8000-000000000001";
+  const marker = `ccsm-${provider.provider}-argv-probe`;
+  const offset = readJsonLines(context.argvCapture.log).length;
+  const check = runCommandCheck({
+    id,
+    provider: provider.provider,
+    kind: `wrapper-${mode}`,
+    program: context.wrapper,
+    args: mode === "cold" ? [marker] : [],
+    environment: {
+      ...wrapperEnvironment(provider, context),
+      [provider.realPathVariable]: context.argvCapture.command,
+      CCSM_PROVIDER_ARGV_CAPTURE_LOG: context.argvCapture.log,
+      ...(mode === "resume" ? { CCSM_NATIVE_SESSION_ID: nativeSessionId } : {}),
+    },
+  });
+  try {
+    const event = readJsonLines(context.argvCapture.log).slice(offset)[0];
+    if (!event || event.provider !== provider.provider) {
+      throw new Error(`${provider.provider} argv probe did not execute`);
+    }
+    const summary = assertWrapperArguments({
+      provider: provider.provider,
+      mode,
+      marker,
+      nativeSessionId,
+      pluginRoot: context.pluginRoot,
+      arguments: event.arguments,
+    });
+    check.output = JSON.stringify(summary);
+  } catch (error) {
+    check.status = "failed";
+    check.error = error instanceof Error ? error.message : String(error);
+    throw error;
+  }
+}
+
+function assertWrapperArguments({
+  provider,
+  mode,
+  marker,
+  nativeSessionId,
+  pluginRoot,
+  arguments: args,
+}) {
+  if (!Array.isArray(args)) throw new Error(`${provider} argv is not an array`);
+  if (mode === "cold" && args.at(-1) !== marker) {
+    throw new Error(`${provider} cold argv lost the user argument`);
+  }
+  if (provider === "claude") {
+    const selection = mode === "resume" ? "--resume" : "--session-id";
+    const selectionIndex = args.indexOf(selection);
+    if (selectionIndex < 0 || !args[selectionIndex + 1]) {
+      throw new Error(`Claude ${mode} argv has no ${selection}`);
+    }
+    if (mode === "resume" && args[selectionIndex + 1] !== nativeSessionId) {
+      throw new Error("Claude resume argv has the wrong native session ID");
+    }
+    if (
+      mode === "cold" &&
+      !/^[0-9a-f]{8}-[0-9a-f-]{27}$/iu.test(args[selectionIndex + 1])
+    ) {
+      throw new Error("Claude cold argv has no generated UUID session ID");
+    }
+    const settingsIndex = args.indexOf("--settings");
+    if (
+      settingsIndex < 0 ||
+      !args[settingsIndex + 1]?.includes("SessionStart")
+    ) {
+      throw new Error("Claude argv has no injected Hook settings");
+    }
+    return { mode, sessionFlag: selection, hooks: true };
+  }
+  if (provider === "codex") {
+    if (
+      args[0] !== "--enable" ||
+      args[1] !== "hooks" ||
+      !args.includes("--dangerously-bypass-hook-trust") ||
+      !args.includes("--no-alt-screen")
+    ) {
+      throw new Error("Codex argv has no production Hook prelude");
+    }
+    const hookOverrides = args.filter((value) => value === "-c").length;
+    if (hookOverrides !== 6) {
+      throw new Error(
+        `Codex argv has ${hookOverrides} Hook overrides; expected 6`,
+      );
+    }
+    const resumeIndex = args.indexOf("resume");
+    if (mode === "resume") {
+      if (resumeIndex < 0 || args[resumeIndex + 1] !== nativeSessionId) {
+        throw new Error("Codex resume argv has the wrong native session ID");
+      }
+    } else if (resumeIndex >= 0) {
+      throw new Error("Codex cold argv unexpectedly selected resume");
+    }
+    return { mode, hookOverrides, resume: mode === "resume" };
+  }
+  if (args[0] !== "--plugin-dir" || args[1] !== pluginRoot) {
+    throw new Error("Copilot argv has the wrong production Hook plugin");
+  }
+  const resume = `--resume=${nativeSessionId}`;
+  if (mode === "resume" && !args.includes(resume)) {
+    throw new Error("Copilot resume argv has the wrong native session ID");
+  }
+  if (mode === "cold" && args.some((value) => value.startsWith("--resume"))) {
+    throw new Error("Copilot cold argv unexpectedly selected resume");
+  }
+  return { mode, plugin: true, resume: mode === "resume" };
 }
 
 function wrapperEnvironment(provider, context) {
@@ -449,6 +623,36 @@ function createHookReporter(contractRoot) {
   return { command, log };
 }
 
+function createArgumentCapture(contractRoot) {
+  const log = join(contractRoot, "provider-argv.jsonl");
+  const script = join(contractRoot, "provider-argv-capture.mjs");
+  writeFileSync(log, "");
+  writeFileSync(
+    script,
+    [
+      'import { appendFileSync } from "node:fs";',
+      "const event = { provider: process.env.CCSM_PROVIDER, arguments: process.argv.slice(2) };",
+      "appendFileSync(process.env.CCSM_PROVIDER_ARGV_CAPTURE_LOG, `${JSON.stringify(event)}\\n`);",
+      "",
+    ].join("\n"),
+  );
+  if (process.platform === "win32") {
+    const command = join(contractRoot, "provider-argv-capture.cmd");
+    writeFileSync(
+      command,
+      `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`,
+    );
+    return { command, log };
+  }
+  const command = join(contractRoot, "provider-argv-capture");
+  writeFileSync(
+    command,
+    `#!/bin/sh\nexec '${shellSingleQuote(process.execPath)}' '${shellSingleQuote(script)}' "$@"\n`,
+  );
+  chmodSync(command, 0o755);
+  return { command, log };
+}
+
 function copilotHookEntry(command) {
   if (process.platform === "win32") {
     return {
@@ -473,9 +677,10 @@ function startModelStub() {
     process.execPath,
     [join(scriptDirectory, "provider-model-stub.mjs")],
     {
-      cwd: installRoot,
+      cwd: contractWorkingDirectory,
       env: {
         ...cleanEnvironment(),
+        CCSM_PROVIDER_MODEL_STUB_KEY: "ccsm-provider-contract-key",
         CCSM_PROVIDER_MODEL_STUB_LOG: log,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -597,10 +802,17 @@ function runRealModelContracts(providers, context, port) {
     timeoutMs: 120_000,
   });
   assertHookDelivery("claude", context.hook.log, hookOffset);
+  assertResumeHookDelivery(
+    "claude",
+    context.hook.log,
+    hookOffset,
+    claudeSession,
+  );
 
   const codexPrompt = "CCSM_CODEX_REAL_CLI_PROMPT";
+  const codexResumePrompt = "CCSM_CODEX_REAL_CLI_RESUME_PROMPT";
   const codexHookOffset = readHookEvents(context.hook.log).length;
-  const codexHome = join(installRoot, "isolated-home", ".codex");
+  const codexHome = join(executionHome, ".codex");
   mkdirSync(codexHome, { recursive: true });
   writeFileSync(
     join(codexHome, "config.toml"),
@@ -636,12 +848,45 @@ function runRealModelContracts(providers, context, port) {
     requiredTokens: [`CCSM_CODEX_REAL_CLI_RESPONSE:${codexPrompt}`],
     timeoutMs: 120_000,
   });
+  const codexSessionId = nativeSessionIdFromHooks(
+    "codex",
+    context.hook.log,
+    codexHookOffset,
+  );
+  runCommandCheck({
+    id: "codex-local-model-resume",
+    provider: "codex",
+    kind: "local-model-resume",
+    program: context.wrapper,
+    args: [
+      "exec",
+      "resume",
+      "--skip-git-repo-check",
+      codexSessionId,
+      codexResumePrompt,
+    ],
+    environment: {
+      ...wrapperEnvironment(codex, context),
+      OPENAI_API_KEY: "ccsm-provider-contract-key",
+      OPENAI_BASE_URL: `${baseUrl}/v1`,
+      CODEX_HOME: codexHome,
+      CCSM_NATIVE_SESSION_ID: codexSessionId,
+    },
+    requiredTokens: [`CCSM_CODEX_REAL_CLI_RESPONSE:${codexResumePrompt}`],
+    timeoutMs: 120_000,
+  });
   assertHookDelivery("codex", context.hook.log, codexHookOffset);
+  assertResumeHookDelivery(
+    "codex",
+    context.hook.log,
+    codexHookOffset,
+    codexSessionId,
+  );
 
   const copilotColdPrompt = "CCSM_COPILOT_REAL_CLI_COLD_PROMPT";
   const copilotResumePrompt = "CCSM_COPILOT_REAL_CLI_RESUME_PROMPT";
   const copilotHookOffset = readHookEvents(context.hook.log).length;
-  const copilotHome = join(installRoot, "isolated-home", ".copilot");
+  const copilotHome = join(executionHome, ".copilot");
   mkdirSync(copilotHome, { recursive: true });
   const copilotEnvironment = {
     ...wrapperEnvironment(copilot, context),
@@ -690,6 +935,12 @@ function runRealModelContracts(providers, context, port) {
     timeoutMs: 120_000,
   });
   assertHookDelivery("copilot", context.hook.log, copilotHookOffset);
+  assertResumeHookDelivery(
+    "copilot",
+    context.hook.log,
+    copilotHookOffset,
+    copilotSessionId,
+  );
 }
 
 function nativeSessionIdFromHooks(provider, logPath, offset) {
@@ -740,7 +991,43 @@ function assertHookDelivery(provider, logPath, offset) {
   }
 }
 
+function assertResumeHookDelivery(provider, logPath, offset, nativeSessionId) {
+  const resumed = readHookEvents(logPath)
+    .slice(offset)
+    .find(
+      (event) =>
+        event.provider === provider &&
+        (event.payload?.hook_event_name ?? event.payload?.hookEventName) ===
+          "SessionStart" &&
+        (event.payload?.session_id ?? event.payload?.sessionId) ===
+          nativeSessionId &&
+        event.payload?.source === "resume",
+    );
+  const check = {
+    id: `${provider}-resume-hook`,
+    provider,
+    kind: "resume-hook",
+    status: resumed ? "passed" : "failed",
+    durationMs: 0,
+    exitCode: 0,
+    output: JSON.stringify({
+      nativeSessionId,
+      source: resumed?.payload?.source ?? null,
+    }),
+  };
+  checks.push(check);
+  if (!resumed) {
+    throw new Error(
+      `${provider} real resume Hook did not report source=resume for ${nativeSessionId}`,
+    );
+  }
+}
+
 function readHookEvents(path) {
+  return readJsonLines(path);
+}
+
+function readJsonLines(path) {
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")
     .split("\n")
@@ -758,10 +1045,11 @@ function runCommandCheck({
   requiredPatterns = [],
   requiredTokens = [],
   timeoutMs = 45_000,
+  cwd = contractWorkingDirectory,
 }) {
   const started = Date.now();
   const result = spawnSync(program, args, {
-    cwd: installRoot,
+    cwd,
     env: environment,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
@@ -828,8 +1116,12 @@ function recordCheck({
 }
 
 function executionEnvironment() {
-  const home = join(installRoot, "isolated-home");
+  const home = executionHome;
+  const appData = join(home, "AppData", "Roaming");
+  const localAppData = join(home, "AppData", "Local");
   mkdirSync(home, { recursive: true });
+  mkdirSync(appData, { recursive: true });
+  mkdirSync(localAppData, { recursive: true });
   return {
     ...cleanEnvironment(),
     CI: "1",
@@ -837,6 +1129,8 @@ function executionEnvironment() {
     TERM: "dumb",
     HOME: home,
     USERPROFILE: home,
+    APPDATA: appData,
+    LOCALAPPDATA: localAppData,
     XDG_CACHE_HOME: join(home, ".cache"),
     XDG_CONFIG_HOME: join(home, ".config"),
     XDG_DATA_HOME: join(home, ".local", "share"),
@@ -844,28 +1138,62 @@ function executionEnvironment() {
     HTTPS_PROXY: "http://127.0.0.1:9",
     ALL_PROXY: "http://127.0.0.1:9",
     NO_PROXY: "127.0.0.1,localhost",
+    GIT_CEILING_DIRECTORIES: runtimeRootParent,
+    GIT_DISCOVERY_ACROSS_FILESYSTEM: "0",
   };
 }
 
 function cleanEnvironment() {
-  const blocked =
-    /^(?:ANTHROPIC|CLAUDE|OPENAI|CODEX|COPILOT|GH|GITHUB|NPM|NODE_AUTH|CCSM)_(?:API_?KEY|TOKEN|AUTH|SESSION|REAL|HOOK|PROVIDER|RUNTIME|DATA|E2E)/i;
-  const exactBlocked = new Set([
-    "ANTHROPIC_API_KEY",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "OPENAI_API_KEY",
-    "CODEX_API_KEY",
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-    "COPILOT_GITHUB_TOKEN",
-    "NODE_AUTH_TOKEN",
-    "NPM_TOKEN",
-    "CCSM_WRAPPER_ACTIVE",
-    "CCSM_NATIVE_SESSION_ID",
+  return selectedHostEnvironment([
+    "ALLUSERSPROFILE",
+    "COLORTERM",
+    "COMMONPROGRAMFILES",
+    "COMMONPROGRAMFILES(X86)",
+    "COMSPEC",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DISPLAY",
+    "DYLD_LIBRARY_PATH",
+    "GDK_BACKEND",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LD_LIBRARY_PATH",
+    "LIBGL_ALWAYS_SOFTWARE",
+    "LOGNAME",
+    "NUMBER_OF_PROCESSORS",
+    "OS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROCESSOR_IDENTIFIER",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "SHELL",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TERM",
+    "TMP",
+    "TMPDIR",
+    "TZ",
+    "USER",
+    "WAYLAND_DISPLAY",
+    "WEBKIT_DISABLE_COMPOSITING_MODE",
+    "WEBKIT_DISABLE_DMABUF_RENDERER",
+    "WINDIR",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
   ]);
+}
+
+function selectedHostEnvironment(names) {
+  const allowed = new Set(names.map((name) => name.toUpperCase()));
   return Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([name]) => !blocked.test(name) && !exactBlocked.has(name.toUpperCase()),
+    Object.entries(process.env).filter(([name]) =>
+      allowed.has(name.toUpperCase()),
     ),
   );
 }
@@ -897,9 +1225,25 @@ function shellSingleQuote(value) {
   return value.replaceAll("'", "'\\''");
 }
 
+function removeContractRuntimeRoot() {
+  const resolvedParent = realpathSync(runtimeRootParent);
+  const resolvedRoot = realpathSync(contractRuntimeRoot);
+  const separator = process.platform === "win32" ? "\\" : "/";
+  if (
+    !resolvedRoot.startsWith(`${resolvedParent}${separator}`) ||
+    !basename(resolvedRoot).startsWith(`.provider-contract-${platform}-`)
+  ) {
+    throw new Error(
+      `refusing to remove unexpected provider contract runtime ${resolvedRoot}`,
+    );
+  }
+  rmSync(resolvedRoot, { recursive: true, force: true });
+}
+
 function sanitizeOutput(value, maximumLength = 12_000) {
   const replacements = [
     [installRoot, "<PROVIDER_CLI_ROOT>"],
+    [contractRuntimeRoot, "<PROVIDER_CONTRACT_RUNTIME>"],
     [repositoryRoot, "<REPOSITORY_ROOT>"],
     [process.env.USERPROFILE, "<USER_HOME>"],
     [process.env.HOME, "<USER_HOME>"],
@@ -926,9 +1270,9 @@ function writeResult() {
     lockSha256,
     startedAt,
     completedAt: new Date().toISOString(),
-    credentials: "stripped",
+    credentials: "minimal host environment plus synthetic loopback API keys",
     modelNetwork:
-      "external model network blocked; Claude, Codex, and GitHub Copilot use the local stub",
+      "provider model base URLs target the loopback stub; auxiliary HTTP clients receive a closed-loopback proxy",
     packages,
     checks,
     ...(finalError ? { error: sanitizeOutput(finalError) } : {}),

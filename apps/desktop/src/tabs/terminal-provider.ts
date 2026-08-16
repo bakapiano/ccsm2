@@ -488,7 +488,7 @@ class TerminalPanel implements IContentRenderer {
       if (!(await this.#waitForOutputDrain())) this.#dropOutputQueue();
       this.#pendingExitCode = null;
       this.#oscStripper.reset();
-      this.#terminal.reset();
+      this.#terminal.resetKeyboardProtocol();
       const started = await this.#client.backend.startRuntime(
         {
           cliSessionId: sessionId,

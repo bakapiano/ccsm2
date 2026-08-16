@@ -115,7 +115,7 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 
 公开仓库必需门禁的全部输入由固定版本 provider CLI、确定性 model response、合成 API key 和隔离目录组成。真实账户验收归属受保护的专项 workflow。
 
-Windows 与 Linux 都直接启动本 job 构建的 executable，保留不同 WebView 版本的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。teardown 结束后按 ownership root、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
+Windows 与 Linux 都直接启动本 job 构建的 executable，保留不同 WebView 版本的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。Space、provider HOME 与工作目录位于 Git repository 外侧的同卷 sibling runtime，`GIT_CEILING_DIRECTORIES` 将 discovery 边界固定在该 runtime。teardown 结束后按 ownership root、显式 child PID、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
 
 ## 真实 Provider CLI 与 model API stub
 
@@ -123,7 +123,7 @@ Windows 与 Linux 都直接启动本 job 构建的 executable，保留不同 Web
 
 `CCSM_E2E_MODEL_STUB_FILE` 指向本次运行的 JSON 配置。测试在发送 prompt 前按 `provider + prompt` 设置返回内容；第二轮响应在 resumed CLI 启动后写入，stub 在 HTTP request 到达时读取最新配置。`CCSM_E2E_MODEL_STUB_LOG` 记录 provider、model、prompt、response 和 API path，供断言及 artifact 验收。
 
-Claude 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 通过真实 `SessionStart` Hook 建立绑定。Stop/Start 后的 CLI 使用生产 resume 参数恢复同一 native session；第二轮真实 API request 与 response 证明恢复后的会话可以继续对话。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使场景失败。
+Claude 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 通过真实 `SessionStart` Hook 建立绑定。Stop/Start 后的 CLI 使用生产 resume 参数恢复同一 native session；恢复后的 TUI 必须显示首轮 prompt/response，第二轮 API request 必须携带首轮 inline history 或引用首轮唯一 response ID。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使场景失败。
 
 ## 固定版本 Provider CLI contract
 
@@ -133,13 +133,13 @@ contract 对每家 provider 执行：
 
 1. 原生 executable 的版本检查。
 2. `resume`、session 与 Hook/plugin 参数接口检查。
-3. CCSM 生产 `ccsm-provider` wrapper 的 cold-start 参数解析。
-4. CCSM 生产 wrapper 的 resume 参数解析。
+3. argv-capture executable 对 CCSM 生产 `ccsm-provider` wrapper 的 cold-start 完整参数做精确断言。
+4. argv-capture executable 对生产 wrapper 注入的 provider session selection、Hook settings/plugin 与 native session ID 做精确断言。
 5. Claude 真实 CLI 通过本地 Anthropic stub 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
-6. Codex 真实 CLI 通过本地 Responses API stub 完成 prompt 与真实 Hook delivery。
+6. Codex 真实 CLI 通过本地 Responses API stub 完成 cold prompt、native session resume、第二轮 prompt 与 `source=resume` Hook delivery。
 7. GitHub Copilot 真实 CLI 通过 BYOK/offline 本地 Responses API 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
 
-执行环境使用隔离 HOME 与合成 API key。三家的 model base URL 指向 runner loopback stub；外部 HTTP proxy 指向关闭的 loopback endpoint。真实 CLI executable 位于独立 runtime 目录，job 生命周期负责清理；artifact 保存 `provider-cli-contract.json` 与 model-stub JSONL，其中包含固定版本、实际版本、二进制 SHA-256、模型请求与逐项结果。
+执行环境使用显式 OS/display allowlist、隔离 HOME 与合成 API key。loopback stub 校验每个模型请求携带合成认证；三家的 model base URL 指向 runner loopback stub，辅助 HTTP 客户端收到 closed-loopback proxy 设置。package lockfile、平台原生版本字符串与 executable SHA-256 共同固定测试字节。真实 CLI executable 位于独立安装目录，工作目录位于 Git repository 外的 sibling runtime，job 生命周期负责清理；artifact 保存 `provider-cli-contract.json` 与 model-stub JSONL，其中包含固定版本、实际版本、二进制 SHA-256、模型请求与逐项结果。
 
 该 contract 提供真实发行版的参数兼容证据。下方三条 Desktop Scenarios 提供确定性的完整对话、Hook、session binding 与 resume 行为证据。受保护的手动或 nightly workflow 管理需要真实账户的 provider 对话。
 
@@ -190,11 +190,12 @@ logs/
 process-cleanup.json
 display-cleanup.json
 credential-scan.json
+log-diagnostics.json
 provider-cli-contract.json
 workflow-state.json
 ```
 
-`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、最终 gate 状态、cleanup 状态、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 ID、passed/failed、持续时间和失败步骤。runner 或 teardown 失败会追加结构化 runner failure，确保 job、result、manifest 和 Actions Summary 使用同一个最终结论。
+`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、最终 gate 状态、cleanup 状态、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 ID、passed/failed、持续时间和失败步骤。`log-diagnostics.json` 对 Windows embedded driver 的已知 nullable-u32 warning 单独计数，并让其它 frontend/backend error 进入失败结果。runner 或 teardown 失败会追加结构化 runner failure，确保 job、result、manifest 和 Actions Summary 使用同一个最终结论。
 
 GIF 由场景中的有名称验收 checkpoint 生成，按操作顺序展示启动、关键输入、状态变化和最终结果：
 
@@ -254,6 +255,6 @@ PR review 是人工验收记录；四个 required status checks 是自动门禁�
 - 两个平台都通过 lockfile 安装并验证三家固定版本真实 CLI。
 - 本地与 CI 调用同一份 WDIO 配置和 Desktop Scenarios。
 - 每个平台运行都生成结构化测试结果与可播放 GIF。
-- 失败运行仍上传诊断证据并保留失败状态。
+- finalizer 在任一前置步骤失败时从零生成 `result.json`、manifest、credential scan、process/display cleanup 状态与 provider contract 状态；失败运行仍上传完整诊断证据并保留失败状态。
 - artifact 的 `retention-days` 为 `7`。
 - branch protection 同时要求 Verify matrix、两个平台 E2E 检查和 PR review。

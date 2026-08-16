@@ -346,7 +346,7 @@ class KeyboardProtocolTracker {
     return Number.isSafeInteger(value) ? value : fallback;
   }
 
-  private reset(): void {
+  reset(): void {
     this.kittyKeyFlags = KittyKeyFlags.DISABLED;
     this.modifyOtherKeysState = 0;
     this.kittyKeyFlagStack.length = 0;
@@ -458,6 +458,10 @@ export class GhosttyTerminal {
 
   hasModifyOtherKeysState2(): boolean {
     return this.keyboardProtocol.modifyOtherKeysState === 2;
+  }
+
+  resetKeyboardProtocol(): void {
+    this.keyboardProtocol.reset();
   }
 
   // ==========================================================================

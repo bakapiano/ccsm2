@@ -37,7 +37,10 @@ const artifactDirectory = resolve(
   process.env.CCSM_E2E_ARTIFACT_DIR ??
     join(repositoryRoot, "test-results", "desktop", platform, runId),
 );
-const runtimeRootParent = join(repositoryRoot, "test-results");
+const runtimeRootParent = resolve(
+  process.env.CCSM_E2E_RUNTIME_PARENT ??
+    join(repositoryRoot, "..", ".ccsm-e2e-runtime"),
+);
 mkdirSync(runtimeRootParent, { recursive: true });
 const temporaryRoot = mkdtempSync(
   join(runtimeRootParent, `.ccsm-e2e-${platform}-`),
@@ -87,43 +90,11 @@ if (process.argv.includes("--debug")) {
   wdioArguments.push("--logLevel", "debug");
 }
 
-const inheritedRuntimeVariables = new Set([
-  "CCSM_HOOK_PIPE",
-  "CCSM_HOOK_REPORTER",
-  "CCSM_HOOK_REPORTER_STRICT",
-  "CCSM_HOOK_TOKEN",
-  "CCSM_DATA_DIR",
-  "CCSM_NATIVE_SESSION_ID",
-  "CCSM_PROVIDER",
-  "CCSM_RUNTIME_ID",
-  "CCSM_SESSION_ID",
-  "CCSM_WRAPPER_ACTIVE",
-  "CCSM_REAL_CLAUDE_PATH",
-  "CCSM_REAL_CODEX_PATH",
-  "CCSM_REAL_COPILOT_PATH",
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_AUTH_TOKEN",
-  "ANTHROPIC_BEARER_TOKEN",
-  "CLAUDE_CODE_OAUTH_TOKEN",
-  "CLAUDE_CODE_API_KEY",
-  "OPENAI_API_KEY",
-  "CODEX_API_KEY",
-  "COPILOT_GITHUB_TOKEN",
-  "GITHUB_COPILOT_API_TOKEN",
-  "GITHUB_COPILOT_GITHUB_TOKEN",
-  "GH_TOKEN",
-  "GITHUB_TOKEN",
-]);
-const cleanEnvironment = Object.fromEntries(
-  Object.entries(process.env).filter(
-    ([name]) =>
-      !inheritedRuntimeVariables.has(name.toUpperCase()) &&
-      !/^(?:ANTHROPIC|CLAUDE_CODE|OPENAI|CODEX|COPILOT)_/iu.test(name),
-  ),
-);
+const cleanEnvironment = hostRuntimeEnvironment();
 let exitCode = 1;
 let runnerError;
 let modelStub;
+const ownedProcessIds = new Set();
 if (!existsSync(sourceAppBinary)) {
   runnerError = `E2E executable does not exist at ${sourceAppBinary}; run pnpm test:desktop:build first`;
   console.error(runnerError);
@@ -150,6 +121,9 @@ if (!existsSync(sourceAppBinary)) {
       CCSM_E2E_RUN_MODE: runMode,
       CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
       CCSM_HOOK_REPORTER_STRICT: "1",
+      CI: "1",
+      GIT_CEILING_DIRECTORIES: runtimeRootParent,
+      GIT_DISCOVERY_ACROSS_FILESYSTEM: "0",
       HOME: providerHome,
       USERPROFILE: providerHome,
       HTTP_PROXY: "http://127.0.0.1:9",
@@ -208,6 +182,11 @@ copyFileSync(
   join(artifactDirectory, "logs", "model-stub-config.json"),
 );
 splitServiceLogs();
+const logDiagnostics = auditServiceLogs();
+if (logDiagnostics.unexpectedErrors.length > 0) {
+  runnerError ??= `desktop logs contain ${logDiagnostics.unexpectedErrors.length} unexpected error line(s)`;
+  exitCode = 1;
+}
 const observedBeforeTermination = waitForProcessCleanup(temporaryRoot, 5_000);
 if (observedBeforeTermination.length > 0) {
   terminateOwnedProcesses(observedBeforeTermination);
@@ -221,6 +200,7 @@ writeFileSync(
       appBinary,
       binaryMode: "job-build-with-pid-baseline",
       ownershipRoots: [temporaryRoot, providerCliRoot],
+      ownedProcessIds: [...ownedProcessIds],
       checkedAt: new Date().toISOString(),
       clean: lingeringProcesses.length === 0,
       gracefulCleanup: observedBeforeTermination.length === 0,
@@ -433,11 +413,13 @@ function startModelStub() {
       env: {
         ...cleanEnvironment,
         CCSM_PROVIDER_MODEL_STUB_CONFIG: modelStubConfigFile,
+        CCSM_PROVIDER_MODEL_STUB_KEY: "ccsm-e2e-model-stub-key",
         CCSM_PROVIDER_MODEL_STUB_LOG: modelStubLog,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  if (child.pid) ownedProcessIds.add(child.pid);
   return new Promise((resolveStub, reject) => {
     let stdout = "";
     let stderr = "";
@@ -468,16 +450,34 @@ function startModelStub() {
 
 function stopModelStub(child) {
   if (child.exitCode !== null) return Promise.resolve();
-  return new Promise((resolveStop, reject) => {
+  return stopChild(child, "SIGTERM", 5_000).then(async (stopped) => {
+    if (stopped) return;
+    child.kill("SIGKILL");
+    if (!(await waitForChildExit(child, 5_000))) {
+      throw new Error("provider model stub survived SIGKILL for five seconds");
+    }
+    throw new Error("provider model stub required forced termination");
+  });
+}
+
+function stopChild(child, signal, timeoutMs) {
+  if (child.exitCode !== null) return Promise.resolve(true);
+  child.kill(signal);
+  return waitForChildExit(child, timeoutMs);
+}
+
+function waitForChildExit(child, timeoutMs) {
+  if (child.exitCode !== null) return Promise.resolve(true);
+  return new Promise((resolveExit) => {
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("provider model stub did not stop within five seconds"));
-    }, 5_000);
-    child.once("exit", () => {
+      child.off("exit", onExit);
+      resolveExit(false);
+    }, timeoutMs);
+    const onExit = () => {
       clearTimeout(timer);
-      resolveStop();
-    });
-    child.kill();
+      resolveExit(true);
+    };
+    child.once("exit", onExit);
   });
 }
 
@@ -507,10 +507,43 @@ function ensureResultReflectsRunnerStatus() {
     runnerError ??= "WDIO produced no scenario results";
     exitCode = 1;
   }
+  const scenarioContract = expectedScenarioIds();
+  const observedScenarioIds = results
+    .filter((row) => row.scenarioId !== "runner")
+    .map((row) => row.scenarioId);
+  const missingScenarioIds = scenarioContract.filter(
+    (scenarioId) => !observedScenarioIds.includes(scenarioId),
+  );
+  const unexpectedScenarioIds = observedScenarioIds.filter(
+    (scenarioId) => !scenarioContract.includes(scenarioId),
+  );
+  const duplicateScenarioIds = observedScenarioIds.filter(
+    (scenarioId, index) => observedScenarioIds.indexOf(scenarioId) !== index,
+  );
+  if (
+    missingScenarioIds.length > 0 ||
+    unexpectedScenarioIds.length > 0 ||
+    duplicateScenarioIds.length > 0
+  ) {
+    const contractError = `scenario result contract mismatch: expected=${scenarioContract.join(",")} observed=${observedScenarioIds.join(",")}`;
+    runnerError ??= contractError;
+    exitCode = 1;
+    results.push({
+      scenarioId: "runner",
+      title: "Desktop E2E scenario contract",
+      fullTitle: "Desktop E2E expected scenario set",
+      state: "failed",
+      durationMs: 0,
+      failureStep: "scenario-contract",
+      error: contractError,
+    });
+  }
   if (results.some((row) => row.state !== "passed")) exitCode = 1;
   if (
     results.length === 0 ||
-    (exitCode !== 0 && results.every((row) => row.state === "passed"))
+    (exitCode !== 0 &&
+      results.every((row) => row.state === "passed") &&
+      !results.some((row) => row.scenarioId === "runner"))
   ) {
     const cleanupError =
       observedBeforeTermination.length > 0
@@ -531,6 +564,17 @@ function ensureResultReflectsRunnerStatus() {
   writeFileSync(resultPath, `${JSON.stringify(results, null, 2)}\n`);
 }
 
+function expectedScenarioIds() {
+  const selected = process.env.CCSM_E2E_SCENARIO ?? "all";
+  const scenarios = {
+    all: ["claude-resume", "codex-resume", "ghcp-resume"],
+    claude: ["claude-resume"],
+    codex: ["codex-resume"],
+    ghcp: ["ghcp-resume"],
+  };
+  return scenarios[selected] ?? scenarios.all;
+}
+
 function listProcesses(ownershipRoot) {
   try {
     if (process.platform === "win32") {
@@ -538,7 +582,8 @@ function listProcesses(ownershipRoot) {
         "$root = [IO.Path]::GetFullPath($env:CCSM_E2E_OWNERSHIP_ROOT).TrimEnd('\\') + '\\'",
         "$provider = [IO.Path]::GetFullPath($env:CCSM_E2E_PROVIDER_ROOT).TrimEnd('\\') + '\\'",
         "$source = [IO.Path]::GetFullPath($env:CCSM_E2E_SOURCE_BINARY)",
-        "$items = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath.StartsWith($provider, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFullPath($_.ExecutablePath) -eq $source)) -or ($_.CommandLine -and ($_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($provider, [StringComparison]::OrdinalIgnoreCase) -ge 0)) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
+        "$owned = @($env:CCSM_E2E_OWNED_PROCESS_IDS -split ',' | Where-Object { $_ } | ForEach-Object { [int]$_ })",
+        "$items = @(Get-CimInstance Win32_Process | Where-Object { $owned -contains [int]$_.ProcessId -or ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath.StartsWith($provider, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFullPath($_.ExecutablePath) -eq $source)) -or ($_.CommandLine -and ($_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($provider, [StringComparison]::OrdinalIgnoreCase) -ge 0)) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
         "$items | ConvertTo-Json -Compress",
       ].join("; ");
       const output = execFileSync(
@@ -551,6 +596,7 @@ function listProcesses(ownershipRoot) {
             CCSM_E2E_OWNERSHIP_ROOT: ownershipRoot,
             CCSM_E2E_PROVIDER_ROOT: providerCliRoot,
             CCSM_E2E_SOURCE_BINARY: sourceAppBinary,
+            CCSM_E2E_OWNED_PROCESS_IDS: [...ownedProcessIds].join(","),
           },
         },
       ).trim();
@@ -564,7 +610,8 @@ function listProcesses(ownershipRoot) {
     return listUnixProcesses().filter(
       (entry) =>
         !baselineSourceProcessIds.has(entry.ProcessId) &&
-        (entry.CommandLine.includes(ownershipRoot) ||
+        (ownedProcessIds.has(entry.ProcessId) ||
+          entry.CommandLine.includes(ownershipRoot) ||
           entry.CommandLine.includes(providerCliRoot) ||
           entry.CommandLine.includes(sourceAppBinary)),
     );
@@ -738,6 +785,44 @@ function splitServiceLogs() {
   writeFileSync(join(logDirectory, "frontend.log"), `${frontend.join("\n")}\n`);
 }
 
+function auditServiceLogs() {
+  const logDirectory = join(artifactDirectory, "logs");
+  const files = ["frontend.log", "backend.log", "wdio.log"];
+  const lines = [
+    ...new Set(
+      files.flatMap((name) =>
+        readFileSync(join(logDirectory, name), "utf8").split("\n"),
+      ),
+    ),
+  ];
+  const knownWindowsJsonWarning =
+    /JSON error: invalid type: null, expected u32 at line 1 column \d+/u;
+  const candidateErrors = lines.filter(
+    (line) =>
+      /\b(?:ERROR|fatal|panic)\b/iu.test(line) || line.includes("JSON error:"),
+  );
+  const knownWarnings = candidateErrors.filter(
+    (line) => platform === "windows" && knownWindowsJsonWarning.test(line),
+  );
+  const unexpectedErrors = candidateErrors.filter(
+    (line) => !(platform === "windows" && knownWindowsJsonWarning.test(line)),
+  );
+  const value = {
+    clean: unexpectedErrors.length === 0,
+    knownWarnings: {
+      windowsWdioNullableU32: knownWarnings.length,
+      explanation:
+        "tauri-plugin-wdio-webdriver 1.3.0 emits this Windows input-probe serialization warning while the corresponding WebDriver action succeeds",
+    },
+    unexpectedErrors: [...new Set(unexpectedErrors)].slice(0, 50),
+  };
+  writeFileSync(
+    join(artifactDirectory, "log-diagnostics.json"),
+    `${JSON.stringify(value, null, 2)}\n`,
+  );
+  return value;
+}
+
 function sanitizeTextArtifacts() {
   const findings = [];
   const credentialPatterns = [
@@ -790,6 +875,59 @@ function sanitizeTextArtifacts() {
     writeFileSync(path, contents);
   }
   return findings;
+}
+
+function hostRuntimeEnvironment() {
+  const allowed = new Set(
+    [
+      "ALLUSERSPROFILE",
+      "COLORTERM",
+      "COMMONPROGRAMFILES",
+      "COMMONPROGRAMFILES(X86)",
+      "COMSPEC",
+      "DBUS_SESSION_BUS_ADDRESS",
+      "DISPLAY",
+      "DYLD_LIBRARY_PATH",
+      "GDK_BACKEND",
+      "LANG",
+      "LANGUAGE",
+      "LC_ALL",
+      "LC_CTYPE",
+      "LD_LIBRARY_PATH",
+      "LIBGL_ALWAYS_SOFTWARE",
+      "LOGNAME",
+      "NUMBER_OF_PROCESSORS",
+      "OS",
+      "PATH",
+      "PATHEXT",
+      "PROCESSOR_ARCHITECTURE",
+      "PROCESSOR_IDENTIFIER",
+      "PROGRAMDATA",
+      "PROGRAMFILES",
+      "PROGRAMFILES(X86)",
+      "PROGRAMW6432",
+      "SHELL",
+      "SYSTEMDRIVE",
+      "SYSTEMROOT",
+      "TEMP",
+      "TERM",
+      "TMP",
+      "TMPDIR",
+      "TZ",
+      "USER",
+      "WAYLAND_DISPLAY",
+      "WEBKIT_DISABLE_COMPOSITING_MODE",
+      "WEBKIT_DISABLE_DMABUF_RENDERER",
+      "WINDIR",
+      "XAUTHORITY",
+      "XDG_RUNTIME_DIR",
+    ].map((name) => name.toUpperCase()),
+  );
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) =>
+      allowed.has(name.toUpperCase()),
+    ),
+  );
 }
 
 function canonicalPath(path) {

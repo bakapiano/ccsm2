@@ -3,12 +3,21 @@ import { createServer } from "node:http";
 
 const logPath = process.env.CCSM_PROVIDER_MODEL_STUB_LOG;
 if (!logPath) throw new Error("CCSM_PROVIDER_MODEL_STUB_LOG is required");
+const expectedApiKey = process.env.CCSM_PROVIDER_MODEL_STUB_KEY;
+if (!expectedApiKey)
+  throw new Error("CCSM_PROVIDER_MODEL_STUB_KEY is required");
+let responseSequence = 0;
 
 const server = createServer(async (request, response) => {
   try {
     const body = await readBody(request);
     const payload = body ? JSON.parse(body) : {};
     const provider = providerFromRequest(request.url);
+    const modelRequest =
+      request.method === "POST" &&
+      (request.url?.includes("/messages") ||
+        request.url?.includes("/responses"));
+    if (modelRequest) assertSyntheticAuthentication(request);
     const promptCandidates = extractPrompts(payload)
       .map((prompt) => normalizePrompt(provider, prompt))
       .filter(Boolean);
@@ -16,6 +25,12 @@ const server = createServer(async (request, response) => {
       provider,
       promptCandidates,
     );
+    const context = configuredContextMarkers(provider, payload);
+    const sequence = ++responseSequence;
+    const responseId =
+      provider === "claude"
+        ? `msg_ccsm_provider_stub_${sequence}`
+        : `resp_ccsm_provider_stub_${sequence}`;
     appendEvent({
       method: request.method,
       path: request.url,
@@ -23,14 +38,25 @@ const server = createServer(async (request, response) => {
       model: payload.model,
       prompt,
       response: modelResponse,
+      responseId,
+      previousResponseId: payload.previous_response_id ?? null,
+      configuredPromptsPresent: context.prompts,
+      configuredResponsesPresent: context.responses,
+      syntheticAuthentication: modelRequest,
     });
 
     if (request.method === "POST" && request.url?.includes("/messages")) {
-      sendAnthropicResponse(response, payload, modelResponse);
+      sendAnthropicResponse(response, payload, modelResponse, responseId);
       return;
     }
     if (request.method === "POST" && request.url?.includes("/responses")) {
-      sendOpenAiResponse(response, payload, modelResponse);
+      sendOpenAiResponse(
+        response,
+        payload,
+        modelResponse,
+        responseId,
+        sequence,
+      );
       return;
     }
     if (request.method === "GET" && request.url?.includes("/models")) {
@@ -62,9 +88,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => server.close(() => process.exit(0)));
 }
 
-function sendAnthropicResponse(response, payload, text) {
+function sendAnthropicResponse(response, payload, text, responseId) {
   const message = {
-    id: "msg_ccsm_provider_contract",
+    id: responseId,
     type: "message",
     role: "assistant",
     model: payload.model ?? "claude-sonnet-4-5",
@@ -120,17 +146,17 @@ function sendAnthropicResponse(response, payload, text) {
   response.end();
 }
 
-function sendOpenAiResponse(response, payload, text) {
+function sendOpenAiResponse(response, payload, text, responseId, sequence) {
   const createdAt = Math.floor(Date.now() / 1000);
   const output = {
-    id: "msg_ccsm_provider_contract",
+    id: `msg_ccsm_provider_stub_${sequence}`,
     type: "message",
     status: "completed",
     role: "assistant",
     content: [{ type: "output_text", annotations: [], logprobs: [], text }],
   };
   const completed = {
-    id: "resp_ccsm_provider_contract",
+    id: responseId,
     object: "response",
     created_at: createdAt,
     status: "completed",
@@ -142,7 +168,7 @@ function sendOpenAiResponse(response, payload, text) {
     model: payload.model ?? "gpt-5.3-codex",
     output: [output],
     parallel_tool_calls: true,
-    previous_response_id: null,
+    previous_response_id: payload.previous_response_id ?? null,
     reasoning: { effort: null, summary: null },
     store: false,
     temperature: null,
@@ -171,9 +197,13 @@ function sendOpenAiResponse(response, payload, text) {
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
-  let sequence = 0;
+  let eventSequence = 0;
   const emit = (type, event) =>
-    sendEvent(response, type, { type, sequence_number: sequence++, ...event });
+    sendEvent(response, type, {
+      type,
+      sequence_number: eventSequence++,
+      ...event,
+    });
   emit("response.created", {
     response: { ...completed, status: "in_progress", output: [], usage: null },
   });
@@ -265,6 +295,30 @@ function configuredResponse(promptCandidates, responses) {
     if (match) return { prompt: match.candidate, response: match.response };
   }
   return undefined;
+}
+
+function configuredContextMarkers(provider, payload) {
+  const configPath = process.env.CCSM_PROVIDER_MODEL_STUB_CONFIG;
+  if (!configPath) return { prompts: [], responses: [] };
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  const configured = config.providers?.[provider] ?? {};
+  const payloadText = JSON.stringify(payload);
+  return {
+    prompts: Object.keys(configured).filter((value) =>
+      payloadText.includes(value),
+    ),
+    responses: Object.values(configured).filter(
+      (value) => typeof value === "string" && payloadText.includes(value),
+    ),
+  };
+}
+
+function assertSyntheticAuthentication(request) {
+  const apiKey = request.headers["x-api-key"];
+  const authorization = request.headers.authorization;
+  const bearer = `Bearer ${expectedApiKey}`;
+  if (apiKey === expectedApiKey || authorization === bearer) return;
+  throw new Error("provider model request did not use the synthetic API key");
 }
 
 function providerFromRequest(url = "") {

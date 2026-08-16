@@ -39,7 +39,7 @@ describe("real provider CLI with stubbed model API", () => {
   });
 
   beforeEach(async () => {
-    await ensureDesktopViewport();
+    await restoreScenarioUi();
   });
 
   for (const providerCase of providerCases) {
@@ -110,6 +110,8 @@ describe("real provider CLI with stubbed model API", () => {
         );
         expect(resumed.runtimeId).not.toBe(firstRuntimeId);
         expect(resumed.nativeSessionId).toBe(nativeSessionId);
+        expect(resumed.text).toContain(firstPrompt);
+        expect(resumed.text).toContain(firstResponse);
         await waitForStablePrompt(provider, resumed.runtimeId!);
         await waitForAgentActivity(resumed.cliSessionId!, "idle");
         await evidence.checkpoint("cli-resumed");
@@ -130,6 +132,12 @@ describe("real provider CLI with stubbed model API", () => {
           [firstPrompt, firstResponse],
           [secondPrompt, secondResponse],
         ]);
+        assertResumedModelContext(
+          provider,
+          firstPrompt,
+          firstResponse,
+          secondPrompt,
+        );
         await evidence.checkpoint("resumed-model-response");
 
         currentStep = "final-stop";
@@ -161,6 +169,12 @@ describe("real provider CLI with stubbed model API", () => {
           writeDiagnostic(scenarioId, "final-screenshot", error);
         }
         try {
+          await dismissKnownOverlays();
+        } catch (error) {
+          supplementalErrors.push(error);
+          writeDiagnostic(scenarioId, "overlay-cleanup", error);
+        }
+        try {
           const snapshot = await terminalSnapshot(provider);
           if (snapshot?.runtimeId) await clickRuntimeAction(provider);
         } catch (error) {
@@ -186,6 +200,7 @@ async function ensureDesktopViewport(): Promise<void> {
   await browser.maximizeWindow();
   await browser.setWindowRect(20, 20, 1319, 799);
   await browser.setWindowRect(20, 20, 1320, 800);
+  expect(await browser.getWindowHandle()).toBe("main");
   await browser.waitUntil(
     () =>
       browser.execute(
@@ -195,6 +210,41 @@ async function ensureDesktopViewport(): Promise<void> {
       timeout: 20_000,
       interval: 250,
       timeoutMsg: "Desktop E2E viewport did not reach 900x560",
+    },
+  );
+}
+
+async function restoreScenarioUi(): Promise<void> {
+  await ensureDesktopViewport();
+  await dismissKnownOverlays();
+}
+
+async function dismissKnownOverlays(): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const open = await browser.execute(() =>
+      Boolean(
+        document.querySelector(".directory-dialog") ||
+          document.querySelector(".app-dialog") ||
+          !document.querySelector<HTMLElement>("#new-tab-menu")?.hidden,
+      ),
+    );
+    if (!open) return;
+    await browser.keys("Escape");
+    await browser.pause(100);
+  }
+  await browser.waitUntil(
+    () =>
+      browser.execute(() =>
+        Boolean(
+          !document.querySelector(".directory-dialog") &&
+            !document.querySelector(".app-dialog") &&
+            document.querySelector<HTMLElement>("#new-tab-menu")?.hidden,
+        ),
+      ),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: "Desktop E2E overlays did not close",
     },
   );
 }
@@ -593,6 +643,27 @@ function assertModelResponses(
       ),
     ).toBe(true);
   }
+}
+
+function assertResumedModelContext(
+  provider: Provider,
+  firstPrompt: string,
+  firstResponse: string,
+  secondPrompt: string,
+): void {
+  const events = readModelStubEvents(provider);
+  const first = events.find((event) => event.prompt === firstPrompt);
+  const resumed = events.find((event) => event.prompt === secondPrompt);
+  expect(first).toBeDefined();
+  expect(resumed).toBeDefined();
+  const carriesInlineHistory = Boolean(
+    resumed?.configuredPromptsPresent.includes(firstPrompt) &&
+      resumed.configuredResponsesPresent.includes(firstResponse),
+  );
+  const chainsPreviousResponse = Boolean(
+    first?.responseId && resumed?.previousResponseId === first.responseId,
+  );
+  expect(carriesInlineHistory || chainsPreviousResponse).toBe(true);
 }
 
 function terminalLooksReady(provider: Provider, text: string): boolean {

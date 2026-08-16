@@ -137,6 +137,7 @@ jobs:
         run: node -e "const fs=require('node:fs'),p=require('node:path'),d=process.env.CCSM_E2E_ARTIFACT_DIR;fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'workflow-state.json'),JSON.stringify({phase:'initialized',platform:'windows',createdAt:new Date().toISOString()},null,2)+'\n')"
 
       - name: Check out source
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: false
@@ -172,18 +173,23 @@ jobs:
           cache-on-failure: true
 
       - name: Install frontend dependencies
+        id: dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Test E2E-only backend
+        id: backend
         run: cargo test --locked -p ccsm-desktop --features e2e
 
       - name: Build Windows E2E executable
+        id: build
         run: pnpm test:desktop:build
 
       - name: Verify pinned provider CLI contracts
+        id: provider_contract
         run: pnpm test:provider-cli-contract
 
       - name: Run Windows Desktop E2E
+        id: desktop_e2e
         timeout-minutes: 70
         run: pnpm test:desktop:ci
 
@@ -191,6 +197,8 @@ jobs:
         if: always()
         env:
           CCSM_E2E_JOB_STATUS: ${{ job.status }}
+          CCSM_E2E_STEP_OUTCOMES: >-
+            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}"}
         run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
 
       - name: Upload Windows Desktop E2E evidence
@@ -220,6 +228,7 @@ jobs:
         run: node -e "const fs=require('node:fs'),p=require('node:path'),d=process.env.CCSM_E2E_ARTIFACT_DIR;fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'workflow-state.json'),JSON.stringify({phase:'initialized',platform:'linux',createdAt:new Date().toISOString()},null,2)+'\n')"
 
       - name: Check out source
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: false
@@ -272,18 +281,23 @@ jobs:
           cache-on-failure: true
 
       - name: Install frontend dependencies
+        id: dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Test E2E-only backend
+        id: backend
         run: cargo test --locked -p ccsm-desktop --features e2e
 
       - name: Build Linux E2E executable
+        id: build
         run: pnpm test:desktop:build
 
       - name: Verify pinned provider CLI contracts
+        id: provider_contract
         run: pnpm test:provider-cli-contract
 
       - name: Run Linux Desktop E2E
+        id: desktop_e2e
         timeout-minutes: 70
         run: xvfb-run -a --server-args="-screen 0 1440x900x24" pnpm test:desktop:ci
 
@@ -291,6 +305,8 @@ jobs:
         if: always()
         env:
           CCSM_E2E_JOB_STATUS: ${{ job.status }}
+          CCSM_E2E_STEP_OUTCOMES: >-
+            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}"}
         run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
 
       - name: Upload Linux Desktop E2E evidence

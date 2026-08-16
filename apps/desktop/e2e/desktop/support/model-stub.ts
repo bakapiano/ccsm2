@@ -15,6 +15,10 @@ export interface ModelStubEvent {
   model?: string;
   prompt: string;
   response: string;
+  responseId: string;
+  previousResponseId?: string | null;
+  configuredPromptsPresent: string[];
+  configuredResponsesPresent: string[];
 }
 
 function requiredPath(name: string): string {
