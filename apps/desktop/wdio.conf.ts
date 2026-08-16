@@ -127,7 +127,8 @@ export const config: WebdriverIO.Config = {
       join(artifactDirectory, "capabilities.json"),
       `${JSON.stringify(browser.capabilities, null, 2)}\n`,
     );
-    await browser.setWindowSize(1320, 800);
+    await browser.maximizeWindow();
+    await browser.setWindowRect(20, 20, 1320, 800);
     await $("#app").waitForDisplayed({ timeout: 60_000 });
   },
   afterTest: async (test, _context, result) => {

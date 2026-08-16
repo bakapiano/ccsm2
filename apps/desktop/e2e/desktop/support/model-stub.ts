@@ -2,21 +2,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 export type Provider = "claude" | "codex" | "copilot";
 
-interface ModelMockConfig {
-  defaultResponse: string;
+interface ModelStubConfig {
+  defaultResponse?: string;
   providers: Partial<Record<Provider, Record<string, string>>>;
 }
 
-export interface ModelMockEvent {
-  timestampMs: number;
-  event: "session-start" | "model-response";
+export interface ModelStubEvent {
+  at: string;
+  method: string;
+  path: string;
   provider: Provider;
-  cliSessionId: string;
-  nativeSessionId: string;
-  resumed: boolean;
-  prompt?: string;
-  response?: string;
-  arguments?: string[];
+  model?: string;
+  prompt: string;
+  response: string;
 }
 
 function requiredPath(name: string): string {
@@ -30,20 +28,20 @@ export function setModelResponse(
   prompt: string,
   response: string,
 ): void {
-  const path = requiredPath("CCSM_E2E_MODEL_MOCK_FILE");
-  const config = JSON.parse(readFileSync(path, "utf8")) as ModelMockConfig;
+  const path = requiredPath("CCSM_E2E_MODEL_STUB_FILE");
+  const config = JSON.parse(readFileSync(path, "utf8")) as ModelStubConfig;
   config.providers[provider] ??= {};
   config.providers[provider]![prompt] = response;
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-export function readModelMockEvents(provider: Provider): ModelMockEvent[] {
-  const path = requiredPath("CCSM_E2E_MODEL_MOCK_LOG");
+export function readModelStubEvents(provider: Provider): ModelStubEvent[] {
+  const path = requiredPath("CCSM_E2E_MODEL_STUB_LOG");
   try {
     return readFileSync(path, "utf8")
       .split("\n")
       .filter(Boolean)
-      .map((line) => JSON.parse(line) as ModelMockEvent)
+      .map((line) => JSON.parse(line) as ModelStubEvent)
       .filter((event) => event.provider === provider);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];

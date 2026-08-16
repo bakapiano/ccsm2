@@ -1,0 +1,14 @@
+{
+  "name": "@ccsm/provider-cli-contract-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned provider CLI releases used only by the CCSM test gate.",
+  "engines": {
+    "node": "22.16.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.233",
+    "@github/copilot": "1.0.80",
+    "@openai/codex": "0.147.0"
+  }
+}

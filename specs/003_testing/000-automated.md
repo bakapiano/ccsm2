@@ -26,6 +26,7 @@ Pull Request / main push
         ├── desktop-e2e-windows ── windows-2022
         │       ├── test E2E-only backend
         │       ├── build Windows E2E executable
+        │       ├── pinned real-provider CLI contract
         │       ├── WDIO desktop scenarios
         │       ├── acceptance GIF + result files
         │       └── upload Actions Artifact (7 days)
@@ -33,6 +34,7 @@ Pull Request / main push
         └── desktop-e2e-linux ──── ubuntu-24.04 + virtual display
                 ├── test E2E-only backend
                 ├── build Linux E2E executable
+                ├── pinned real-provider CLI contract
                 ├── WDIO desktop scenarios
                 ├── acceptance GIF + result files
                 └── upload Actions Artifact (7 days)
@@ -55,13 +57,14 @@ initialize failure evidence
 → install pinned toolchains and locked dependencies
 → test E2E-only backend
 → pnpm test:desktop:build
+→ pnpm test:provider-cli-contract
 → pnpm test:desktop:ci
 → finalize acceptance evidence
 → upload artifact
 → report job status
 ```
 
-`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。E2E-only Cargo tests 先执行，平台 build 最后写入带 Tauri E2E config overlay 的 executable。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
+`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。E2E-only Cargo tests 先执行，平台 build 最后写入带 Tauri E2E config overlay 的 executable。`pnpm test:provider-cli-contract` 使用该 executable 的生产 wrapper 验证固定版本真实 CLI。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
 
 job 开始时创建最小 `workflow-state.json`。测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。finalizer 将 workflow 状态、display cleanup 和 runner 结果汇总为一个最终结论；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
 
@@ -110,17 +113,35 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 - artifact directory
 - `run_id`
 
-公开仓库必需门禁的全部输入由确定性 fixture、虚拟 provider 数据和隔离目录组成。真实 provider credential 归属受保护的专项验收 workflow。
+公开仓库必需门禁的全部输入由固定版本 provider CLI、确定性 model response、合成 API key 和隔离目录组成。真实账户验收归属受保护的专项 workflow。
 
 Windows 与 Linux 都直接启动本 job 构建的 executable，保留不同 WebView 版本的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。teardown 结束后按 ownership root、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
 
-## Provider model mock
+## 真实 Provider CLI 与 model API stub
 
-必需门禁通过 E2E executable 内的 test-only provider mock 运行 Claude、Codex 与 GitHub Copilot。mock executable 继续经过生产 CLI shim、PTY、Hook reporter、native session binding 和 resume 参数组装，并以固定内容代替网络 model 调用。
+必需门禁启动 npm lockfile 固定的 Claude Code、Codex 与 GitHub Copilot CLI 原生 executable。三家 CLI 都经过生产 CLI shim、PTY、Hook reporter、native session binding 和 resume 参数组装。runner 上的 loopback HTTP server 实现 Anthropic Messages 与 OpenAI Responses 协议，并向真实 CLI 返回确定性 model response。
 
-`CCSM_E2E_MODEL_MOCK_FILE` 指向本次运行的 JSON 配置。测试在发送 prompt 前按 `provider + prompt` 设置返回内容；第二轮响应在 resumed CLI 启动后写入，mock 在 prompt 到达时读取最新配置。`CCSM_E2E_MODEL_MOCK_LOG` 记录 session start、native session ID、resume 状态、prompt 和 response，供断言及 artifact 验收。
+`CCSM_E2E_MODEL_STUB_FILE` 指向本次运行的 JSON 配置。测试在发送 prompt 前按 `provider + prompt` 设置返回内容；第二轮响应在 resumed CLI 启动后写入，stub 在 HTTP request 到达时读取最新配置。`CCSM_E2E_MODEL_STUB_LOG` 记录 provider、model、prompt、response 和 API path，供断言及 artifact 验收。
 
-Claude mock 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 在首条 prompt 到达时建立初始绑定。三家 provider 的 resume 启动均校验生产 shim 组装的完整参数与已绑定 native session ID 一致；artifact 仅记录会话选择参数。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使 provider fixture 和场景失败。
+Claude 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 通过真实 `SessionStart` Hook 建立绑定。Stop/Start 后的 CLI 使用生产 resume 参数恢复同一 native session；第二轮真实 API request 与 response 证明恢复后的会话可以继续对话。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使场景失败。
+
+## 固定版本 Provider CLI contract
+
+每个平台 job 在 Desktop Scenarios 前从 npm 官方 registry 安装测试专用的 Claude Code、Codex 与 GitHub Copilot CLI。`apps/desktop/e2e/provider-cli-contract/package.json` 固定顶层版本，`package-lock.json` 固定平台包、下载地址和 integrity。`npm ci --ignore-scripts` 执行完整性校验并选择当前 runner 的原生 x64 包。
+
+contract 对每家 provider 执行：
+
+1. 原生 executable 的版本检查。
+2. `resume`、session 与 Hook/plugin 参数接口检查。
+3. CCSM 生产 `ccsm-provider` wrapper 的 cold-start 参数解析。
+4. CCSM 生产 wrapper 的 resume 参数解析。
+5. Claude 真实 CLI 通过本地 Anthropic stub 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
+6. Codex 真实 CLI 通过本地 Responses API stub 完成 prompt 与真实 Hook delivery。
+7. GitHub Copilot 真实 CLI 通过 BYOK/offline 本地 Responses API 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
+
+执行环境使用隔离 HOME 与合成 API key。三家的 model base URL 指向 runner loopback stub；外部 HTTP proxy 指向关闭的 loopback endpoint。真实 CLI executable 位于独立 runtime 目录，job 生命周期负责清理；artifact 保存 `provider-cli-contract.json` 与 model-stub JSONL，其中包含固定版本、实际版本、二进制 SHA-256、模型请求与逐项结果。
+
+该 contract 提供真实发行版的参数兼容证据。下方三条 Desktop Scenarios 提供确定性的完整对话、Hook、session binding 与 resume 行为证据。受保护的手动或 nightly workflow 管理需要真实账户的 provider 对话。
 
 门禁包含三条独立场景：
 
@@ -138,7 +159,8 @@ Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 We
 2. 用户通过可见目录选择、CLI 按钮与真实 WebDriver keyboard action 创建 Space 和三种 CLI。
 3. 每种 CLI 收到按 prompt 动态配置的固定 model response。
 4. Stop 后再次 Start 使用同一 native session，第二轮 prompt 正常返回。
-5. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
+5. 三家固定版本真实 CLI 接受当前 resume 接口与生产 wrapper 参数。
+6. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
 
 场景从用户可观察结果断言。内部诊断状态补充失败原因。
 
@@ -168,6 +190,7 @@ logs/
 process-cleanup.json
 display-cleanup.json
 credential-scan.json
+provider-cli-contract.json
 workflow-state.json
 ```
 
@@ -228,6 +251,7 @@ PR review 是人工验收记录；四个 required status checks 是自动门禁�
 
 - Verify matrix 与 Windows/Linux Desktop E2E 在 GitHub Actions 中显示为四个 required checks。
 - 两个平台都通过 `@wdio/tauri-service` embedded provider 启动真实 executable。
+- 两个平台都通过 lockfile 安装并验证三家固定版本真实 CLI。
 - 本地与 CI 调用同一份 WDIO 配置和 Desktop Scenarios。
 - 每个平台运行都生成结构化测试结果与可播放 GIF。
 - 失败运行仍上传诊断证据并保留失败状态。

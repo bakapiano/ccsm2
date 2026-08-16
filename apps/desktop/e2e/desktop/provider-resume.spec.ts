@@ -3,11 +3,10 @@ import { join, resolve } from "node:path";
 
 import { ScenarioEvidence } from "./support/evidence";
 import {
-  type ModelMockEvent,
   type Provider,
-  readModelMockEvents,
+  readModelStubEvents,
   setModelResponse,
-} from "./support/model-mock";
+} from "./support/model-stub";
 
 interface ProviderCase {
   provider: Provider;
@@ -34,9 +33,13 @@ const providerCases: ProviderCase[] = [
   { provider: "copilot", label: "GHCP", scenarioId: "ghcp-resume" },
 ];
 
-describe("mocked provider resume", () => {
+describe("real provider CLI with stubbed model API", () => {
   before(() => {
     mkdirSync(artifactDirectory, { recursive: true });
+  });
+
+  beforeEach(async () => {
+    await ensureDesktopViewport();
   });
 
   for (const providerCase of providerCases) {
@@ -46,9 +49,9 @@ describe("mocked provider resume", () => {
       const spaceName = `E2E ${label} ${runId}`;
       const spaceRoot = join(spaceRootBase, provider);
       const firstPrompt = `${provider}-prompt-one`;
-      const firstResponse = `MOCK_${provider.toUpperCase()}_RESPONSE_ONE`;
+      const firstResponse = `STUB_${provider.toUpperCase()}_RESPONSE_ONE`;
       const secondPrompt = `${provider}-prompt-two`;
-      const secondResponse = `MOCK_${provider.toUpperCase()}_RESPONSE_TWO`;
+      const secondResponse = `STUB_${provider.toUpperCase()}_RESPONSE_TWO`;
       setModelResponse(provider, firstPrompt, firstResponse);
 
       let primaryError: unknown;
@@ -60,27 +63,18 @@ describe("mocked provider resume", () => {
 
         currentStep = "create-cli";
         await openProviderTab(provider);
-        const bindsOnFirstPrompt = provider !== "claude";
+        await acknowledgeProviderStartup(provider);
         const started = await waitForProvider(provider, (snapshot) =>
           Boolean(
             snapshot.runtimeId &&
               snapshot.inputEnabled &&
-              (bindsOnFirstPrompt
-                ? snapshot.bindingState === "pending" &&
-                  !snapshot.nativeSessionId
-                : snapshot.bindingState === "bound" &&
-                  snapshot.nativeSessionId) &&
-              snapshot.text.includes("CCSM_E2E_READY>"),
+              ["pending", "bound"].includes(snapshot.bindingState ?? "") &&
+              terminalLooksReady(provider, snapshot.text) &&
+              terminalPromptReady(provider, snapshot.text),
           ),
         );
-        if (bindsOnFirstPrompt) {
-          expect(
-            readModelMockEvents(provider).filter(
-              (event) => event.event === "session-start",
-            ),
-          ).toHaveLength(0);
-        }
         const firstRuntimeId = started.runtimeId!;
+        await waitForStablePrompt(provider, firstRuntimeId);
         await evidence.checkpoint("cli-started");
 
         currentStep = "first-prompt";
@@ -90,9 +84,11 @@ describe("mocked provider resume", () => {
           (snapshot) =>
             snapshot.text.includes(firstResponse) &&
             snapshot.bindingState === "bound" &&
-            Boolean(snapshot.nativeSessionId),
+            Boolean(snapshot.nativeSessionId) &&
+            terminalPromptReady(provider, snapshot.text),
         );
         const nativeSessionId = firstTurn.nativeSessionId!;
+        await waitForAgentActivity(firstTurn.cliSessionId!, "idle");
         await evidence.checkpoint("first-model-response");
 
         currentStep = "close-cli";
@@ -102,20 +98,20 @@ describe("mocked provider resume", () => {
 
         currentStep = "resume-cli";
         await clickRuntimeAction(provider);
+        await acknowledgeProviderStartup(provider);
         const resumed = await waitForProvider(provider, (snapshot) =>
           Boolean(
             snapshot.runtimeId &&
               snapshot.runtimeId !== firstRuntimeId &&
               snapshot.inputEnabled &&
               snapshot.nativeSessionId === nativeSessionId &&
-              snapshot.text.includes(
-                `CCSM E2E ${provider} mock resumed session`,
-              ),
+              terminalPromptReady(provider, snapshot.text),
           ),
         );
         expect(resumed.runtimeId).not.toBe(firstRuntimeId);
         expect(resumed.nativeSessionId).toBe(nativeSessionId);
-        assertResumeInvocation(provider, nativeSessionId);
+        await waitForStablePrompt(provider, resumed.runtimeId!);
+        await waitForAgentActivity(resumed.cliSessionId!, "idle");
         await evidence.checkpoint("cli-resumed");
 
         currentStep = "resumed-prompt";
@@ -125,9 +121,11 @@ describe("mocked provider resume", () => {
           provider,
           (snapshot) =>
             snapshot.text.includes(secondResponse) &&
-            snapshot.nativeSessionId === nativeSessionId,
+            snapshot.nativeSessionId === nativeSessionId &&
+            terminalPromptReady(provider, snapshot.text),
         );
         expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
+        await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
         assertModelResponses(provider, [
           [firstPrompt, firstResponse],
           [secondPrompt, secondResponse],
@@ -183,6 +181,23 @@ describe("mocked provider resume", () => {
     });
   }
 });
+
+async function ensureDesktopViewport(): Promise<void> {
+  await browser.maximizeWindow();
+  await browser.setWindowRect(20, 20, 1319, 799);
+  await browser.setWindowRect(20, 20, 1320, 800);
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () => window.innerWidth >= 900 && window.innerHeight >= 560,
+      ),
+    {
+      timeout: 20_000,
+      interval: 250,
+      timeoutMsg: "Desktop E2E viewport did not reach 900x560",
+    },
+  );
+}
 
 function writeDiagnostic(
   scenarioId: string,
@@ -269,7 +284,7 @@ async function openProviderTab(provider: Provider): Promise<void> {
 async function terminalSnapshot(
   provider: Provider,
 ): Promise<TerminalSnapshot | null> {
-  return browser.execute((requestedProvider) => {
+  const serialized = await browser.execute((requestedProvider) => {
     let fallback: TerminalSnapshot | null = null;
     for (const element of document.querySelectorAll<HTMLElement>(
       ".terminal-panel",
@@ -281,10 +296,23 @@ async function terminalSnapshot(
       ).__CCSM_TERMINAL_DEBUG__?.();
       if (snapshot?.provider !== requestedProvider) continue;
       fallback ??= snapshot;
-      if (snapshot.inputEnabled) return snapshot;
+      if (snapshot.inputEnabled) return JSON.stringify(project(snapshot));
     }
-    return fallback;
+    return JSON.stringify(fallback ? project(fallback) : null);
+
+    function project(snapshot: TerminalSnapshot): TerminalSnapshot {
+      return {
+        cliSessionId: snapshot.cliSessionId ?? null,
+        runtimeId: snapshot.runtimeId ?? null,
+        provider: snapshot.provider,
+        bindingState: snapshot.bindingState ?? null,
+        nativeSessionId: snapshot.nativeSessionId ?? null,
+        inputEnabled: Boolean(snapshot.inputEnabled),
+        text: String(snapshot.text ?? ""),
+      };
+    }
   }, provider);
+  return JSON.parse(serialized) as TerminalSnapshot | null;
 }
 
 async function waitForProvider(
@@ -304,7 +332,7 @@ async function waitForProvider(
       return Boolean(latest && predicate(latest));
     },
     {
-      timeout: 45_000,
+      timeout: 90_000,
       interval: 250,
       timeoutMsg: `${provider} did not reach the expected terminal state`,
     },
@@ -321,8 +349,160 @@ async function sendTerminalLine(
   const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
   await terminalInput.waitForExist({ timeout: 20_000 });
   await terminalInput.click();
-  await browser.keys(input);
+  for (const character of input) await browser.keys(character);
+  await waitForProvider(provider, (snapshot) => snapshot.text.includes(input));
   await browser.keys("Enter");
+  if (!(await waitForModelRequest(provider, input, 8_000))) {
+    await browser.keys("Enter");
+  }
+}
+
+async function waitForModelRequest(
+  provider: Provider,
+  prompt: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (
+      readModelStubEvents(provider).some((event) => event.prompt === prompt)
+    ) {
+      return true;
+    }
+    await browser.pause(200);
+  }
+  return false;
+}
+
+async function acknowledgeProviderStartup(provider: Provider): Promise<void> {
+  if (provider === "copilot") {
+    let trustHandled = false;
+    await browser.waitUntil(
+      async () => {
+        const snapshot = await terminalSnapshot(provider);
+        if (!snapshot?.runtimeId) return false;
+        if (!trustHandled && hasCopilotTrustPrompt(snapshot.text)) {
+          trustHandled = true;
+          await sendTerminalKeys(provider, ["Enter"]);
+          return false;
+        }
+        return Boolean(
+          snapshot.inputEnabled && terminalPromptReady(provider, snapshot.text),
+        );
+      },
+      {
+        timeout: 120_000,
+        interval: 250,
+        timeoutMsg: "GitHub Copilot did not complete its real CLI startup flow",
+      },
+    );
+    return;
+  }
+  if (provider === "codex") {
+    const handled = new Set<string>();
+    await browser.waitUntil(
+      async () => {
+        const snapshot = await terminalSnapshot(provider);
+        if (!snapshot?.runtimeId) return false;
+        const prompts = [
+          {
+            id: "workspace-trust",
+            present: hasCodexTrustPrompt,
+            keys: ["Enter"],
+          },
+          {
+            id: "windows-sandbox",
+            present: hasCodexSandboxPrompt,
+            keys: ["ArrowDown", "Enter"],
+          },
+        ];
+        const prompt = prompts.find(
+          (candidate) =>
+            !handled.has(candidate.id) && candidate.present(snapshot.text),
+        );
+        if (prompt) {
+          handled.add(prompt.id);
+          await sendTerminalKeys(provider, prompt.keys);
+          return false;
+        }
+        return Boolean(
+          snapshot.inputEnabled && terminalPromptReady(provider, snapshot.text),
+        );
+      },
+      {
+        timeout: 120_000,
+        interval: 250,
+        timeoutMsg: "Codex did not complete its real CLI startup flow",
+      },
+    );
+    return;
+  }
+  if (provider !== "claude") return;
+  const handled = new Set<string>();
+  await browser.waitUntil(
+    async () => {
+      const snapshot = await terminalSnapshot(provider);
+      if (!snapshot?.runtimeId) return false;
+      writeFileSync(
+        join(artifactDirectory, `${provider}-latest.json`),
+        `${JSON.stringify(snapshot, null, 2)}\n`,
+      );
+      const prompts: Array<{
+        id: string;
+        present: (text: string) => boolean;
+        keys: string[];
+      }> = [
+        { id: "theme", present: hasClaudeThemePrompt, keys: ["Enter"] },
+        {
+          id: "api-key",
+          present: hasClaudeApiKeyPrompt,
+          keys: ["ArrowUp", "Enter"],
+        },
+        {
+          id: "security-notes",
+          present: hasClaudeSecurityNotes,
+          keys: ["Enter"],
+        },
+        {
+          id: "workspace-trust",
+          present: hasClaudeTrustPrompt,
+          keys: ["Enter"],
+        },
+      ];
+      const prompt = prompts.find(
+        (candidate) =>
+          !handled.has(candidate.id) && candidate.present(snapshot.text),
+      );
+      if (prompt) {
+        handled.add(prompt.id);
+        await sendTerminalKeys(provider, prompt.keys);
+        return false;
+      }
+      return Boolean(
+        snapshot.inputEnabled &&
+          snapshot.bindingState === "bound" &&
+          snapshot.nativeSessionId &&
+          terminalLooksReady(provider, snapshot.text) &&
+          terminalPromptReady(provider, snapshot.text),
+      );
+    },
+    {
+      timeout: 120_000,
+      interval: 250,
+      timeoutMsg: "Claude did not complete its real CLI startup flow",
+    },
+  );
+}
+
+async function sendTerminalKeys(
+  provider: Provider,
+  keys: string[],
+): Promise<void> {
+  const panel = await terminalPanel(provider);
+  const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
+  await terminalInput.waitForExist({ timeout: 20_000 });
+  await terminalInput.click();
+  for (const key of keys) await browser.keys(key);
 }
 
 async function clickRuntimeAction(provider: Provider): Promise<void> {
@@ -346,37 +526,58 @@ async function terminalPanel(provider: Provider) {
   return panel;
 }
 
-function assertResumeInvocation(
-  provider: Provider,
-  nativeSessionId: string,
-): void {
-  const starts = readModelMockEvents(provider).filter(
-    (event) => event.event === "session-start",
+async function waitForAgentActivity(
+  cliSessionId: string,
+  activity: string,
+): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (sessionId, expectedActivity) =>
+          document.querySelector<HTMLElement>(
+            `.agent-item[data-cli-session-id="${CSS.escape(sessionId)}"]`,
+          )?.dataset.activity === expectedActivity,
+        cliSessionId,
+        activity,
+      ),
+    {
+      timeout: 30_000,
+      interval: 200,
+      timeoutMsg: `CLI session ${cliSessionId} did not become ${activity}`,
+    },
   );
-  expect(starts.length).toBeGreaterThanOrEqual(2);
-  const initial = starts.at(-2)!;
-  const resumed = starts.at(-1)!;
-  expect(initial.resumed).toBe(false);
-  expect(resumed.resumed).toBe(true);
-  expect(resumed.nativeSessionId).toBe(nativeSessionId);
-  expect(resumed.nativeSessionId).toBe(initial.nativeSessionId);
-  expect(resumeArgumentsContain(provider, resumed, nativeSessionId)).toBe(true);
 }
 
-function resumeArgumentsContain(
+async function waitForStablePrompt(
   provider: Provider,
-  event: ModelMockEvent,
-  nativeSessionId: string,
-): boolean {
-  const args = event.arguments ?? [];
-  if (provider === "copilot") {
-    return args.includes(`--resume=${nativeSessionId}`);
-  }
-  const resumeIndex = args.lastIndexOf("resume");
-  const longResumeIndex = args.lastIndexOf("--resume");
-  return (
-    (resumeIndex >= 0 && args[resumeIndex + 1] === nativeSessionId) ||
-    (longResumeIndex >= 0 && args[longResumeIndex + 1] === nativeSessionId)
+  runtimeId: string,
+): Promise<void> {
+  let previousTail = "";
+  let stableSince = 0;
+  await browser.waitUntil(
+    async () => {
+      const snapshot = await terminalSnapshot(provider);
+      if (
+        snapshot?.runtimeId !== runtimeId ||
+        !terminalPromptReady(provider, snapshot.text)
+      ) {
+        previousTail = "";
+        stableSince = 0;
+        return false;
+      }
+      const tail = snapshot.text.slice(-2_000);
+      if (tail !== previousTail) {
+        previousTail = tail;
+        stableSince = Date.now();
+        return false;
+      }
+      return Date.now() - stableSince >= 1_000;
+    },
+    {
+      timeout: 30_000,
+      interval: 200,
+      timeoutMsg: `${provider} prompt did not stabilize`,
+    },
   );
 }
 
@@ -384,9 +585,7 @@ function assertModelResponses(
   provider: Provider,
   expected: Array<[prompt: string, response: string]>,
 ): void {
-  const responses = readModelMockEvents(provider).filter(
-    (event) => event.event === "model-response",
-  );
+  const responses = readModelStubEvents(provider);
   for (const [prompt, response] of expected) {
     expect(
       responses.some(
@@ -394,4 +593,87 @@ function assertModelResponses(
       ),
     ).toBe(true);
   }
+}
+
+function terminalLooksReady(provider: Provider, text: string): boolean {
+  if (!text.trim()) return false;
+  const markers: Record<Provider, RegExp> = {
+    claude: /Claude|❯|>/iu,
+    codex: /Codex|›|>/iu,
+    copilot: /Copilot|What can I help|>/iu,
+  };
+  return markers[provider].test(text);
+}
+
+function terminalPromptReady(provider: Provider, text: string): boolean {
+  const symbols: Record<Provider, string[]> = {
+    claude: ["❯"],
+    codex: ["›", ">"],
+    copilot: [">", "❯"],
+  };
+  const last = symbols[provider]
+    .map((symbol) => ({ index: text.lastIndexOf(symbol), symbol }))
+    .sort((left, right) => right.index - left.index)[0];
+  if (!last || last.index < 0) return false;
+  const after = text.slice(last.index + last.symbol.length);
+  if (provider === "codex") {
+    const firstLine = after.split("\n", 1)[0].replaceAll("\u00a0", " ").trim();
+    return (
+      text.includes("gpt-5.6-sol default") &&
+      !firstLine.includes("codex-prompt-")
+    );
+  }
+  return /^[ \u00a0]*\n/u.test(after);
+}
+
+function hasClaudeApiKeyPrompt(text: string): boolean {
+  return text
+    .replace(/\s+/gu, "")
+    .toLowerCase()
+    .includes("doyouwanttousethisapikey?");
+}
+
+function hasClaudeThemePrompt(text: string): boolean {
+  return text
+    .replace(/\s+/gu, "")
+    .toLowerCase()
+    .includes("choosethetextstylethatlooksbestwithyourterminal");
+}
+
+function hasClaudeTrustPrompt(text: string): boolean {
+  return text
+    .replace(/\s+/gu, "")
+    .toLowerCase()
+    .includes("yes,itrustthisfolder");
+}
+
+function hasClaudeSecurityNotes(text: string): boolean {
+  const compact = text.replace(/\s+/gu, "").toLowerCase();
+  return (
+    compact.includes("securitynotes:") &&
+    compact.includes("pressentertocontinue")
+  );
+}
+
+function hasCodexTrustPrompt(text: string): boolean {
+  return text
+    .replace(/\s+/gu, "")
+    .toLowerCase()
+    .includes("doyoutrustthecontentsofthisdirectory?");
+}
+
+function hasCodexSandboxPrompt(text: string): boolean {
+  const compact = text.replace(/\s+/gu, "").toLowerCase();
+  return (
+    compact.includes("setupthecodexagentsandbox") &&
+    compact.includes("usenon-adminsandbox")
+  );
+}
+
+function hasCopilotTrustPrompt(text: string): boolean {
+  const compact = text.replace(/\s+/gu, "").toLowerCase();
+  return (
+    compact.includes("confirmfoldertrust") &&
+    compact.includes("doyoutrustthefilesinthisfolder?")
+  );
 }

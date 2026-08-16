@@ -484,6 +484,11 @@ class TerminalPanel implements IContentRenderer {
     this.#syncAction();
     this.#setStatus("starting", `starting ${this.#tab.title}`);
     try {
+      await this.#inputQueue;
+      if (!(await this.#waitForOutputDrain())) this.#dropOutputQueue();
+      this.#pendingExitCode = null;
+      this.#oscStripper.reset();
+      this.#terminal.reset();
       const started = await this.#client.backend.startRuntime(
         {
           cliSessionId: sessionId,

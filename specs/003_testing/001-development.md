@@ -17,7 +17,16 @@ pnpm test:desktop:build
 pnpm test:desktop
 ```
 
-前者构建启用测试插件的 E2E executable，后者通过 `@wdio/tauri-service` 启动应用并执行场景。
+前者构建启用测试插件的 E2E executable，后者按专用 npm lockfile 准备三家真实 CLI、启动 loopback model API stub，再通过 `@wdio/tauri-service` 启动应用并执行场景。
+
+需要验证当前 CCSM wrapper 与门禁固定版本真实 CLI 的兼容性时运行：
+
+```powershell
+pnpm test:desktop:build
+pnpm test:provider-cli-contract
+```
+
+该命令从 npm 官方 registry 按专用 lockfile 下载当前平台的 Claude Code、Codex 与 GitHub Copilot CLI，校验 integrity、版本、resume 接口和 wrapper 参数。三家真实 CLI 使用 loopback model API 完成对话与 Hook；Claude 和 GitHub Copilot 同时执行 native session resume。执行环境使用隔离 HOME、合成 API key 和关闭的外部模型网络。默认安装目录位于 `test-results` 并在完成后清理，结果保存在 `test-results/provider-cli-contract/<platform>/provider-cli-contract.json` 与同级 `logs/`。
 
 ## 使用 Playwright CLI 连接 dev WebView
 
@@ -127,6 +136,7 @@ pnpm test:desktop -- --spec <file>      run one spec file
 CCSM_E2E_SCENARIO=<provider> pnpm test:desktop run claude/codex/ghcp scenario
 pnpm test:desktop:debug -- --spec <file> run one spec with debug logging
 pnpm test:desktop:evidence -- --spec <file> run one spec in evidence mode
+pnpm test:provider-cli-contract             download and verify pinned real CLIs
 ```
 
 CI 的 `pnpm test:desktop:ci` 调用同一 runner，并增加 CI reporter、固定 timeout 和 artifact 输出路径。
@@ -163,9 +173,9 @@ build E2E executable once
 
 ```text
 test-results/desktop/<run_id>/
-<os-temp>/ccsm-e2e-<platform>-*/app-data/
-<os-temp>/ccsm-e2e-<platform>-*/spaces/
-<os-temp>/ccsm-e2e-<platform>-*/model-mock.json
+test-results/.ccsm-e2e-<platform>-*/app-data/
+test-results/.ccsm-e2e-<platform>-*/spaces/
+test-results/.ccsm-e2e-<platform>-*/model-stub.json
 ```
 
 两平台运行器直接启动当前 job 的构建产物并记录进程基线，保留 WebView 资源路由。运行器向应用传入 `CCSM_DATA_DIR`、fixture root 和 `run_id`；E2E runtime shims 进入隔离 data root，runner 按 ownership root 与新增 PID 记录、清理 app、shim、provider、watchdog、WebView、profile 和目录。

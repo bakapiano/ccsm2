@@ -19,6 +19,7 @@
     "test:desktop:ci": "pnpm --filter @ccsm/desktop test:desktop:ci",
     "test:desktop:debug": "pnpm --filter @ccsm/desktop test:desktop:debug",
     "test:desktop:evidence": "pnpm --filter @ccsm/desktop test:desktop:evidence",
+    "test:provider-cli-contract": "pnpm --filter @ccsm/desktop test:provider-cli-contract",
     "package:ubuntu": "bash scripts/package-ubuntu.sh",
     "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
     "contracts": "cargo test --locked -p ccsm-core export_bindings && cargo test --locked -p ccsm-desktop export_bindings"

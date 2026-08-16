@@ -11,9 +11,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +37,11 @@ const artifactDirectory = resolve(
   process.env.CCSM_E2E_ARTIFACT_DIR ??
     join(repositoryRoot, "test-results", "desktop", platform, runId),
 );
-const temporaryRoot = mkdtempSync(join(tmpdir(), `ccsm-e2e-${platform}-`));
+const runtimeRootParent = join(repositoryRoot, "test-results");
+mkdirSync(runtimeRootParent, { recursive: true });
+const temporaryRoot = mkdtempSync(
+  join(runtimeRootParent, `.ccsm-e2e-${platform}-`),
+);
 const binaryName =
   process.platform === "win32" ? "ccsm-desktop.exe" : "ccsm-desktop";
 const sourceAppBinary = resolve(
@@ -46,14 +49,25 @@ const sourceAppBinary = resolve(
     join(repositoryRoot, "target", "debug", binaryName),
 );
 const appBinary = sourceAppBinary;
-const modelMockFile = join(temporaryRoot, "model-mock.json");
-const modelMockLog = join(artifactDirectory, "logs", "model-mock.jsonl");
+const modelStubConfigFile = join(temporaryRoot, "model-stub.json");
+const modelStubLog = join(artifactDirectory, "logs", "model-stub.jsonl");
 const dataDirectory = join(temporaryRoot, "app-data");
 const spacesDirectory = join(temporaryRoot, "spaces");
+const providerHome = join(temporaryRoot, "provider-home");
+const configuredProviderCliRoot = process.env.CCSM_PROVIDER_CLI_ROOT;
+const localProviderCliParent = join(repositoryRoot, "test-results");
+mkdirSync(localProviderCliParent, { recursive: true });
+const providerCliRoot = configuredProviderCliRoot
+  ? resolve(configuredProviderCliRoot)
+  : mkdtempSync(
+      join(localProviderCliParent, `.provider-clis-e2e-${platform}-`),
+    );
+const ownsProviderCliRoot = !configuredProviderCliRoot;
 
 mkdirSync(join(artifactDirectory, "logs"), { recursive: true });
 mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(spacesDirectory, { recursive: true });
+mkdirSync(providerHome, { recursive: true });
 for (const provider of ["claude", "codex", "copilot"]) {
   mkdirSync(join(spacesDirectory, provider), { recursive: true });
 }
@@ -61,8 +75,8 @@ const baselineSourceProcessIds = new Set(
   listSourceBinaryProcesses().map((entry) => entry.ProcessId),
 );
 writeFileSync(
-  modelMockFile,
-  `${JSON.stringify({ defaultResponse: "CCSM_E2E_DEFAULT_RESPONSE", providers: {} }, null, 2)}\n`,
+  modelStubConfigFile,
+  `${JSON.stringify({ providers: {} }, null, 2)}\n`,
 );
 
 const ownArguments = new Set(["--ci", "--debug", "--evidence"]);
@@ -84,69 +98,114 @@ const inheritedRuntimeVariables = new Set([
   "CCSM_RUNTIME_ID",
   "CCSM_SESSION_ID",
   "CCSM_WRAPPER_ACTIVE",
+  "CCSM_REAL_CLAUDE_PATH",
+  "CCSM_REAL_CODEX_PATH",
+  "CCSM_REAL_COPILOT_PATH",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BEARER_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_API_KEY",
+  "OPENAI_API_KEY",
+  "CODEX_API_KEY",
+  "COPILOT_GITHUB_TOKEN",
+  "GITHUB_COPILOT_API_TOKEN",
+  "GITHUB_COPILOT_GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
 ]);
 const cleanEnvironment = Object.fromEntries(
   Object.entries(process.env).filter(
-    ([name]) => !inheritedRuntimeVariables.has(name),
+    ([name]) =>
+      !inheritedRuntimeVariables.has(name.toUpperCase()) &&
+      !/^(?:ANTHROPIC|CLAUDE_CODE|OPENAI|CODEX|COPILOT)_/iu.test(name),
   ),
 );
-const environment = {
-  ...cleanEnvironment,
-  CCSM_DATA_DIR: dataDirectory,
-  CCSM_E2E_APP_BINARY: appBinary,
-  CCSM_E2E_ARTIFACT_DIR: artifactDirectory,
-  CCSM_E2E_MODEL_MOCK: "1",
-  CCSM_E2E_MODEL_MOCK_FILE: modelMockFile,
-  CCSM_E2E_MODEL_MOCK_LOG: modelMockLog,
-  CCSM_E2E_PLATFORM: platform,
-  CCSM_E2E_RUN_ID: runId,
-  CCSM_E2E_RUN_MODE: runMode,
-  CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
-  CCSM_HOOK_REPORTER_STRICT: "1",
-  CCSM_REAL_CLAUDE_PATH: appBinary,
-  CCSM_REAL_CODEX_PATH: appBinary,
-  CCSM_REAL_COPILOT_PATH: appBinary,
-  ...(process.platform === "win32"
-    ? { LOCALAPPDATA: dataDirectory }
-    : {
-        XDG_CACHE_HOME: join(dataDirectory, "cache"),
-        XDG_CONFIG_HOME: join(dataDirectory, "config"),
-        XDG_DATA_HOME: join(dataDirectory, "data"),
-      }),
-  ...(process.argv.includes("--debug") ? { CCSM_E2E_DEBUG: "1" } : {}),
-};
-
 let exitCode = 1;
 let runnerError;
+let modelStub;
 if (!existsSync(sourceAppBinary)) {
   runnerError = `E2E executable does not exist at ${sourceAppBinary}; run pnpm test:desktop:build first`;
   console.error(runnerError);
 } else {
-  const wdioCli = join(
-    desktopRoot,
-    "node_modules",
-    "@wdio",
-    "cli",
-    "bin",
-    "wdio.js",
-  );
-  const result = spawnSync(
-    process.execPath,
-    [wdioCli, "run", "wdio.conf.ts", ...wdioArguments],
-    {
-      cwd: desktopRoot,
-      env: environment,
-      stdio: "inherit",
-    },
-  );
-  exitCode = result.status ?? 1;
-  runnerError = result.error?.message;
-  if (runnerError) console.error(runnerError);
+  try {
+    const providerCliEnvironment = ensurePinnedProviderClis();
+    modelStub = await startModelStub();
+    const modelBaseUrl = `http://127.0.0.1:${modelStub.port}`;
+    const providerEnvironment = prepareProviderEnvironment(
+      providerCliEnvironment,
+      modelBaseUrl,
+    );
+    const environment = {
+      ...cleanEnvironment,
+      ...providerEnvironment,
+      CCSM_DATA_DIR: dataDirectory,
+      CCSM_E2E_APP_BINARY: appBinary,
+      CCSM_E2E_ARTIFACT_DIR: artifactDirectory,
+      CCSM_E2E_MODEL_STUB_FILE: modelStubConfigFile,
+      CCSM_E2E_MODEL_STUB_LOG: modelStubLog,
+      CCSM_E2E_PLATFORM: platform,
+      CCSM_E2E_REAL_PROVIDERS: "1",
+      CCSM_E2E_RUN_ID: runId,
+      CCSM_E2E_RUN_MODE: runMode,
+      CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
+      CCSM_HOOK_REPORTER_STRICT: "1",
+      HOME: providerHome,
+      USERPROFILE: providerHome,
+      HTTP_PROXY: "http://127.0.0.1:9",
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      ALL_PROXY: "http://127.0.0.1:9",
+      NO_PROXY: "127.0.0.1,localhost",
+      ...(process.platform === "win32"
+        ? {
+            LOCALAPPDATA: dataDirectory,
+            APPDATA: join(providerHome, "AppData", "Roaming"),
+          }
+        : {
+            XDG_CACHE_HOME: join(dataDirectory, "cache"),
+            XDG_CONFIG_HOME: join(dataDirectory, "config"),
+            XDG_DATA_HOME: join(dataDirectory, "data"),
+          }),
+      ...(process.argv.includes("--debug") ? { CCSM_E2E_DEBUG: "1" } : {}),
+    };
+    const wdioCli = join(
+      desktopRoot,
+      "node_modules",
+      "@wdio",
+      "cli",
+      "bin",
+      "wdio.js",
+    );
+    const result = spawnSync(
+      process.execPath,
+      [wdioCli, "run", "wdio.conf.ts", ...wdioArguments],
+      {
+        cwd: desktopRoot,
+        env: environment,
+        stdio: "inherit",
+      },
+    );
+    exitCode = result.status ?? 1;
+    runnerError = result.error?.message;
+    if (runnerError) console.error(runnerError);
+  } catch (error) {
+    runnerError = error instanceof Error ? error.message : String(error);
+    console.error(runnerError);
+  } finally {
+    if (modelStub) {
+      try {
+        await stopModelStub(modelStub.child);
+      } catch (error) {
+        runnerError ??= error instanceof Error ? error.message : String(error);
+        exitCode = 1;
+      }
+    }
+  }
 }
 
 copyFileSync(
-  modelMockFile,
-  join(artifactDirectory, "logs", "model-mock-config.json"),
+  modelStubConfigFile,
+  join(artifactDirectory, "logs", "model-stub-config.json"),
 );
 splitServiceLogs();
 const observedBeforeTermination = waitForProcessCleanup(temporaryRoot, 5_000);
@@ -161,7 +220,7 @@ writeFileSync(
       sourceAppBinary,
       appBinary,
       binaryMode: "job-build-with-pid-baseline",
-      ownershipRoot: temporaryRoot,
+      ownershipRoots: [temporaryRoot, providerCliRoot],
       checkedAt: new Date().toISOString(),
       clean: lingeringProcesses.length === 0,
       gracefulCleanup: observedBeforeTermination.length === 0,
@@ -205,12 +264,222 @@ if (credentialFindings.length > 0) {
   exitCode = 1;
 }
 
+if (lingeringProcesses.length === 0) {
+  try {
+    removeTemporaryRoot();
+    if (ownsProviderCliRoot) removeOwnedProviderCliRoot();
+  } catch (error) {
+    runnerError ??= `remove E2E runtime: ${error instanceof Error ? error.message : String(error)}`;
+    exitCode = 1;
+  }
+}
 ensureResultReflectsRunnerStatus();
 sanitizeTextArtifacts();
 writeManifest();
 appendGitHubSummary();
-if (lingeringProcesses.length === 0) removeTemporaryRoot();
 process.exitCode = exitCode;
+
+function ensurePinnedProviderClis() {
+  const environmentPath = join(
+    providerCliRoot,
+    "provider-cli-environment.json",
+  );
+  const expectedLockSha256 = createHash("sha256")
+    .update(
+      readFileSync(
+        join(desktopRoot, "e2e", "provider-cli-contract", "package-lock.json"),
+      ),
+    )
+    .digest("hex");
+  if (!existsSync(environmentPath)) {
+    const result = spawnSync(
+      process.execPath,
+      [join(scriptDirectory, "run-provider-cli-contract.mjs")],
+      {
+        cwd: repositoryRoot,
+        env: {
+          ...cleanEnvironment,
+          CCSM_E2E_APP_BINARY: appBinary,
+          CCSM_E2E_ARTIFACT_DIR: artifactDirectory,
+          CCSM_PROVIDER_CLI_ROOT: providerCliRoot,
+        },
+        stdio: "inherit",
+      },
+    );
+    if (result.status !== 0 || result.error) {
+      throw new Error(
+        result.error?.message ??
+          `pinned provider CLI setup exited with code ${result.status}`,
+      );
+    }
+  }
+  const value = JSON.parse(readFileSync(environmentPath, "utf8"));
+  if (value.platform !== platform || value.architecture !== process.arch) {
+    throw new Error(
+      `provider CLI environment targets ${value.platform}-${value.architecture}; expected ${platform}-${process.arch}`,
+    );
+  }
+  if (value.lockSha256 !== expectedLockSha256) {
+    throw new Error(
+      "provider CLI environment does not match the committed package-lock.json; run pnpm test:provider-cli-contract",
+    );
+  }
+  for (const provider of ["claude", "codex", "copilot"]) {
+    if (
+      !value.providers?.[provider] ||
+      !existsSync(value.providers[provider])
+    ) {
+      throw new Error(`pinned ${provider} executable is missing`);
+    }
+  }
+  return value.providers;
+}
+
+function prepareProviderEnvironment(providers, modelBaseUrl) {
+  const claudeHome = join(providerHome, ".claude");
+  const codexHome = join(providerHome, ".codex");
+  const copilotHome = join(providerHome, ".copilot");
+  mkdirSync(claudeHome, { recursive: true });
+  mkdirSync(codexHome, { recursive: true });
+  mkdirSync(copilotHome, { recursive: true });
+  mkdirSync(join(providerHome, "AppData", "Roaming"), { recursive: true });
+  writeFileSync(
+    join(claudeHome, "settings.json"),
+    `${JSON.stringify({}, null, 2)}\n`,
+  );
+  writeFileSync(
+    join(providerHome, ".claude.json"),
+    `${JSON.stringify(
+      {
+        hasCompletedOnboarding: true,
+        theme: "dark",
+        autoUpdates: false,
+        projects: Object.fromEntries(
+          ["claude", "codex", "copilot"].map((provider) => [
+            canonicalPath(join(spacesDirectory, provider)),
+            {
+              allowedTools: [],
+              hasTrustDialogAccepted: true,
+              hasCompletedProjectOnboarding: true,
+            },
+          ]),
+        ),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    join(codexHome, "config.toml"),
+    [
+      'model = "gpt-5.6-sol"',
+      'model_provider = "ccsm_local"',
+      'approval_policy = "never"',
+      'sandbox_mode = "read-only"',
+      "",
+      "[model_providers.ccsm_local]",
+      'name = "CCSM local model stub"',
+      `base_url = "${modelBaseUrl}/codex/v1"`,
+      'env_key = "OPENAI_API_KEY"',
+      'wire_api = "responses"',
+      "",
+    ].join("\n"),
+  );
+  return {
+    CCSM_REAL_CLAUDE_PATH: providers.claude,
+    CCSM_REAL_CODEX_PATH: providers.codex,
+    CCSM_REAL_COPILOT_PATH: providers.copilot,
+    CCSM_CLAUDE_BASE_URL: `${modelBaseUrl}/claude`,
+    CCSM_CLAUDE_MODEL: "claude-sonnet-4-5",
+    ANTHROPIC_API_KEY: "ccsm-e2e-model-stub-key",
+    ANTHROPIC_BASE_URL: `${modelBaseUrl}/claude`,
+    CLAUDE_CODE_API_BASE_URL: `${modelBaseUrl}/claude`,
+    CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "1",
+    CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN: "1",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1",
+    DISABLE_AUTOUPDATER: "1",
+    DISABLE_ERROR_REPORTING: "1",
+    DISABLE_TELEMETRY: "1",
+    OPENAI_API_KEY: "ccsm-e2e-model-stub-key",
+    CODEX_HOME: codexHome,
+    COPILOT_HOME: copilotHome,
+    COPILOT_OFFLINE: "true",
+    COPILOT_ENABLE_ALT_PROVIDERS: "true",
+    COPILOT_PROVIDER_BASE_URL: `${modelBaseUrl}/copilot/v1`,
+    COPILOT_PROVIDER_TYPE: "openai",
+    COPILOT_PROVIDER_API_KEY: "ccsm-e2e-model-stub-key",
+    COPILOT_PROVIDER_WIRE_API: "responses",
+    COPILOT_PROVIDER_TRANSPORT: "http",
+    COPILOT_PROVIDER_MODEL_ID: "gpt-5.6-sol",
+    COPILOT_PROVIDER_MAX_PROMPT_TOKENS: "128000",
+    COPILOT_PROVIDER_MAX_OUTPUT_TOKENS: "4096",
+    COPILOT_MODEL: "gpt-5.6-sol",
+    COPILOT_AUTO_UPDATE: "false",
+    COPILOT_DEBUG_SKIP_LAUNCH_CHECKS: "1",
+    COPILOT_DISABLE_DESKTOP_NOTIFICATIONS: "1",
+    COPILOT_DISABLE_TERMINAL_TITLE: "1",
+    COPILOT_SETUP_TERMINAL: "0",
+  };
+}
+
+function startModelStub() {
+  writeFileSync(modelStubLog, "");
+  const child = spawn(
+    process.execPath,
+    [join(scriptDirectory, "provider-model-stub.mjs")],
+    {
+      cwd: repositoryRoot,
+      env: {
+        ...cleanEnvironment,
+        CCSM_PROVIDER_MODEL_STUB_CONFIG: modelStubConfigFile,
+        CCSM_PROVIDER_MODEL_STUB_LOG: modelStubLog,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  return new Promise((resolveStub, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`provider model stub did not become ready: ${stderr}`));
+    }, 10_000);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      const match = stdout.match(/CCSM_PROVIDER_MODEL_STUB_READY (\d+)/);
+      if (!match) return;
+      clearTimeout(timer);
+      resolveStub({ child, port: Number(match[1]) });
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      if (!stdout.includes("CCSM_PROVIDER_MODEL_STUB_READY")) {
+        reject(new Error(`provider model stub exited with ${code}: ${stderr}`));
+      }
+    });
+  });
+}
+
+function stopModelStub(child) {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolveStop, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("provider model stub did not stop within five seconds"));
+    }, 5_000);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolveStop();
+    });
+    child.kill();
+  });
+}
 
 function waitForProcessCleanup(ownershipRoot, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -267,8 +536,9 @@ function listProcesses(ownershipRoot) {
     if (process.platform === "win32") {
       const script = [
         "$root = [IO.Path]::GetFullPath($env:CCSM_E2E_OWNERSHIP_ROOT).TrimEnd('\\') + '\\'",
+        "$provider = [IO.Path]::GetFullPath($env:CCSM_E2E_PROVIDER_ROOT).TrimEnd('\\') + '\\'",
         "$source = [IO.Path]::GetFullPath($env:CCSM_E2E_SOURCE_BINARY)",
-        "$items = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFullPath($_.ExecutablePath) -eq $source)) -or ($_.CommandLine -and $_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
+        "$items = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath.StartsWith($provider, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFullPath($_.ExecutablePath) -eq $source)) -or ($_.CommandLine -and ($_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($provider, [StringComparison]::OrdinalIgnoreCase) -ge 0)) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
         "$items | ConvertTo-Json -Compress",
       ].join("; ");
       const output = execFileSync(
@@ -279,6 +549,7 @@ function listProcesses(ownershipRoot) {
           env: {
             ...process.env,
             CCSM_E2E_OWNERSHIP_ROOT: ownershipRoot,
+            CCSM_E2E_PROVIDER_ROOT: providerCliRoot,
             CCSM_E2E_SOURCE_BINARY: sourceAppBinary,
           },
         },
@@ -294,6 +565,7 @@ function listProcesses(ownershipRoot) {
       (entry) =>
         !baselineSourceProcessIds.has(entry.ProcessId) &&
         (entry.CommandLine.includes(ownershipRoot) ||
+          entry.CommandLine.includes(providerCliRoot) ||
           entry.CommandLine.includes(sourceAppBinary)),
     );
   } catch (error) {
@@ -483,6 +755,8 @@ function sanitizeTextArtifacts() {
     [canonicalPath(repositoryRoot), "<REPOSITORY_ROOT>"],
     [sourceAppBinary, "<SOURCE_APP_BINARY>"],
     [canonicalPath(sourceAppBinary), "<SOURCE_APP_BINARY>"],
+    [providerCliRoot, "<PROVIDER_CLI_ROOT>"],
+    [canonicalPath(providerCliRoot), "<PROVIDER_CLI_ROOT>"],
   ].sort((left, right) => right[0].length - left[0].length);
   for (const path of walkFiles(artifactDirectory)) {
     if (!/\.(?:json|jsonl|log|txt|xml)$/i.test(path)) continue;
@@ -579,15 +853,30 @@ function appendGitHubSummary() {
 }
 
 function removeTemporaryRoot() {
-  const resolvedTemp = realpathSync(tmpdir());
+  const resolvedParent = realpathSync(runtimeRootParent);
   const resolvedRoot = realpathSync(temporaryRoot);
-  const expectedPrefix = `${resolvedTemp}${sep}`;
+  const expectedPrefix = `${resolvedParent}${sep}`;
   if (
     !resolvedRoot.startsWith(expectedPrefix) ||
-    !basename(resolvedRoot).startsWith(`ccsm-e2e-${platform}-`)
+    !basename(resolvedRoot).startsWith(`.ccsm-e2e-${platform}-`)
   ) {
     throw new Error(
       `refusing to remove unexpected E2E temp path ${resolvedRoot}`,
+    );
+  }
+  rmSync(resolvedRoot, { recursive: true, force: true });
+}
+
+function removeOwnedProviderCliRoot() {
+  const resolvedParent = realpathSync(localProviderCliParent);
+  const resolvedRoot = realpathSync(providerCliRoot);
+  const expectedPrefix = `${resolvedParent}${sep}`;
+  if (
+    !resolvedRoot.startsWith(expectedPrefix) ||
+    !basename(resolvedRoot).startsWith(`.provider-clis-e2e-${platform}-`)
+  ) {
+    throw new Error(
+      `refusing to remove unexpected provider CLI path ${resolvedRoot}`,
     );
   }
   rmSync(resolvedRoot, { recursive: true, force: true });
