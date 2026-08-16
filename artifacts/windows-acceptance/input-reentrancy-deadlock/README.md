@@ -15,8 +15,10 @@ executable using the published Tao 0.36.0 fix completed three identical
 - WinDbg `10.0.29617.1000`;
 - frozen binary: `0.1.0-beta.3`, SHA-256
   `3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781`;
-- fixed binary: `0.1.0-beta.5`, SHA-256
-  `c51daf694d7112f59f2ac0a7b7723d185903543f851d66655721249e7c7d6c6d`.
+- fixed binary: `0.1.0-beta.6`, SHA-256
+  `dfe1e15651819590f7cedb0f9539e934a78708dcb92e6e65edb966d4321c0ea0`,
+  built from clean source commit
+  `189848788c7ab3c7b8b4efcee507090b2f532e8c`.
 
 ## Production hang capture
 
@@ -81,17 +83,23 @@ Tauri `2.11.5`, JavaScript API `2.11.1`, and CLI `2.11.4` are the latest
 stable releases at verification time. The published `tauri-runtime-wry`
 `2.11.4` still constrains Tao to `^0.35.0`, so CCSM applies Tauri's merged
 [`7cc68e74`](https://github.com/tauri-apps/tauri/commit/7cc68e74ff6981f5c50a52a67d56c5eb2d227188)
-Tao 0.36/Wry 0.56 integration revision to the runtime crates. The locked graph
-resolves Tao `0.36.0` and Wry `0.56.1` from crates.io. This keeps the deadlock
-fix on a released Tao version while using Tauri's matching adapter changes.
+Tao 0.36/Wry 0.56 adapter delta to a vendored copy of the published runtime.
+The vendored base has crates.io checksum
+`4e6fac707727b7a2f48e4ded90976324267371073edbb415ffb73bb0458d203f`.
+Released `tauri-runtime` `2.11.3` and `tauri-utils` `2.9.3` stay on crates.io;
+the locked graph resolves Tao `0.36.0` and Wry `0.56.1` from crates.io. The
+workspace MSRV is Rust `1.90`, matching the upstream integration revision.
 
 ## Deterministic reproduction
 
-The regression harness starts CCSM with an isolated data directory, races
-posted `WM_KEYDOWN`/`WM_KEYUP` messages against synchronous `WM_KILLFOCUS`, and
-records every post/send failure with its Win32 error. Each round requires at
-least 100 accepted keyboard messages, at least 10 completed focus messages, no
-focus-send failure streak of 1,000 ms, a responsive `WM_NULL` probe, a clear
+The regression harness starts CCSM with an isolated data directory and races
+three independent streams: posted `WM_KEYDOWN`/`WM_KEYUP`, synchronous
+`WM_KEYDOWN`/`WM_KEYUP`, and synchronous `WM_KILLFOCUS`. The synchronous
+keyboard stream proves that the target WndProc actually executed keyboard
+handling; enqueue success alone is only a queue observation. Each round
+requires at least 100 accepted posted keyboard messages, at least 100 completed
+synchronous keyboard messages, at least 10 completed focus messages, failure
+streaks below 1,000 ms, a responsive `WM_NULL` probe, a clear
 `IsHungAppWindow` result, and `Process.Responding`:
 
 ```powershell
@@ -99,27 +107,31 @@ pwsh -File scripts/windows-input-deadlock-repro.ps1 `
   -Executable <release-executable> -Seconds 15 -Rounds 1
 ```
 
-Generated profiles are removed after successful runs. Failed runs retain their
-profile for diagnosis; `-KeepProcess` preserves the tested process tree for a
-dump, and `-KeepData` preserves a successful run's generated profile.
+The harness emits its result after cleanup. Successful generated profiles are
+removed and verified absent; every owned process tree is killed, awaited, and
+verified empty. Failed runs retain their profile for diagnosis. `-KeepProcess`
+preserves the tested process tree for a dump, and `-KeepData` preserves a
+successful run's generated profile.
 
-Fresh beta.3 result (`2026-08-16T10:35:56.6025408+08:00`):
+Two fresh beta.3 control runs independently reproduced the freeze:
 
-- keyboard post attempts: `2,829,706`;
-- accepted keyboard messages: `10,001`;
-- keyboard post failures: `2,819,705`, last error `1816`
-  (`ERROR_NOT_ENOUGH_QUOTA`) after the UI queue stopped draining;
-- completed focus messages: `0`;
-- failed focus sends: `292,798` (`81` `ERROR_TIMEOUT` results and `292,717`
-  immediate `SMTO_ABORTIFHUNG` results);
-- longest continuous focus-send failure: `15,013 ms`;
-- final window probe responsive: `false`;
-- `IsHungAppWindow`: `true`;
-- final process responding: `false`.
+| Run | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Hung |
+| ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| 1 | 0 | 206,096 | 0 | 206,121 | 15,015 ms | yes |
+| 2 | 0 | 206,103 | 0 | 206,072 | 15,007 ms | yes |
 
-The previous harness called every zero `SendMessageTimeoutW` result a timeout.
-The reviewed harness clears and reads `LastError` on every call and checks
-`IsHungAppWindow`, so the counters above preserve the Win32 distinction.
+Run 1 began with `32,628,736` working-set bytes, `8,007,680` private bytes,
+`374` handles, and `36` threads. Run 2 began with `32,817,152` working-set
+bytes, `7,479,296` private bytes, `386` handles, and `41` threads. Each run
+accepted exactly `10,000` posted keyboard messages before the dead UI queue
+filled and `PostMessageW` returned `ERROR_NOT_ENOUGH_QUOTA` (`1816`). Both
+windows failed the `WM_NULL` probe, reported hung through `IsHungAppWindow`,
+and had `Process.Responding == false`. Each owned process tree was terminated
+and verified empty; both isolated profiles were retained for diagnosis.
+
+The harness clears and reads `LastError` on every synchronous call and checks
+`IsHungAppWindow`, preserving the distinction between `ERROR_TIMEOUT` and
+immediate `SMTO_ABORTIFHUNG` results.
 
 Its controlled dump has the same `WaitOnAddress -> reentrant mutex ->
 SendMessageW -> PeekMessageW` stack as the production dump. The reentrant lock
@@ -128,27 +140,30 @@ return remains RVA `0x2b9cfd`; the outer keyboard-case return is RVA
 
 ## Fixed Release verification
 
-The final fixed beta.5 Release executable (`6,003,200` bytes) ran the reviewed
-harness for three consecutive 15-second rounds starting at
-`2026-08-16T10:36:26.4696124+08:00`:
+The final fixed beta.6 Release executable (`6,002,176` bytes) was built from
+clean source commit `189848788c7ab3c7b8b4efcee507090b2f532e8c` and ran the
+reviewed harness for three consecutive 15-second rounds starting at
+`2026-08-16T11:42:22.775687+08:00`:
 
-| Round | Keyboard messages | Completed focus messages | Focus failures | Longest failure | Responsive |
-| ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 52,659 | 62,686 | 0 | 0 ms | yes |
-| 2 | 44,300 | 64,242 | 0 | 0 ms | yes |
-| 3 | 43,369 | 64,441 | 0 | 0 ms | yes |
-| **Total** | **140,328** | **191,369** | **0** | **0 ms** | **yes** |
+| Round | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Responsive |
+| ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| 1 | 31,656 | 0 | 63,155 | 0 | 0 ms | yes |
+| 2 | 31,458 | 0 | 62,882 | 0 | 0 ms | yes |
+| 3 | 31,789 | 0 | 63,567 | 0 | 0 ms | yes |
+| **Total** | **94,903** | **0** | **189,604** | **0** | **0 ms** | **yes** |
 
-The fixed process started at `35,176,448` working-set bytes, `7,667,712`
-private bytes, `398` handles, and `37` threads. After round three it remained
-responsive at `58,490,880` working-set bytes, `76,996,608` private bytes,
-`417` handles, and `40` threads. The harness then killed and waited for its
-owned process tree, removed its generated profile, and found zero remaining
-host or WebView processes from that run.
+The fixed process started at `33,116,160` working-set bytes, `7,778,304`
+private bytes, `375` handles, and `37` threads. After round three it remained
+responsive at `54,403,072` working-set bytes, `30,588,928` private bytes,
+`395` handles, and `40` threads. The harness then terminated and waited for
+its owned process tree, verified zero remaining PIDs, removed its generated
+profile, and verified the directory absent.
 
 An additional two-second run passed with an explicitly supplied data-directory
-argument ending in `\`; `data.db` was created at that exact path, and the owned
-process tree exited before the test directory was removed.
+argument ending in `\`. It completed `4,364` synchronous keyboard messages and
+`8,707` focus messages with zero failures. `data.db` was created at the exact
+supplied path, the process tree was verified empty, and the test directory was
+removed after a guarded path check.
 
 The Windows hook regression now forces the client to connect, write, and close
 before the server calls `ConnectNamedPipe`. It observes `ERROR_NO_DATA` (`232`)
@@ -157,13 +172,17 @@ and verifies that the complete buffered report reaches the sink.
 ## Repository gates
 
 - `pnpm format:check`: passed;
-- `pnpm check`: TypeScript and Rust workspace checks passed with the locked
-  dependency graph;
+- `pnpm check`: the exact Tauri/Tao/Wry dependency assertion, TypeScript, and
+  Rust workspace checks passed with the locked dependency graph;
+- `cargo +1.90.0 check --workspace --locked`: passed at the declared MSRV;
 - `pnpm test`: `166` Rust tests and `288` frontend tests passed;
 - `pnpm desktop:build:release`: passed and produced the fixed binary hash
   recorded above;
-- fixed Release deadlock harness: three rounds passed with zero focus-send
-  failures and every activity/response gate satisfied;
+- two beta.3 control runs: both reproduced the freeze with zero completed
+  synchronous keyboard or focus messages;
+- fixed Release deadlock harness: three rounds passed with zero synchronous
+  keyboard/focus failures and every activity, response, and cleanup gate
+  satisfied;
 - deterministic Windows pre-connect hook regression: passed.
 
 Machine-readable measurements are in [`result.json`](result.json), and the
