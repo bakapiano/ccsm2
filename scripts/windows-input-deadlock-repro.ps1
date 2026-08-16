@@ -17,6 +17,9 @@ param(
     [ValidateRange(1, 1000000)]
     [int]$MinimumPostedKeyboardMessages = 100,
 
+    [ValidateRange(0, 100)]
+    [int]$MaximumKeyboardPostFailurePercent = 10,
+
     [ValidateRange(1, 1000000)]
     [int]$MinimumCompletedKeyboardMessages = 100,
 
@@ -153,7 +156,10 @@ public static class CcsmInputDeadlockProbe
                     Interlocked.Increment(ref postFailures);
                     Volatile.Write(ref lastPostError, Marshal.GetLastWin32Error());
                 }
-                Thread.Sleep(0);
+                // Keep the posted stream below the Win32 queue quota so its
+                // success rate remains an acceptance signal, while the two
+                // synchronous streams still drive the reentrancy race.
+                Thread.Sleep(1);
             }
         });
 
@@ -518,6 +524,9 @@ try {
 
     $stressPassed = $roundResults.Count -eq $Rounds -and @($roundResults | Where-Object {
         $_.postedKeyboardMessages -lt $MinimumPostedKeyboardMessages -or
+        ($_.keyboardPostAttempts -gt 0 -and
+            (100.0 * $_.keyboardPostFailures / $_.keyboardPostAttempts) -gt
+                $MaximumKeyboardPostFailurePercent) -or
         $_.completedKeyboardMessages -lt $MinimumCompletedKeyboardMessages -or
         $_.longestKeyboardFailureStreakMs -ge $MaximumFocusFailureStreakMilliseconds -or
         $_.completedFocusMessages -lt $MinimumCompletedFocusMessages -or
@@ -561,7 +570,13 @@ finally {
             $cleanupErrors.Add("Failed to stop CCSM process tree $($process.Id): $_")
         }
     }
-    if ($ownsDataDirectory -and $stressPassed -and -not $KeepProcess -and -not $KeepData) {
+    if (
+        $ownsDataDirectory -and
+        $stressPassed -and
+        (-not $processTreeCleanupRequested -or $processTreeTerminated) -and
+        -not $KeepProcess -and
+        -not $KeepData
+    ) {
         $dataDirectoryCleanupRequested = $true
         try {
             $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
@@ -604,6 +619,7 @@ $passed = $stressPassed -and $cleanupPassed
     requestedRounds = $Rounds
     acceptance = [pscustomobject]@{
         minimumPostedKeyboardMessagesPerRound = $MinimumPostedKeyboardMessages
+        maximumKeyboardPostFailurePercent = $MaximumKeyboardPostFailurePercent
         minimumCompletedKeyboardMessagesPerRound = $MinimumCompletedKeyboardMessages
         minimumCompletedFocusMessagesPerRound = $MinimumCompletedFocusMessages
         maximumKeyboardFailureStreakMs = $MaximumFocusFailureStreakMilliseconds
