@@ -117,7 +117,7 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 
 `CCSM_E2E_MODEL_MOCK_FILE` 指向本次运行的 JSON 配置。测试在发送 prompt 前按 `provider + prompt` 设置返回内容；第二轮响应在 resumed CLI 启动后写入，mock 在 prompt 到达时读取最新配置。`CCSM_E2E_MODEL_MOCK_LOG` 记录 session start、native session ID、resume 状态、prompt 和 response，供断言及 artifact 验收。
 
-Claude mock 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 在首条 prompt 到达时建立初始绑定。三家 provider 的 resume 启动均校验生产 shim 组装的参数与已绑定 native session ID 一致。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使 provider fixture 和场景失败。
+Claude mock 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 在首条 prompt 到达时建立初始绑定。三家 provider 的 resume 启动均校验生产 shim 组装的完整参数与已绑定 native session ID 一致；artifact 仅记录会话选择参数。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使 provider fixture 和场景失败。
 
 门禁包含三条独立场景：
 

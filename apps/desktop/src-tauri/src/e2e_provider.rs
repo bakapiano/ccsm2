@@ -60,6 +60,7 @@ fn run_inner() -> Result<(), String> {
     let provider = required_env("CCSM_PROVIDER")?;
     let cli_session_id = required_env("CCSM_SESSION_ID")?;
     let arguments = env::args().skip(1).collect::<Vec<_>>();
+    let recorded_arguments = session_selection_arguments(&provider, &arguments);
     let resumed_session_id = env::var("CCSM_NATIVE_SESSION_ID")
         .ok()
         .filter(|value| !value.trim().is_empty());
@@ -77,7 +78,13 @@ fn run_inner() -> Result<(), String> {
     };
 
     if let Some(session_id) = native_session_id.as_deref() {
-        start_session(&provider, &cli_session_id, session_id, resumed, &arguments)?;
+        start_session(
+            &provider,
+            &cli_session_id,
+            session_id,
+            resumed,
+            &recorded_arguments,
+        )?;
     }
 
     println!(
@@ -99,7 +106,13 @@ fn run_inner() -> Result<(), String> {
 
         if native_session_id.is_none() {
             let session_id = format!("ccsm-e2e-{provider}-{cli_session_id}");
-            start_session(&provider, &cli_session_id, &session_id, false, &arguments)?;
+            start_session(
+                &provider,
+                &cli_session_id,
+                &session_id,
+                false,
+                &recorded_arguments,
+            )?;
             native_session_id = Some(session_id);
         }
         let session_id = native_session_id
@@ -182,6 +195,34 @@ fn validate_resume_invocation(
         Err(format!(
             "{provider} resume invocation does not contain native session {native_session_id}"
         ))
+    }
+}
+
+fn session_selection_arguments(provider: &str, arguments: &[String]) -> Vec<String> {
+    let split_argument = |name: &str| {
+        arguments
+            .iter()
+            .position(|argument| argument == name)
+            .and_then(|index| arguments.get(index + 1).map(|value| (index, value)))
+            .map(|(_, value)| vec![name.to_string(), value.clone()])
+            .or_else(|| {
+                arguments
+                    .iter()
+                    .find(|argument| argument.starts_with(&format!("{name}=")))
+                    .map(|argument| vec![argument.clone()])
+            })
+    };
+    match provider {
+        "claude" => split_argument("--resume")
+            .or_else(|| split_argument("--session-id"))
+            .unwrap_or_default(),
+        "codex" => arguments
+            .windows(2)
+            .find(|pair| pair[0] == "resume")
+            .map(|pair| pair.to_vec())
+            .unwrap_or_default(),
+        "copilot" => split_argument("--resume").unwrap_or_default(),
+        _ => Vec::new(),
     }
 }
 
@@ -339,5 +380,44 @@ mod tests {
                 .is_ok()
         );
         assert!(validate_resume_invocation("codex", &[], "native-1").is_err());
+    }
+
+    #[test]
+    fn records_only_provider_session_selection_arguments() {
+        assert_eq!(
+            session_selection_arguments(
+                "claude",
+                &[
+                    "--settings".into(),
+                    "sensitive-hook-config".into(),
+                    "--resume".into(),
+                    "native-1".into(),
+                ],
+            ),
+            ["--resume", "native-1"]
+        );
+        assert_eq!(
+            session_selection_arguments(
+                "codex",
+                &[
+                    "-c".into(),
+                    "sensitive-hook-config".into(),
+                    "resume".into(),
+                    "native-1".into(),
+                ],
+            ),
+            ["resume", "native-1"]
+        );
+        assert_eq!(
+            session_selection_arguments(
+                "copilot",
+                &[
+                    "--plugin-dir".into(),
+                    "sensitive-path".into(),
+                    "--resume=native-1".into(),
+                ],
+            ),
+            ["--resume=native-1"]
+        );
     }
 }
