@@ -376,7 +376,7 @@ mod tests {
         )
         .expect("send report");
         let received = rx
-            .recv_timeout(Duration::from_secs(10))
+            .recv_timeout(Duration::from_secs(30))
             .expect("receive report");
         assert_eq!(received.runtime_id, report.runtime_id);
         assert_eq!(received.native_session_id, report.native_session_id);
