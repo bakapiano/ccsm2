@@ -45,29 +45,20 @@ const sourceAppBinary = resolve(
   process.env.CCSM_E2E_APP_BINARY ??
     join(repositoryRoot, "target", "debug", binaryName),
 );
-const isolatedBinaryDirectory = join(temporaryRoot, "bin");
-const usesIsolatedBinary = process.platform === "win32";
-const appBinary = usesIsolatedBinary
-  ? join(isolatedBinaryDirectory, binaryName)
-  : sourceAppBinary;
+const appBinary = sourceAppBinary;
 const modelMockFile = join(temporaryRoot, "model-mock.json");
 const modelMockLog = join(artifactDirectory, "logs", "model-mock.jsonl");
 const dataDirectory = join(temporaryRoot, "app-data");
 const spacesDirectory = join(temporaryRoot, "spaces");
 
 mkdirSync(join(artifactDirectory, "logs"), { recursive: true });
-mkdirSync(isolatedBinaryDirectory, { recursive: true });
 mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(spacesDirectory, { recursive: true });
 for (const provider of ["claude", "codex", "copilot"]) {
   mkdirSync(join(spacesDirectory, provider), { recursive: true });
 }
 const baselineSourceProcessIds = new Set(
-  usesIsolatedBinary
-    ? []
-    : listUnixProcesses()
-        .filter((entry) => entry.CommandLine.includes(sourceAppBinary))
-        .map((entry) => entry.ProcessId),
+  listSourceBinaryProcesses().map((entry) => entry.ProcessId),
 );
 writeFileSync(
   modelMockFile,
@@ -131,7 +122,6 @@ if (!existsSync(sourceAppBinary)) {
   runnerError = `E2E executable does not exist at ${sourceAppBinary}; run pnpm test:desktop:build first`;
   console.error(runnerError);
 } else {
-  if (usesIsolatedBinary) copyFileSync(sourceAppBinary, appBinary);
   const wdioCli = join(
     desktopRoot,
     "node_modules",
@@ -170,7 +160,7 @@ writeFileSync(
     {
       sourceAppBinary,
       appBinary,
-      binaryMode: usesIsolatedBinary ? "isolated-copy" : "job-build",
+      binaryMode: "job-build-with-pid-baseline",
       ownershipRoot: temporaryRoot,
       checkedAt: new Date().toISOString(),
       clean: lingeringProcesses.length === 0,
@@ -277,7 +267,8 @@ function listProcesses(ownershipRoot) {
     if (process.platform === "win32") {
       const script = [
         "$root = [IO.Path]::GetFullPath($env:CCSM_E2E_OWNERSHIP_ROOT).TrimEnd('\\') + '\\'",
-        "$items = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) -or ($_.CommandLine -and $_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
+        "$source = [IO.Path]::GetFullPath($env:CCSM_E2E_SOURCE_BINARY)",
+        "$items = @(Get-CimInstance Win32_Process | Where-Object { ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFullPath($_.ExecutablePath) -eq $source)) -or ($_.CommandLine -and $_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0) } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
         "$items | ConvertTo-Json -Compress",
       ].join("; ");
       const output = execFileSync(
@@ -285,21 +276,56 @@ function listProcesses(ownershipRoot) {
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
         {
           encoding: "utf8",
-          env: { ...process.env, CCSM_E2E_OWNERSHIP_ROOT: ownershipRoot },
+          env: {
+            ...process.env,
+            CCSM_E2E_OWNERSHIP_ROOT: ownershipRoot,
+            CCSM_E2E_SOURCE_BINARY: sourceAppBinary,
+          },
         },
       ).trim();
       if (!output) return [];
       const parsed = JSON.parse(output);
-      return Array.isArray(parsed) ? parsed : [parsed];
+      const processes = Array.isArray(parsed) ? parsed : [parsed];
+      return processes.filter(
+        (entry) => !baselineSourceProcessIds.has(Number(entry.ProcessId)),
+      );
     }
     return listUnixProcesses().filter(
       (entry) =>
         !baselineSourceProcessIds.has(entry.ProcessId) &&
         (entry.CommandLine.includes(ownershipRoot) ||
-          (!usesIsolatedBinary && entry.CommandLine.includes(sourceAppBinary))),
+          entry.CommandLine.includes(sourceAppBinary)),
     );
   } catch (error) {
     return [{ inspectionError: error.message }];
+  }
+}
+
+function listSourceBinaryProcesses() {
+  if (process.platform !== "win32") {
+    return listUnixProcesses().filter((entry) =>
+      entry.CommandLine.includes(sourceAppBinary),
+    );
+  }
+  try {
+    const script = [
+      "$source = [IO.Path]::GetFullPath($env:CCSM_E2E_SOURCE_BINARY)",
+      "$items = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $source } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine)",
+      "$items | ConvertTo-Json -Compress",
+    ].join("; ");
+    const output = execFileSync(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+      {
+        encoding: "utf8",
+        env: { ...process.env, CCSM_E2E_SOURCE_BINARY: sourceAppBinary },
+      },
+    ).trim();
+    if (!output) return [];
+    const parsed = JSON.parse(output);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
   }
 }
 

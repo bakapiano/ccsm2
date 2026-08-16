@@ -112,7 +112,7 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 
 公开仓库必需门禁的全部输入由确定性 fixture、虚拟 provider 数据和隔离目录组成。真实 provider credential 归属受保护的专项验收 workflow。
 
-Windows 每次运行复制一份独立 E2E executable 到临时 ownership root。Linux 直接启动本 job 构建的 executable，保留 WebKit 的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。teardown 结束后按 ownership root、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
+Windows 与 Linux 都直接启动本 job 构建的 executable，保留不同 WebView 版本的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。teardown 结束后按 ownership root、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
 
 ## Provider model mock
 
