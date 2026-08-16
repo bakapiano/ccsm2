@@ -43,6 +43,7 @@
   --diff-hunk-bg: #edf4fb;
   --mono:
     "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --file-editor-mono: Consolas, "Courier New", monospace;
   --shadow-sm: 0 1px 0 rgb(26 24 21 / 4%);
   --shadow: 0 1px 2px rgb(26 24 21 / 4%), 0 1px 0 rgb(26 24 21 / 3%);
   --shadow-md: 0 4px 12px -2px rgb(26 24 21 / 8%), 0 1px 0 rgb(26 24 21 / 4%);
@@ -1407,6 +1408,69 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.file-editor-vditor {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.file-editor-panel[data-editor-engine="vditor-ir"] .file-editor-codemirror,
+.file-editor-panel[data-editor-engine="codemirror6"] .file-editor-vditor,
+.file-editor-panel[data-editor-engine="vditor-ir"] [data-codemirror-action] {
+  display: none;
+}
+
+.file-editor-vditor.vditor {
+  height: 100% !important;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-elev);
+  --border-color: var(--border);
+  --panel-background-color: var(--bg-elev);
+  --toolbar-background-color: var(--bg);
+  --toolbar-icon-color: var(--ink-muted);
+  --toolbar-icon-hover-color: var(--accent);
+  --textarea-background-color: var(--bg-elev);
+  --textarea-text-color: var(--ink);
+  --second-color: var(--ink-faint);
+}
+
+.file-editor-vditor .vditor-toolbar {
+  flex: 0 0 auto;
+  border-bottom-color: var(--border);
+  padding: 3px 6px;
+}
+
+.file-editor-vditor .vditor-content,
+.file-editor-vditor .vditor-ir {
+  min-height: 0;
+}
+
+.file-editor-vditor .vditor-ir > .vditor-reset {
+  padding: 18px clamp(20px, 6vw, 80px);
+  color: var(--ink);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.file-editor-vditor .vditor-ir pre code,
+.file-editor-vditor .vditor-ir code {
+  font-family: var(--file-editor-mono);
+}
+
+.file-editor-vditor .vditor-hint,
+.file-editor-vditor .vditor-panel,
+.file-editor-vditor .vditor-tooltipped::after {
+  z-index: 20;
 }
 
 .file-editor-empty-state {

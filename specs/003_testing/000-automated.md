@@ -56,7 +56,7 @@ Application dialog tests覆盖自定义文本输入、必填校验、危险操�
 
 Space tree tests覆盖File Explorer风格的twistie、无前置图标的Space叶节点和22px行网格。Desktop scenario将Space拖入另一个Folder和Unfiled，验证drop target、committed `folder_id/folder_order`及重绘后的树位置。Sidebar layout tests覆盖Spaces/Agents separator的pointer、键盘、持久化与双侧最小高度。
 
-File Editor tests固定CodeMirror 6依赖边界，并验证Provider不重新引入自制textarea、高亮、搜索或history实现。Desktop scenario覆盖CodeMirror DOM挂载、Unicode编辑、保存、Dirty关闭确认和Space切换后的EditorState保留。
+File Editor tests固定CodeMirror 6与Vditor 3依赖边界，并验证Provider不重新引入自制textarea、高亮、搜索或history实现。Desktop scenario覆盖普通文本的CodeMirror DOM挂载、Unicode编辑、保存、Dirty关闭确认和Space切换后的EditorState保留；Markdown scenario覆盖Vditor IR挂载、编辑保存、代码高亮、KaTeX、Mermaid和Graphviz渲染。
 
 Hang-resilience回归使用隔离Linux Tauri profile分阶段运行，并将每项指标写入JSON artifact：
 

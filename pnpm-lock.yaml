@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  vditor@3.11.2:
+    hash: 149be2f8840ac11b338782dd5ab6e6f7fc76495740f40e310128dddbc1e9b9d0
+    path: patches/vditor@3.11.2.patch
+
 importers:
 
   .: {}
@@ -40,6 +45,9 @@ importers:
       dockview:
         specifier: 7.0.4
         version: 7.0.4
+      vditor:
+        specifier: 3.11.2
+        version: 3.11.2(patch_hash=149be2f8840ac11b338782dd5ab6e6f7fc76495740f40e310128dddbc1e9b9d0)
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 20.11.1
@@ -1217,6 +1225,9 @@ packages:
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
 
+  diff-match-patch@1.0.5:
+    resolution: {integrity: sha1-q7WE1fEM0Rlt/FWqA3AVkq4/ezc=}
+
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
@@ -2251,6 +2262,9 @@ packages:
 
   validate-npm-package-license@3.0.4:
     resolution: {integrity: sha512-DpKm2Ui/xN7/HQKCtpZxoRWBhZ9Z0kqtygG8XCgNQ8ZlDnxuQmWhj566j8fN4Cu3/JmbhsDo7fcAJq4s9h27Ew==}
+
+  vditor@3.11.2:
+    resolution: {integrity: sha1-YSpAXHS3Enik7qGI2zx9k8CITBE=}
 
   vite@8.2.0:
     resolution: {integrity: sha512-pn+CFpM0lwDeKwmOq1ZaBK/9sjorZcgqxki6MbY/jPEVd9vichIlmlD4HmQ5wdP5EgqQCFRaACBxMC7uEGc6lQ==, tarball: https://registry.npmmirror.com/vite/-/vite-8.2.0.tgz}
@@ -3757,6 +3771,8 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
+  diff-match-patch@1.0.5: {}
+
   dotenv@17.4.2: {}
 
   eastasianwidth@0.2.0: {}
@@ -4850,6 +4866,10 @@ snapshots:
     dependencies:
       spdx-correct: 3.2.0
       spdx-expression-parse: 3.0.1
+
+  vditor@3.11.2(patch_hash=149be2f8840ac11b338782dd5ab6e6f7fc76495740f40e310128dddbc1e9b9d0):
+    dependencies:
+      diff-match-patch: 1.0.5
 
   vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0):
     dependencies:
