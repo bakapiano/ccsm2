@@ -23,14 +23,14 @@ Pull Request / main push
         │       ├── build Windows E2E executable
         │       ├── WDIO desktop scenarios
         │       ├── acceptance GIF + result files
-        │       └── upload Actions Artifact (1 day)
+        │       └── upload Actions Artifact (7 days)
         │
         └── desktop-e2e-linux ──── ubuntu-24.04 + virtual display
                 ├── check + unit/integration tests
                 ├── build Linux E2E executable
                 ├── WDIO desktop scenarios
                 ├── acceptance GIF + result files
-                └── upload Actions Artifact (1 day)
+                └── upload Actions Artifact (7 days)
 ```
 
 两个 job 并行执行。每个 job 独立完成依赖安装、构建、应用启动、测试、teardown 和证据上传；每个平台消费本 job 构建的产物。
@@ -160,7 +160,7 @@ GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中�
 
 ## Artifact 上传
 
-artifact 上传使用 `actions/upload-artifact@v4`，公开仓库的验收证据保留 1 天：
+artifact 上传使用 `actions/upload-artifact@v4`，公开仓库的验收证据保留 7 天：
 
 ```yaml
 - name: Upload desktop E2E evidence
@@ -169,7 +169,7 @@ artifact 上传使用 `actions/upload-artifact@v4`，公开仓库的验收证据
   with:
     name: desktop-e2e-${{ env.CCSM_E2E_PLATFORM }}-${{ github.run_id }}
     path: test-results/desktop/${{ env.CCSM_E2E_PLATFORM }}/
-    retention-days: 1
+    retention-days: 7
     compression-level: 0
     if-no-files-found: error
 ```
@@ -196,7 +196,7 @@ PR review 是人工验收记录；两个 required status checks 是自动门禁�
 - `workflow_dispatch`：允许指定单个场景进行诊断，结果保留相同证据格式。
 - 同一 PR 的旧 commit 运行通过 concurrency group 取消。
 - job 和单场景设置明确 timeout。
-- artifact 使用 1 天 retention，控制公开仓库的共享存储占用。
+- artifact 使用 7 天 retention，为 PR 审查和跨时区验收提供完整窗口。
 
 ## 门禁验收标准
 
@@ -207,5 +207,5 @@ PR review 是人工验收记录；两个 required status checks 是自动门禁�
 - 本地与 CI 调用同一份 WDIO 配置和 Desktop Scenarios。
 - 每个平台运行都生成结构化测试结果与可播放 GIF。
 - 失败运行仍上传诊断证据并保留失败状态。
-- artifact 的 `retention-days` 为 `1`。
+- artifact 的 `retention-days` 为 `7`。
 - branch protection 同时要求两个平台检查和 PR review。
