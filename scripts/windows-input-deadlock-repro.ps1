@@ -38,9 +38,388 @@ $ErrorActionPreference = "Stop"
 
 $source = @'
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
+
+public sealed class CcsmProcessJob : IDisposable
+{
+    private const uint CREATE_SUSPENDED = 0x00000004;
+    private const int JobObjectBasicProcessIdList = 3;
+    private const int JobObjectExtendedLimitInformation = 9;
+    private const int ERROR_MORE_DATA = 234;
+    private const int MaximumTrackedProcesses = 4096;
+    private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+    private IntPtr jobHandle;
+
+    private CcsmProcessJob(IntPtr jobHandle, Process process)
+    {
+        this.jobHandle = jobHandle;
+        Process = process;
+    }
+
+    public Process Process { get; }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct STARTUPINFO
+    {
+        public uint cb;
+        public string lpReserved;
+        public string lpDesktop;
+        public string lpTitle;
+        public uint dwX;
+        public uint dwY;
+        public uint dwXSize;
+        public uint dwYSize;
+        public uint dwXCountChars;
+        public uint dwYCountChars;
+        public uint dwFillAttribute;
+        public uint dwFlags;
+        public ushort wShowWindow;
+        public ushort cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_INFORMATION
+    {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public uint dwProcessId;
+        public uint dwThreadId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateJobObjectW(IntPtr jobAttributes, string name);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateProcessW(
+        string applicationName,
+        StringBuilder commandLine,
+        IntPtr processAttributes,
+        IntPtr threadAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+        uint creationFlags,
+        IntPtr environment,
+        string currentDirectory,
+        ref STARTUPINFO startupInfo,
+        out PROCESS_INFORMATION processInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint ResumeThread(IntPtr thread);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(
+        IntPtr job,
+        int informationClass,
+        IntPtr jobObjectInformation,
+        uint jobObjectInformationLength,
+        out uint returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(
+        IntPtr job,
+        int informationClass,
+        IntPtr jobObjectInformation,
+        uint jobObjectInformationLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    public static CcsmProcessJob Start(
+        string executable,
+        string workingDirectory,
+        string dataDirectory)
+    {
+        var job = CreateJobObjectW(IntPtr.Zero, null);
+        if (job == IntPtr.Zero)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateJobObjectW failed");
+        }
+
+        var processInformation = new PROCESS_INFORMATION();
+        var processCreated = false;
+        var processAssigned = false;
+        try
+        {
+            var startupInfo = new STARTUPINFO
+            {
+                cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO)),
+            };
+            var commandLine = new StringBuilder(
+                QuoteCommandLineArgument(executable) +
+                " --ccsm-data-dir " +
+                QuoteCommandLineArgument(dataDirectory));
+            processCreated = CreateProcessW(
+                executable,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                CREATE_SUSPENDED,
+                IntPtr.Zero,
+                workingDirectory,
+                ref startupInfo,
+                out processInformation);
+            if (!processCreated)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcessW failed");
+            }
+
+            processAssigned = AssignProcessToJobObject(job, processInformation.hProcess);
+            if (!processAssigned)
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "AssignProcessToJobObject failed");
+            }
+            if (ResumeThread(processInformation.hThread) == uint.MaxValue)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "ResumeThread failed");
+            }
+
+            var process = Process.GetProcessById((int)processInformation.dwProcessId);
+            var result = new CcsmProcessJob(job, process);
+            job = IntPtr.Zero;
+            return result;
+        }
+        catch (Exception startError)
+        {
+            Exception cleanupError = null;
+            if (processCreated)
+            {
+                var terminated = false;
+                if (processAssigned)
+                {
+                    terminated = TerminateJobObject(job, 1);
+                }
+                if (!terminated)
+                {
+                    terminated = TerminateProcess(processInformation.hProcess, 1);
+                }
+                if (!terminated)
+                {
+                    cleanupError = new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "Failed to terminate the suspended CCSM process after launch failure");
+                }
+            }
+            if (cleanupError != null)
+            {
+                throw new AggregateException(
+                    "CCSM launch failed and its suspended process could not be terminated",
+                    startError,
+                    cleanupError);
+            }
+            throw;
+        }
+        finally
+        {
+            if (processInformation.hThread != IntPtr.Zero)
+            {
+                CloseHandle(processInformation.hThread);
+            }
+            if (processInformation.hProcess != IntPtr.Zero)
+            {
+                CloseHandle(processInformation.hProcess);
+            }
+            if (job != IntPtr.Zero)
+            {
+                CloseHandle(job);
+            }
+        }
+    }
+
+    public uint[] GetActiveProcessIds()
+    {
+        EnsureOpen();
+        var byteCount = 8 + (IntPtr.Size * MaximumTrackedProcesses);
+        var buffer = Marshal.AllocHGlobal(byteCount);
+        try
+        {
+            uint returnedLength;
+            if (!QueryInformationJobObject(
+                jobHandle,
+                JobObjectBasicProcessIdList,
+                buffer,
+                (uint)byteCount,
+                out returnedLength))
+            {
+                var error = Marshal.GetLastWin32Error();
+                var message = error == ERROR_MORE_DATA
+                    ? $"Job contains more than {MaximumTrackedProcesses} active processes"
+                    : "QueryInformationJobObject failed";
+                throw new Win32Exception(error, message);
+            }
+
+            var count = Marshal.ReadInt32(buffer, 4);
+            var processIds = new List<uint>(count);
+            for (var index = 0; index < count; index++)
+            {
+                var offset = 8 + (index * IntPtr.Size);
+                var processId = IntPtr.Size == 8
+                    ? unchecked((ulong)Marshal.ReadInt64(buffer, offset))
+                    : unchecked((uint)Marshal.ReadInt32(buffer, offset));
+                processIds.Add(checked((uint)processId));
+            }
+            return processIds.ToArray();
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    public void EnableKillOnClose()
+    {
+        EnsureOpen();
+        var information = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        var byteCount = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        var buffer = Marshal.AllocHGlobal(byteCount);
+        try
+        {
+            Marshal.StructureToPtr(information, buffer, false);
+            if (!SetInformationJobObject(
+                jobHandle,
+                JobObjectExtendedLimitInformation,
+                buffer,
+                (uint)byteCount))
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "SetInformationJobObject failed while enabling kill-on-close");
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    public void Terminate(uint exitCode)
+    {
+        EnsureOpen();
+        if (!TerminateJobObject(jobHandle, exitCode))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "TerminateJobObject failed");
+        }
+    }
+
+    public void Dispose()
+    {
+        if (jobHandle != IntPtr.Zero)
+        {
+            if (!CloseHandle(jobHandle))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "CloseHandle failed for job");
+            }
+            jobHandle = IntPtr.Zero;
+        }
+    }
+
+    private void EnsureOpen()
+    {
+        if (jobHandle == IntPtr.Zero)
+        {
+            throw new ObjectDisposedException(nameof(CcsmProcessJob));
+        }
+    }
+
+    private static string QuoteCommandLineArgument(string argument)
+    {
+        if (argument.Length > 0 &&
+            argument.IndexOfAny(new[] { ' ', '\t', '\n', '\v', '"' }) < 0)
+        {
+            return argument;
+        }
+
+        var result = new StringBuilder(argument.Length + 2);
+        result.Append('"');
+        var backslashes = 0;
+        foreach (var character in argument)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+            }
+            else if (character == '"')
+            {
+                result.Append('\\', (backslashes * 2) + 1);
+                result.Append('"');
+                backslashes = 0;
+            }
+            else
+            {
+                result.Append('\\', backslashes);
+                result.Append(character);
+                backslashes = 0;
+            }
+        }
+        result.Append('\\', backslashes * 2);
+        result.Append('"');
+        return result.ToString();
+    }
+}
 
 public sealed class CcsmInputDeadlockProbeResult
 {
@@ -347,35 +726,32 @@ public static class CcsmInputDeadlockProbe
 
 Add-Type -TypeDefinition $source -Language CSharp
 
-function Get-ProcessTreeSnapshot {
-    param([Parameter(Mandatory = $true)][int]$RootProcessId)
+function Get-ProcessIdentitySnapshot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [uint32[]]$ProcessIds
+    )
 
-    $processTable = @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, ParentProcessId, CreationDate, Name)
-    $knownParents = [System.Collections.Generic.HashSet[uint32]]::new()
-    $ownedIds = [System.Collections.Generic.HashSet[uint32]]::new()
-    $null = $knownParents.Add([uint32]$RootProcessId)
-    foreach ($entry in $processTable) {
-        if ([uint32]$entry.ProcessId -eq [uint32]$RootProcessId) {
-            $null = $ownedIds.Add([uint32]$entry.ProcessId)
-            break
-        }
+    if ($ProcessIds.Count -eq 0) {
+        return @()
     }
 
-    do {
-        $added = $false
-        foreach ($entry in $processTable) {
-            $processId = [uint32]$entry.ProcessId
-            if (-not $ownedIds.Contains($processId) -and $knownParents.Contains([uint32]$entry.ParentProcessId)) {
-                $null = $ownedIds.Add($processId)
-                $null = $knownParents.Add($processId)
-                $added = $true
-            }
-        }
-    } while ($added)
+    $ownedIds = [System.Collections.Generic.HashSet[uint32]]::new()
+    foreach ($processId in $ProcessIds) {
+        $null = $ownedIds.Add([uint32]$processId)
+    }
+    $processTable = @(
+        Get-CimInstance Win32_Process -ErrorAction Stop |
+            Select-Object ProcessId, CreationDate, Name
+    )
 
     return @(
         $processTable |
-            Where-Object { $ownedIds.Contains([uint32]$_.ProcessId) } |
+            Where-Object {
+                $null -ne $_.CreationDate -and
+                $ownedIds.Contains([uint32]$_.ProcessId)
+            } |
             Sort-Object ProcessId |
             ForEach-Object {
                 [pscustomobject]@{
@@ -388,7 +764,11 @@ function Get-ProcessTreeSnapshot {
 }
 
 function Get-RemainingProcessTreeMembers {
-    param([Parameter(Mandatory = $true)][object[]]$Snapshot)
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Snapshot
+    )
 
     if ($Snapshot.Count -eq 0) {
         return @()
@@ -419,6 +799,7 @@ $dataPath = [System.IO.Path]::GetFullPath($DataDirectory)
 New-Item -ItemType Directory -Path $dataPath -Force | Out-Null
 
 $process = $null
+$processJob = $null
 $roundResults = @()
 $before = $null
 $stressPassed = $false
@@ -430,21 +811,22 @@ $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $processTreeCleanupRequested = $false
 $processTreeTerminated = $null
 $processTreeSnapshot = @()
+$jobKillOnCloseEnabled = $false
+$jobTerminationRequested = $false
+$rootTerminationFallbackUsed = $false
+$jobProcessIdsBeforeTermination = @()
+$remainingJobProcessIds = @()
 $remainingProcessIds = @()
 $dataDirectoryCleanupRequested = $false
 $dataDirectoryRemoved = $null
 $runStartedAt = [DateTimeOffset]::Now
 try {
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $exePath
-    $startInfo.WorkingDirectory = Split-Path -Parent $exePath
-    $startInfo.UseShellExecute = $false
-    $startInfo.ArgumentList.Add("--ccsm-data-dir")
-    $startInfo.ArgumentList.Add($dataPath)
-    $process = [System.Diagnostics.Process]::Start($startInfo)
-    if (-not $process) {
-        throw "Failed to start CCSM"
-    }
+    $processJob = [CcsmProcessJob]::Start(
+        $exePath,
+        (Split-Path -Parent $exePath),
+        $dataPath
+    )
+    $process = $processJob.Process
 
     $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
     $stableHandle = [IntPtr]::Zero
@@ -538,42 +920,98 @@ try {
 
 }
 finally {
-    if ($process -and -not $KeepProcess) {
-        $processTreeCleanupRequested = $true
-        try {
-            $processTreeSnapshot = @(Get-ProcessTreeSnapshot -RootProcessId $process.Id)
-            if ($process.Id -notin @($processTreeSnapshot | ForEach-Object processId)) {
-                throw "Failed to capture the live CCSM root process before cleanup"
+    try {
+        if ($processJob -and -not $KeepProcess) {
+            $processTreeCleanupRequested = $true
+            $waitCompleted = $false
+            $jobStateVerified = $false
+            try {
+                $processJob.EnableKillOnClose()
+                $jobKillOnCloseEnabled = $true
             }
-            if (-not $process.HasExited) {
-                $process.Kill($true)
+            catch {
+                $cleanupErrors.Add("Failed to enable job kill-on-close: $_")
             }
-            $waitCompleted = $process.WaitForExit(10000)
-            $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(10)
-            do {
-                $remainingProcessIds = @(
-                    Get-RemainingProcessTreeMembers -Snapshot $processTreeSnapshot |
-                        ForEach-Object processId
+            try {
+                $jobProcessIdsBeforeTermination = @($processJob.GetActiveProcessIds())
+                $processTreeSnapshot = @(
+                    Get-ProcessIdentitySnapshot -ProcessIds $jobProcessIdsBeforeTermination
                 )
-                if ($remainingProcessIds.Count -eq 0) {
-                    break
+            }
+            catch {
+                $cleanupErrors.Add("Failed to capture CCSM job identities before cleanup: $_")
+            }
+            try {
+                $processJob.Terminate(1)
+                $jobTerminationRequested = $true
+            }
+            catch {
+                $cleanupErrors.Add("Failed to terminate the CCSM job: $_")
+                try {
+                    if ($process -and -not $process.HasExited) {
+                        $process.Kill($true)
+                        $rootTerminationFallbackUsed = $true
+                    }
                 }
-                Start-Sleep -Milliseconds 100
-            } while ([DateTime]::UtcNow -lt $cleanupDeadline)
-            $processTreeTerminated = $waitCompleted -and $remainingProcessIds.Count -eq 0
+                catch {
+                    $cleanupErrors.Add("Failed to terminate the CCSM root process fallback: $_")
+                }
+            }
+            try {
+                $waitCompleted = $process.HasExited -or $process.WaitForExit(10000)
+            }
+            catch {
+                $cleanupErrors.Add("Failed while waiting for the CCSM root process: $_")
+            }
+            try {
+                $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    $remainingJobProcessIds = @($processJob.GetActiveProcessIds())
+                    $remainingIdentityProcessIds = @(
+                        Get-RemainingProcessTreeMembers -Snapshot $processTreeSnapshot |
+                            ForEach-Object processId
+                    )
+                    $remainingProcessIds = @(
+                        @($remainingJobProcessIds) + @($remainingIdentityProcessIds) |
+                            Sort-Object -Unique
+                    )
+                    if ($remainingProcessIds.Count -eq 0) {
+                        break
+                    }
+                    Start-Sleep -Milliseconds 100
+                } while ([DateTime]::UtcNow -lt $cleanupDeadline)
+                $jobStateVerified = $true
+            }
+            catch {
+                $cleanupErrors.Add("Failed to verify CCSM job termination: $_")
+            }
+            $processTreeTerminated = (
+                $waitCompleted -and
+                $jobStateVerified -and
+                $remainingJobProcessIds.Count -eq 0 -and
+                $remainingProcessIds.Count -eq 0
+            )
             if (-not $processTreeTerminated) {
                 $cleanupErrors.Add("CCSM process tree did not terminate within the cleanup deadline")
             }
         }
-        catch {
-            $processTreeTerminated = $false
-            $cleanupErrors.Add("Failed to stop CCSM process tree $($process.Id): $_")
+    }
+    finally {
+        if ($processJob) {
+            try {
+                $processJob.Dispose()
+            }
+            catch {
+                $processTreeTerminated = $false
+                $cleanupErrors.Add("Failed to close the CCSM job handle: $_")
+            }
         }
     }
     if (
         $ownsDataDirectory -and
         $stressPassed -and
         (-not $processTreeCleanupRequested -or $processTreeTerminated) -and
+        $cleanupErrors.Count -eq 0 -and
         -not $KeepProcess -and
         -not $KeepData
     ) {
@@ -628,10 +1066,16 @@ $passed = $stressPassed -and $cleanupPassed
     before = $before
     rounds = $roundResults
     cleanup = [pscustomobject]@{
+        mechanism = "Windows Job object assigned before the root process resumes"
         processTreeCleanupRequested = $processTreeCleanupRequested
         processTreeTerminated = $processTreeTerminated
+        jobKillOnCloseEnabled = $jobKillOnCloseEnabled
+        jobTerminationRequested = $jobTerminationRequested
+        rootTerminationFallbackUsed = $rootTerminationFallbackUsed
+        jobProcessIdsBeforeTermination = $jobProcessIdsBeforeTermination
         observedProcessCount = $processTreeSnapshot.Count
         observedProcessTree = $processTreeSnapshot
+        remainingJobProcessIds = $remainingJobProcessIds
         remainingProcessIds = $remainingProcessIds
         ownedDataDirectory = $ownsDataDirectory
         dataDirectoryCleanupRequested = $dataDirectoryCleanupRequested
