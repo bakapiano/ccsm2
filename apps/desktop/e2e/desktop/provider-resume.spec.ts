@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { ScenarioEvidence } from "./support/evidence";
@@ -242,7 +242,13 @@ async function createSpace(name: string, root: string): Promise<void> {
 }
 
 function normalizedPath(path: string): string {
-  const normalized = resolve(path).replaceAll("\\", "/").replace(/\/+$/, "");
+  let canonicalPath: string;
+  try {
+    canonicalPath = realpathSync.native(path);
+  } catch {
+    canonicalPath = resolve(path);
+  }
+  const normalized = canonicalPath.replaceAll("\\", "/").replace(/\/+$/, "");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
