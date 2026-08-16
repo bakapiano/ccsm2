@@ -24,15 +24,26 @@
       "commit": "c704261c519c58cfdd0bc2d58ba24e06a0b71c92",
       "url": "https://github.com/tauri-apps/tao/commit/c704261c519c58cfdd0bc2d58ba24e06a0b71c92",
       "subject": "fix(windows): avoid reentrant input lock deadlocks (#1215)",
-      "baseTag": {
-        "name": "tao-v0.35.3",
-        "commit": "5a14e624c81b7a799728129417e9218be25f17d9"
+      "releasedIn": {
+        "version": "0.36.0",
+        "tag": "tao-v0.36.0",
+        "commit": "e2885f78b5003bbe46e88f01eadb817b8bc5644f",
+        "url": "https://github.com/tauri-apps/tao/releases/tag/tao-v0.36.0",
+        "publishedAt": "2026-07-29T02:10:02Z"
       },
-      "additionalAncestor": {
-        "commit": "47d38f369f7fb6778df90744faa39d25ab0e3bcc",
-        "subject": "Fix(linux): JIS key mapping (#1228)",
-        "behavioralDelta": "four additive raw_key_to_key mappings in a six-line source diff",
-        "validation": "the locked Ubuntu workspace CI passed with this exact revision"
+      "tauriIntegration": {
+        "commit": "7cc68e74ff6981f5c50a52a67d56c5eb2d227188",
+        "url": "https://github.com/tauri-apps/tauri/commit/7cc68e74ff6981f5c50a52a67d56c5eb2d227188",
+        "subject": "feat: update tao to 0.36 and wry to 0.56 (#15307)",
+        "reason": "Tauri 2.11.5 is the latest stable release; its published runtime still constrains Tao to 0.35"
+      },
+      "resolvedDependencyGraph": {
+        "tauri": "2.11.5 (crates.io)",
+        "tauriRuntime": "2.11.3 (Tauri integration commit)",
+        "tauriRuntimeWry": "2.11.4 (Tauri integration commit)",
+        "tauriUtils": "2.9.3 (Tauri integration commit)",
+        "tao": "0.36.0 (crates.io)",
+        "wry": "0.56.1 (crates.io)"
       }
     }
   },
@@ -62,8 +73,8 @@
   },
   "beta3HarnessVerification": {
     "passed": false,
-    "startedAt": "2026-08-16T09:36:32.6970078+08:00",
-    "completedAt": "2026-08-16T09:36:48.9292317+08:00",
+    "startedAt": "2026-08-16T10:35:56.6025408+08:00",
+    "completedAt": "2026-08-16T10:36:13.2047429+08:00",
     "productVersion": "0.1.0-beta.3",
     "executableSha256": "3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781",
     "secondsPerRound": 15,
@@ -74,34 +85,34 @@
       "maximumFocusFailureStreakMs": 1000
     },
     "before": {
-      "workingSetBytes": 35188736,
-      "privateBytes": 7860224,
-      "handles": 408,
-      "threads": 41
+      "workingSetBytes": 35274752,
+      "privateBytes": 7262208,
+      "handles": 395,
+      "threads": 36
     },
     "rounds": [
       {
         "round": 1,
-        "durationMs": 15008,
-        "keyboardPostAttempts": 3051310,
-        "postedKeyboardMessages": 10000,
-        "keyboardPostFailures": 3041310,
+        "durationMs": 15014,
+        "keyboardPostAttempts": 2829706,
+        "postedKeyboardMessages": 10001,
+        "keyboardPostFailures": 2819705,
         "lastKeyboardPostError": 1816,
         "completedFocusMessages": 0,
-        "failedFocusMessages": 317502,
+        "failedFocusMessages": 292798,
         "focusMessageTimeouts": 81,
-        "focusHungAborts": 317421,
+        "focusHungAborts": 292717,
         "otherFocusSendFailures": 0,
         "lastFocusSendError": 0,
-        "longestFocusFailureStreakMs": 15009,
+        "longestFocusFailureStreakMs": 15013,
         "windowProbeResponsive": false,
         "windowProbeError": 0,
         "windowHung": true,
         "processResponding": false,
-        "workingSetBytes": 35192832,
-        "privateBytes": 7823360,
-        "handles": 416,
-        "threads": 40
+        "workingSetBytes": 35409920,
+        "privateBytes": 7237632,
+        "handles": 401,
+        "threads": 35
       }
     ]
   },
@@ -120,11 +131,11 @@
   },
   "fixedReleaseVerification": {
     "passed": true,
-    "startedAt": "2026-08-16T09:41:53.3452311+08:00",
-    "completedAt": "2026-08-16T09:42:41.2964784+08:00",
+    "startedAt": "2026-08-16T10:36:26.4696124+08:00",
+    "completedAt": "2026-08-16T10:37:14.1053692+08:00",
     "productVersion": "0.1.0-beta.5",
-    "executableSha256": "31494cf7f9ec3a4175de3af22bd77d8cc95d2aa635f5e6259612c0dd626802eb",
-    "executableBytes": 5997568,
+    "executableSha256": "c51daf694d7112f59f2ac0a7b7723d185903543f851d66655721249e7c7d6c6d",
+    "executableBytes": 6003200,
     "secondsPerRound": 15,
     "requestedRounds": 3,
     "acceptance": {
@@ -133,20 +144,20 @@
       "maximumFocusFailureStreakMs": 1000
     },
     "before": {
-      "workingSetBytes": 32817152,
-      "privateBytes": 7843840,
-      "handles": 408,
-      "threads": 41
+      "workingSetBytes": 35176448,
+      "privateBytes": 7667712,
+      "handles": 398,
+      "threads": 37
     },
     "rounds": [
       {
         "round": 1,
-        "durationMs": 15011,
-        "keyboardPostAttempts": 666672,
-        "postedKeyboardMessages": 40712,
-        "keyboardPostFailures": 625960,
+        "durationMs": 15002,
+        "keyboardPostAttempts": 646594,
+        "postedKeyboardMessages": 52659,
+        "keyboardPostFailures": 593935,
         "lastKeyboardPostError": 1816,
-        "completedFocusMessages": 59750,
+        "completedFocusMessages": 62686,
         "failedFocusMessages": 0,
         "focusMessageTimeouts": 0,
         "focusHungAborts": 0,
@@ -157,19 +168,19 @@
         "windowProbeError": 0,
         "windowHung": false,
         "processResponding": true,
-        "workingSetBytes": 38785024,
-        "privateBytes": 19185664,
+        "workingSetBytes": 43298816,
+        "privateBytes": 19210240,
         "handles": 417,
         "threads": 40
       },
       {
         "round": 2,
-        "durationMs": 15012,
-        "keyboardPostAttempts": 684322,
-        "postedKeyboardMessages": 31792,
-        "keyboardPostFailures": 652530,
+        "durationMs": 15006,
+        "keyboardPostAttempts": 664770,
+        "postedKeyboardMessages": 44300,
+        "keyboardPostFailures": 620470,
         "lastKeyboardPostError": 1816,
-        "completedFocusMessages": 60917,
+        "completedFocusMessages": 64242,
         "failedFocusMessages": 0,
         "focusMessageTimeouts": 0,
         "focusHungAborts": 0,
@@ -180,19 +191,19 @@
         "windowProbeError": 0,
         "windowHung": false,
         "processResponding": true,
-        "workingSetBytes": 44388352,
-        "privateBytes": 19275776,
+        "workingSetBytes": 50876416,
+        "privateBytes": 30765056,
         "handles": 417,
         "threads": 40
       },
       {
         "round": 3,
-        "durationMs": 15004,
-        "keyboardPostAttempts": 692220,
-        "postedKeyboardMessages": 31212,
-        "keyboardPostFailures": 661008,
+        "durationMs": 15001,
+        "keyboardPostAttempts": 668468,
+        "postedKeyboardMessages": 43369,
+        "keyboardPostFailures": 625099,
         "lastKeyboardPostError": 1816,
-        "completedFocusMessages": 61348,
+        "completedFocusMessages": 64441,
         "failedFocusMessages": 0,
         "focusMessageTimeouts": 0,
         "focusHungAborts": 0,
@@ -203,18 +214,18 @@
         "windowProbeError": 0,
         "windowHung": false,
         "processResponding": true,
-        "workingSetBytes": 49963008,
-        "privateBytes": 30830592,
+        "workingSetBytes": 58490880,
+        "privateBytes": 76996608,
         "handles": 417,
         "threads": 40
       }
     ],
     "totals": {
-      "durationMs": 45027,
-      "keyboardPostAttempts": 2043214,
-      "postedKeyboardMessages": 103716,
-      "keyboardPostFailures": 1939498,
-      "completedFocusMessages": 182015,
+      "durationMs": 45009,
+      "keyboardPostAttempts": 1979832,
+      "postedKeyboardMessages": 140328,
+      "keyboardPostFailures": 1839504,
+      "completedFocusMessages": 191369,
       "failedFocusMessages": 0,
       "focusMessageTimeouts": 0,
       "focusHungAborts": 0
@@ -223,6 +234,15 @@
       "ownedDataDirectoryRemoved": true,
       "hostOrWebViewProcessesRemaining": 0
     }
+  },
+  "dataDirectoryArgumentVerification": {
+    "passed": true,
+    "seconds": 2,
+    "inputEndedWithDirectorySeparator": true,
+    "reportedPathMatchedInput": true,
+    "dataDbCreatedAtExactPath": true,
+    "processExitedBeforeCleanup": true,
+    "testDirectoryRemoved": true
   },
   "windowsHookRegression": {
     "test": "hook::tests::endpoint_delivers_report_closed_before_connect_wait",

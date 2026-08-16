@@ -6,8 +6,8 @@ PASS. The frozen `0.1.0-beta.3` Release executable was captured with full
 host and WebView renderer dumps. Its native UI thread is deadlocked by a
 reentrant Win32 input callback in Tao 0.35.3. The same deadlock was reproduced
 with an isolated profile and a deterministic message-race harness. A Release
-executable with the upstream Tao fix completed three identical 15-second
-rounds while remaining responsive.
+executable using the published Tao 0.36.0 fix completed three identical
+15-second rounds while remaining responsive.
 
 ## Environment and binaries
 
@@ -16,7 +16,7 @@ rounds while remaining responsive.
 - frozen binary: `0.1.0-beta.3`, SHA-256
   `3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781`;
 - fixed binary: `0.1.0-beta.5`, SHA-256
-  `31494cf7f9ec3a4175de3af22bd77d8cc95d2aa635f5e6259612c0dd626802eb`.
+  `c51daf694d7112f59f2ac0a7b7723d185903543f851d66655721249e7c7d6c6d`.
 
 ## Production hang capture
 
@@ -74,13 +74,16 @@ Tao fixed this exact lock ordering in upstream commit
 [`c704261c`](https://github.com/tauri-apps/tao/commit/c704261c519c58cfdd0bc2d58ba24e06a0b71c92),
 `fix(windows): avoid reentrant input lock deadlocks (#1215)`. The fix performs
 keyboard and IME message peeks before acquiring the non-reentrant input-state
-locks. CCSM pins that commit while Tauri 2.11 remains on the Tao 0.35 line.
+locks. Tao released the fix in
+[`tao-v0.36.0`](https://github.com/tauri-apps/tao/releases/tag/tao-v0.36.0).
 
-The pinned revision follows the `tao-v0.35.3` tag (`5a14e624`) by two commits.
-Besides the Windows deadlock fix, its parent `47d38f36` adds four Linux JIS
-key mappings in a six-line source delta. The exact ancestry is recorded here
-because a Cargo git patch applies on every target. The locked Ubuntu workspace
-CI passed with this revision.
+Tauri `2.11.5`, JavaScript API `2.11.1`, and CLI `2.11.4` are the latest
+stable releases at verification time. The published `tauri-runtime-wry`
+`2.11.4` still constrains Tao to `^0.35.0`, so CCSM applies Tauri's merged
+[`7cc68e74`](https://github.com/tauri-apps/tauri/commit/7cc68e74ff6981f5c50a52a67d56c5eb2d227188)
+Tao 0.36/Wry 0.56 integration revision to the runtime crates. The locked graph
+resolves Tao `0.36.0` and Wry `0.56.1` from crates.io. This keeps the deadlock
+fix on a released Tao version while using Tauri's matching adapter changes.
 
 ## Deterministic reproduction
 
@@ -100,16 +103,16 @@ Generated profiles are removed after successful runs. Failed runs retain their
 profile for diagnosis; `-KeepProcess` preserves the tested process tree for a
 dump, and `-KeepData` preserves a successful run's generated profile.
 
-Fresh beta.3 result (`2026-08-16T09:36:32.6970078+08:00`):
+Fresh beta.3 result (`2026-08-16T10:35:56.6025408+08:00`):
 
-- keyboard post attempts: `3,051,310`;
-- accepted keyboard messages: `10,000`;
-- keyboard post failures: `3,041,310`, last error `1816`
+- keyboard post attempts: `2,829,706`;
+- accepted keyboard messages: `10,001`;
+- keyboard post failures: `2,819,705`, last error `1816`
   (`ERROR_NOT_ENOUGH_QUOTA`) after the UI queue stopped draining;
 - completed focus messages: `0`;
-- failed focus sends: `317,502` (`81` `ERROR_TIMEOUT` results and `317,421`
+- failed focus sends: `292,798` (`81` `ERROR_TIMEOUT` results and `292,717`
   immediate `SMTO_ABORTIFHUNG` results);
-- longest continuous focus-send failure: `15,009 ms`;
+- longest continuous focus-send failure: `15,013 ms`;
 - final window probe responsive: `false`;
 - `IsHungAppWindow`: `true`;
 - final process responding: `false`.
@@ -125,23 +128,27 @@ return remains RVA `0x2b9cfd`; the outer keyboard-case return is RVA
 
 ## Fixed Release verification
 
-The final fixed beta.5 Release executable ran the reviewed harness for three
-consecutive 15-second rounds starting at
-`2026-08-16T09:41:53.3452311+08:00`:
+The final fixed beta.5 Release executable (`6,003,200` bytes) ran the reviewed
+harness for three consecutive 15-second rounds starting at
+`2026-08-16T10:36:26.4696124+08:00`:
 
 | Round | Keyboard messages | Completed focus messages | Focus failures | Longest failure | Responsive |
 | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 40,712 | 59,750 | 0 | 0 ms | yes |
-| 2 | 31,792 | 60,917 | 0 | 0 ms | yes |
-| 3 | 31,212 | 61,348 | 0 | 0 ms | yes |
-| **Total** | **103,716** | **182,015** | **0** | **0 ms** | **yes** |
+| 1 | 52,659 | 62,686 | 0 | 0 ms | yes |
+| 2 | 44,300 | 64,242 | 0 | 0 ms | yes |
+| 3 | 43,369 | 64,441 | 0 | 0 ms | yes |
+| **Total** | **140,328** | **191,369** | **0** | **0 ms** | **yes** |
 
-The fixed process started at `32,817,152` working-set bytes, `7,843,840`
-private bytes, `408` handles, and `41` threads. After round three it remained
-responsive at `49,963,008` working-set bytes, `30,830,592` private bytes,
+The fixed process started at `35,176,448` working-set bytes, `7,667,712`
+private bytes, `398` handles, and `37` threads. After round three it remained
+responsive at `58,490,880` working-set bytes, `76,996,608` private bytes,
 `417` handles, and `40` threads. The harness then killed and waited for its
 owned process tree, removed its generated profile, and found zero remaining
 host or WebView processes from that run.
+
+An additional two-second run passed with an explicitly supplied data-directory
+argument ending in `\`; `data.db` was created at that exact path, and the owned
+process tree exited before the test directory was removed.
 
 The Windows hook regression now forces the client to connect, write, and close
 before the server calls `ConnectNamedPipe`. It observes `ERROR_NO_DATA` (`232`)

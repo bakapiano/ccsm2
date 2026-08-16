@@ -31,8 +31,10 @@ panic = "abort"
 strip = true
 
 [patch.crates-io]
-# Backport tauri-apps/tao#1215 while Tauri 2.11 requires the 0.35 line.
-# The fix moves PeekMessageW outside non-reentrant input-state locks on Windows.
-# This upstream revision also contains 47d38f3, an additive four-key Linux JIS
-# mapping fix; both source deltas and the locked Ubuntu build are reviewed.
-tao = { git = "https://github.com/tauri-apps/tao", rev = "c704261c519c58cfdd0bc2d58ba24e06a0b71c92" }
+# Tauri 2.11.5 is the latest release, but its published runtime still requires
+# Tao 0.35. Use Tauri's merged Tao 0.36/Wry 0.56 integration until the next
+# runtime release. Pinning one upstream revision keeps the three runtime crates
+# on a single source and lets Cargo resolve the released Tao 0.36.0.
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
