@@ -1826,6 +1826,49 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   }
 }
 
+@container (max-width: 540px) {
+  .file-editor-panel .cm-editor .cm-search {
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto auto 20px;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > input[name="search"],
+  .file-editor-panel .cm-editor .cm-search > input[name="replace"] {
+    grid-column: 1 / span 4;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > button[name="next"],
+  .file-editor-panel .cm-editor .cm-search > button[name="replace"] {
+    grid-column: 5;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > button[name="prev"] {
+    grid-column: 6;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > button[name="select"] {
+    grid-column: 7;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > button[name="replaceAll"] {
+    grid-column: 6 / span 2;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > label:has(input[name="case"]) {
+    grid-row: 3;
+    grid-column: 1;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > label:has(input[name="re"]) {
+    grid-row: 3;
+    grid-column: 2;
+  }
+
+  .file-editor-panel .cm-editor .cm-search > label:has(input[name="word"]) {
+    grid-row: 3;
+    grid-column: 3 / span 2;
+  }
+}
+
 @container (max-width: 300px) {
   .file-editor-save-label,
   .file-editor-format {
@@ -2301,6 +2344,7 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 
 .files-toolbar .files-refresh {
   width: var(--control-height);
+  grid-column: -2 / -1;
 }
 
 .file-explorer-panel[data-busy="true"] .files-refresh svg {
