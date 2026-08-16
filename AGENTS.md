@@ -44,5 +44,6 @@
 - Use `pnpm test:desktop:build` to build the current-platform E2E executable, `pnpm test:desktop` to run the suite, and `pnpm test:desktop:debug -- --spec <file>` to debug one scenario locally.
 - Give every run isolated data, cache, runtime, Space, Browser profile, and artifact directories. The runner records and cleans every process and native surface owned by the run.
 - GitHub Actions branch protection requires independent `desktop-e2e-windows` and `desktop-e2e-linux` checks. Each job runs checks, tests, the platform E2E build, and the shared Desktop Scenarios.
-- Each platform job uploads structured results, screenshots, logs, cleanup evidence, and scenario GIFs through `actions/upload-artifact@v4` with `retention-days: 7`.
+- Each platform job uploads structured results, screenshots, logs, cleanup evidence, and scenario GIFs through the repository-pinned `actions/upload-artifact` release with `retention-days: 7`.
+- Provider E2E runs use the test-only model mock configured by `CCSM_E2E_MODEL_MOCK_FILE`. Tests set responses by provider and prompt; real provider credentials and network model calls stay outside this gate.
 - WDIO assertions determine the job result. PR reviewers inspect the Windows and Linux artifacts and record human acceptance through PR approval.

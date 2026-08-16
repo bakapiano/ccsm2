@@ -1,3 +1,5 @@
+#[cfg(feature = "e2e")]
+mod e2e_provider;
 mod linux_renderer;
 
 fn main() {
@@ -14,6 +16,10 @@ fn main() {
     }
     if arguments.as_slice() == ["hook", "report"] {
         std::process::exit(ccsm_platform::run_hook_reporter());
+    }
+    #[cfg(feature = "e2e")]
+    if e2e_provider::is_enabled() {
+        std::process::exit(e2e_provider::run());
     }
     if let [mode, pgid] = arguments.as_slice()
         && mode == "process-watchdog"

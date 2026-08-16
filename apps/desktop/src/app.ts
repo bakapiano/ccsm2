@@ -139,7 +139,9 @@ export class CcsmApp {
       focusAgent: (agent) => this.#focusAgent(agent),
     });
     this.#registry.register(this.#terminalProvider);
-    this.#browserProvider = new BrowserTabProvider(desktopClient);
+    this.#browserProvider = new BrowserTabProvider(desktopClient, {
+      nativeSurfacesEnabled: import.meta.env.MODE !== "e2e",
+    });
     this.#surfaceOcclusion = new SurfaceOcclusionController((occluded) =>
       this.#browserProvider.setOverlaySuspended(occluded),
     );

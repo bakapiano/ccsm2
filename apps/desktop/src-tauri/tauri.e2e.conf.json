@@ -1,0 +1,43 @@
+{
+  "build": {
+    "beforeBuildCommand": "pnpm build:e2e"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "CCSM E2E",
+        "width": 1320,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 560,
+        "resizable": true,
+        "decorations": false,
+        "dataDirectory": "ccsm-main-webview-e2e"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": [
+        {
+          "identifier": "e2e",
+          "description": "Test-only permissions for the trusted CCSM E2E main WebView.",
+          "webviews": ["main"],
+          "permissions": [
+            "core:default",
+            "core:window:allow-close",
+            "core:window:allow-destroy",
+            "core:window:allow-minimize",
+            "core:window:allow-set-theme",
+            "core:window:allow-start-dragging",
+            "core:window:allow-start-resize-dragging",
+            "core:window:allow-toggle-maximize",
+            "wdio:default",
+            "wdio-webdriver:default"
+          ]
+        }
+      ]
+    }
+  }
+}

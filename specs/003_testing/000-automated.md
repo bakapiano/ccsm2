@@ -109,6 +109,20 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 
 WDIO teardown 关闭应用、native child WebView、PTY、provider fixture 进程和虚拟 display。teardown 结束后执行进程残留检查，并将结果写入 `process-cleanup.json`。
 
+## Provider model mock
+
+必需门禁通过 E2E executable 内的 test-only provider mock 运行 Claude、Codex 与 GitHub Copilot。mock executable 继续经过生产 CLI shim、PTY、Hook reporter、native session binding 和 resume 参数组装，并以固定内容代替网络 model 调用。
+
+`CCSM_E2E_MODEL_MOCK_FILE` 指向本次运行的 JSON 配置。测试可以在发送 prompt 前按 `provider + prompt` 设置返回内容；mock 在每次 prompt 到达时读取最新配置。`CCSM_E2E_MODEL_MOCK_LOG` 记录 session start、native session ID、resume 状态、prompt 和 response，供断言及 artifact 验收。
+
+门禁包含三条独立场景：
+
+1. 创建 Space、创建 Claude CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+
+Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 WebView 的控制；对应测试仍创建生产默认 Browser Tab 数据。native Browser child 的平台场景使用其独立验收套件。
+
 ## 自动断言
 
 自动断言是门禁事实源，至少覆盖：
@@ -160,12 +174,12 @@ GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中�
 
 ## Artifact 上传
 
-artifact 上传使用 `actions/upload-artifact@v4`，公开仓库的验收证据保留 7 天：
+artifact 上传使用仓库锁定的 `actions/upload-artifact` 版本，公开仓库的验收证据保留 7 天：
 
 ```yaml
 - name: Upload desktop E2E evidence
   if: always()
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
   with:
     name: desktop-e2e-${{ env.CCSM_E2E_PLATFORM }}-${{ github.run_id }}
     path: test-results/desktop/${{ env.CCSM_E2E_PLATFORM }}/

@@ -23,13 +23,23 @@ interface BrowserTabState {
   zoom?: number;
 }
 
+interface BrowserTabProviderOptions {
+  nativeSurfacesEnabled?: boolean;
+}
+
 export class BrowserTabProvider implements TabProvider {
   readonly kind = "browser" as const;
   readonly #panels = new Set<BrowserPanel>();
   #titleUnlisten: (() => void) | null = null;
   #destroyed = false;
 
-  constructor(private readonly client: CcsmDesktopClient) {
+  readonly #nativeSurfacesEnabled: boolean;
+
+  constructor(
+    private readonly client: CcsmDesktopClient,
+    options: BrowserTabProviderOptions = {},
+  ) {
+    this.#nativeSurfacesEnabled = options.nativeSurfacesEnabled ?? true;
     void client.browser
       .subscribeTitleChanged((event) => {
         for (const panel of this.#panels) panel.handleTitleChanged(event);
@@ -41,8 +51,11 @@ export class BrowserTabProvider implements TabProvider {
   }
 
   createRenderer(tab: TabDto): IContentRenderer {
-    const panel = new BrowserPanel(tab, this.client, () =>
-      this.#panels.delete(panel),
+    const panel = new BrowserPanel(
+      tab,
+      this.client,
+      this.#nativeSurfacesEnabled,
+      () => this.#panels.delete(panel),
     );
     this.#panels.add(panel);
     return panel;
@@ -98,6 +111,7 @@ class BrowserPanel implements IContentRenderer {
   constructor(
     tab: TabDto,
     client: CcsmDesktopClient,
+    private readonly nativeSurfacesEnabled: boolean,
     private readonly onDispose: () => void,
   ) {
     this.#tab = tab;
@@ -130,6 +144,13 @@ class BrowserPanel implements IContentRenderer {
     if (!this.#anchor || !this.#address)
       throw new Error("browser panel DOM is incomplete");
     this.#address.value = this.#currentUrl;
+    if (!this.nativeSurfacesEnabled) {
+      this.#address.disabled = true;
+      this.#status!.dataset.state = "ready";
+      this.#status!.textContent = "E2E Browser placeholder";
+      this.#anchor.textContent = "Native Browser disabled for provider E2E";
+      return;
+    }
     this.element.querySelector("form")?.addEventListener("submit", (event) => {
       event.preventDefault();
       void this.#navigate(this.#address!.value);
@@ -251,6 +272,7 @@ class BrowserPanel implements IContentRenderer {
   }
 
   #setDesiredVisible(visible: boolean): void {
+    if (!this.nativeSurfacesEnabled) return;
     this.#desiredVisible = visible;
     this.#syncAfterVisibilityConstraintChange();
   }
@@ -263,6 +285,7 @@ class BrowserPanel implements IContentRenderer {
   }
 
   #scheduleSync(): void {
+    if (!this.nativeSurfacesEnabled) return;
     this.#dirty = true;
     if (this.#raf) return;
     this.#raf = requestAnimationFrame(() => {

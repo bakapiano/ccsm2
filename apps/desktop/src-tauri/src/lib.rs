@@ -61,6 +61,7 @@ pub fn run() {
         .filter(|value| !value.as_os_str().is_empty());
     let main_webview_data_dir = data_dir_override
         .as_ref()
+        .filter(|_| !cfg!(feature = "e2e"))
         .map(|data_dir| data_dir.join("main-webview"));
     let claude_model_override =
         argument_value("--ccsm-claude-model").or_else(|| std::env::var("CCSM_CLAUDE_MODEL").ok());
@@ -84,7 +85,12 @@ pub fn run() {
             .expect("CCSM main window is missing from the Tauri configuration");
         windows.remove(main_window_index)
     });
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "e2e")]
+    let builder = builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
+    let app = builder
         .setup(move |app| {
             let data_dir = data_dir_override.map(Ok).unwrap_or_else(|| {
                 app.path()
@@ -166,6 +172,11 @@ pub fn run() {
                     .build()
                     .map_err(|error| format!("create isolated main WebView failed: {error}"))?;
             }
+            #[cfg(feature = "e2e")]
+            eprintln!(
+                "[CCSM:E2E] registered WebView windows: {:?}",
+                app.webview_windows().keys().collect::<Vec<_>>()
+            );
             if let Some(main_window) = app.get_webview_window("main") {
                 renderer_health.start(app.handle().clone(), main_window.clone());
                 match NativeInputObserver::start(&main_window, Arc::clone(&renderer_health)) {
