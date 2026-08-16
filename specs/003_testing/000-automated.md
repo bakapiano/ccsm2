@@ -44,10 +44,10 @@ Verify matrix 与两个 Desktop E2E jobs 并行执行。Verify matrix 负责静�
 
 ## 平台 job 契约
 
-| Job                   | Runner          | 显示环境                  | 必需输出                         |
-| --------------------- | --------------- | ------------------------- | -------------------------------- |
-| `desktop-e2e-windows` | `windows-2022`  | runner desktop session    | test result、GIF、截图、日志     |
-| `desktop-e2e-linux`   | `ubuntu-24.04`  | Xvfb/虚拟 display session | test result、GIF、截图、日志     |
+| Job                   | Runner         | 显示环境                  | 必需输出                     |
+| --------------------- | -------------- | ------------------------- | ---------------------------- |
+| `desktop-e2e-windows` | `windows-2022` | runner desktop session    | test result、GIF、截图、日志 |
+| `desktop-e2e-linux`   | `ubuntu-24.04` | Xvfb/虚拟 display session | test result、GIF、截图、日志 |
 
 每个 job 按固定顺序执行：
 
@@ -195,7 +195,7 @@ provider-cli-contract.json
 workflow-state.json
 ```
 
-`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、最终 gate 状态、cleanup 状态、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 ID、passed/failed、持续时间和失败步骤。`log-diagnostics.json` 对 Windows embedded driver 的已知 nullable-u32 warning 单独计数，并让其它 frontend/backend error 进入失败结果。runner 或 teardown 失败会追加结构化 runner failure，确保 job、result、manifest 和 Actions Summary 使用同一个最终结论。
+`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、最终 gate 状态、cleanup 状态、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 ID、passed/failed、持续时间和失败步骤。`log-diagnostics.json` 分别计数 Windows embedded driver 的 nullable-u32 warning 与 Linux Xvfb 的 AT-SPI/DRI3 warning，并让未登记的 frontend/backend error 进入失败结果。runner 或 teardown 失败会追加结构化 runner failure，确保 job、result、manifest 和 Actions Summary 使用同一个最终结论。
 
 GIF 由场景中的有名称验收 checkpoint 生成，按操作顺序展示启动、关键输入、状态变化和最终结果：
 

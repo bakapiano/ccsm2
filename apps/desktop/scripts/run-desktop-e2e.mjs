@@ -798,22 +798,41 @@ function auditServiceLogs() {
   ];
   const knownWindowsJsonWarning =
     /JSON error: invalid type: null, expected u32 at line 1 column \d+/u;
+  const knownLinuxHeadlessWarnings = [
+    /AT-SPI: Error retrieving accessibility bus address: org\.freedesktop\.DBus\.Error\.ServiceUnknown/u,
+    /libEGL warning: DRI3 error: Could not get DRI3 device/u,
+  ];
   const candidateErrors = lines.filter(
     (line) =>
       /\b(?:ERROR|fatal|panic)\b/iu.test(line) || line.includes("JSON error:"),
   );
-  const knownWarnings = candidateErrors.filter(
+  const knownWindowsWarnings = candidateErrors.filter(
     (line) => platform === "windows" && knownWindowsJsonWarning.test(line),
   );
+  const knownLinuxWarnings = candidateErrors.filter(
+    (line) =>
+      platform === "linux" &&
+      knownLinuxHeadlessWarnings.some((pattern) => pattern.test(line)),
+  );
   const unexpectedErrors = candidateErrors.filter(
-    (line) => !(platform === "windows" && knownWindowsJsonWarning.test(line)),
+    (line) =>
+      !(platform === "windows" && knownWindowsJsonWarning.test(line)) &&
+      !(
+        platform === "linux" &&
+        knownLinuxHeadlessWarnings.some((pattern) => pattern.test(line))
+      ),
   );
   const value = {
     clean: unexpectedErrors.length === 0,
     knownWarnings: {
-      windowsWdioNullableU32: knownWarnings.length,
-      explanation:
-        "tauri-plugin-wdio-webdriver 1.3.0 emits this Windows input-probe serialization warning while the corresponding WebDriver action succeeds",
+      windowsWdioNullableU32: knownWindowsWarnings.length,
+      linuxHeadlessDesktop: knownLinuxWarnings.length,
+      explanations: {
+        windowsWdioNullableU32:
+          "tauri-plugin-wdio-webdriver 1.3.0 emits this Windows input-probe serialization warning while the corresponding WebDriver action succeeds",
+        linuxHeadlessDesktop:
+          "Ubuntu Xvfb runners emit AT-SPI bus and DRI3 device warnings while WebKitGTK renders through the configured virtual display",
+      },
     },
     unexpectedErrors: [...new Set(unexpectedErrors)].slice(0, 50),
   };
