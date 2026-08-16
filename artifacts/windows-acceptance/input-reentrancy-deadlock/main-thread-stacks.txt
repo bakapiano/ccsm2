@@ -131,4 +131,4 @@ Resolved fixed dependency graph:
 Tao released the fix in 0.36.0. Tauri's development branch integrates Tao
 0.36/Wry 0.56 at revision 7cc68e74ff6981f5c50a52a67d56c5eb2d227188.
 The first stable Tauri runtime resolving Tao >=0.36.0 is the upgrade point for
-removing the Git patch. The workspace MSRV remains Rust 1.90.
+removing the Git patch. The workspace MSRV is Rust 1.88.

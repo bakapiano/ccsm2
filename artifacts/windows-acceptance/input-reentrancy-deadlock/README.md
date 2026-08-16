@@ -2,23 +2,22 @@
 
 ## Result
 
-PASS. The frozen `0.1.0-beta.3` Release executable was captured with full
-host and WebView renderer dumps. Its native UI thread is deadlocked by a
-reentrant Win32 input callback in Tao 0.35.3. The same deadlock was reproduced
-with an isolated profile and a deterministic message-race harness. A Release
-executable using the exact upstream fix backported to the Tao 0.35 line
-completed three identical 15-second rounds while remaining responsive.
+PASS. Full-memory dumps of a frozen `0.1.0-beta.3` Release host and a
+controlled reproduction identify a same-thread Win32 input reentrancy deadlock
+in Tao 0.35.3. The final `0.1.0-beta.6` Release uses the exact official Tao
+fix revision and completed three identical 15-second rounds while every
+activity, responsiveness, posted-message quality, and cleanup gate passed.
 
 ## Environment and binaries
 
 - Windows x64, OS build `26200`;
 - WinDbg `10.0.29617.1000`;
-- frozen binary: `0.1.0-beta.3`, SHA-256
+- frozen binary: `0.1.0-beta.3`, `5,880,832` bytes, SHA-256
   `3516f28dab4c82cef1eedc0a1461f821e06637ba42439c0ba1ec401c3bede781`;
-- fixed binary: `0.1.0-beta.6`, SHA-256
-  `ee8ab61330bb373e9920a67d5aac7279a66b24761c64966b36ceb31573be629c`,
+- fixed binary: `0.1.0-beta.6`, `6,001,152` bytes, SHA-256
+  `e67dac52f21c6ac2eb227f8ebdaccdff858005a7e93caaec904897d8dbb4adbf`,
   built from clean source commit
-  `3c657a3b642e9627904cf335c3eae9a3b3d162ed`.
+  `132b77ce6a0b97da6a7e84ecc6947654c72e3230`.
 
 ## Production hang capture
 
@@ -79,116 +78,148 @@ keyboard and IME message peeks before acquiring the non-reentrant input-state
 locks. Tao released the fix in
 [`tao-v0.36.0`](https://github.com/tauri-apps/tao/releases/tag/tao-v0.36.0).
 
-Tauri `2.11.5`, JavaScript API `2.11.1`, and CLI `2.11.4` are the latest
-stable releases at verification time. The published `tauri-runtime-wry`
-`2.11.4` constrains Tao to `^0.35.0`, so CCSM patches Tao to the official
-upstream fix revision `c704261c` while retaining the published runtime.
-The locked graph resolves `tauri-runtime` `2.11.3`, `tauri-runtime-wry`
-`2.11.4`, `tauri-utils` `2.9.3`, and Wry `0.55.1` from crates.io, plus Tao
-`0.35.3` from the official `tauri-apps/tao` repository at that exact revision.
-The workspace MSRV remains Rust `1.90`. Tauri's development branch has merged
+Tauri `2.11.5`, JavaScript API `2.11.1`, and CLI `2.11.4` were the latest
+stable releases at verification time. Published `tauri-runtime-wry` `2.11.4`
+constrains Tao to `^0.35.0`, so CCSM retains the published stable runtime and
+patches Tao to the official upstream revision `c704261c`. The locked graph
+resolves `tauri-runtime` `2.11.3`, `tauri-runtime-wry` `2.11.4`,
+`tauri-utils` `2.9.3`, and Wry `0.55.1` from crates.io, plus Tao `0.35.3`
+from the official `tauri-apps/tao` repository at that exact revision. The
+dependency gate reads Cargo metadata and verifies the actual package IDs and
+edges from `ccsm-desktop` through `tauri-runtime-wry` to Tao and Wry.
+
+The workspace MSRV is Rust `1.88` and the repository toolchain is Rust `1.95`.
+Tauri's development branch has merged
 [`7cc68e74`](https://github.com/tauri-apps/tauri/commit/7cc68e74ff6981f5c50a52a67d56c5eb2d227188)
-for Tao 0.36/Wry 0.56; the Cargo comment records the future upgrade condition:
+for Tao 0.36/Wry 0.56. The Cargo comment records the future upgrade condition:
 use the first stable Tauri runtime resolving Tao `>=0.36.0`, then remove the
 Git patch.
 
 ## Deterministic reproduction
 
 The regression harness starts CCSM with an isolated data directory and races
-three independent streams: posted `WM_KEYDOWN`/`WM_KEYUP`, synchronous
+three independent streams: paced posted `WM_KEYDOWN`/`WM_KEYUP`, synchronous
 `WM_KEYDOWN`/`WM_KEYUP`, and synchronous `WM_KILLFOCUS`. The synchronous
-keyboard stream proves that the target WndProc actually executed keyboard
-handling; enqueue success alone is only a queue observation. Each round
-requires at least 100 accepted posted keyboard messages, at least 100 completed
-synchronous keyboard messages, at least 10 completed focus messages, failure
-streaks below 1,000 ms, a responsive `WM_NULL` probe, a clear
-`IsHungAppWindow` result, and `Process.Responding`:
+keyboard stream proves that the target WndProc executed keyboard handling.
+Each round requires:
+
+- at least 100 accepted posted keyboard messages and at most 10% post failures;
+- at least 100 completed synchronous keyboard messages;
+- at least 10 completed synchronous focus messages;
+- keyboard and focus failure streaks below 1,000 ms;
+- a responsive `WM_NULL` probe, a clear `IsHungAppWindow` result, and
+  `Process.Responding == true`.
 
 ```powershell
 pwsh -File scripts/windows-input-deadlock-repro.ps1 `
   -Executable <release-executable> -Seconds 15 -Rounds 1
 ```
 
-The harness emits its result after cleanup. It snapshots the full owned tree
-before termination, records each PID with its UTC creation-time ticks, kills
-and awaits the tree, and verifies every captured identity is gone. Successful
-generated profiles are removed and verified absent. Failed runs retain their
-profile for diagnosis. `-KeepProcess` preserves the tested process tree for a
-dump, and `-KeepData` preserves a successful run's generated profile.
+The harness creates the root process suspended, assigns it to a Windows Job
+Object, and resumes it only after assignment. Kernel Job membership therefore
+tracks every descendant even when an intermediate parent exits. Cleanup first
+enables `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, captures active Job PIDs with
+UTC creation-time identities, terminates the Job, waits for the root, and
+requires both the Job PID list and identity survivors to become empty. A root
+`Kill(true)` path remains as a recorded fallback. The Job handle closes before
+profile deletion is considered.
+
+Successful generated profiles are removed only after the full cleanup result
+has no errors. Every failed run retains its generated profile for diagnosis.
+`-KeepProcess` preserves the tested process tree for a dump, and `-KeepData`
+preserves a successful generated profile.
 
 Two fresh beta.3 control runs independently reproduced the freeze:
 
-| Run | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Hung |
-| ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 0 | 207,260 | 0 | 207,221 | 15,001 ms | yes |
-| 2 | 0 | 197,922 | 0 | 197,800 | 15,016 ms | yes |
+| Run | Posted / failures | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Hung |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| 1 | 1,926 / 0 | 0 | 444,216 | 0 | 444,448 | 15,004 ms | yes |
+| 2 | 1,926 / 0 | 0 | 427,652 | 0 | 426,469 | 15,015 ms | yes |
 
-Run 1 began with `35,254,272` working-set bytes, `7,954,432` private bytes,
-`414` handles, and `41` threads. Run 2 began with `35,106,816` working-set
-bytes, `7,634,944` private bytes, `408` handles, and `41` threads. The runs
-accepted `10,000` and `10,007` posted keyboard messages before the dead UI
-queue filled and `PostMessageW` returned `ERROR_NOT_ENOUGH_QUOTA` (`1816`).
-Both windows failed the `WM_NULL` probe, reported hung through
-`IsHungAppWindow`, and had `Process.Responding == false`. Each pre-termination
-snapshot contained 15 host/WebView/terminal process identities; verification
-by PID plus creation time found zero survivors. Both isolated profiles were
-retained for diagnosis.
+Run 1 began with `34,844,672` working-set bytes, `7,520,256` private bytes,
+`384` handles, and `36` threads. Run 2 began with `34,844,672` working-set
+bytes, `7,675,904` private bytes, `395` handles, and `36` threads. Every
+posted message succeeded, while both windows failed the `WM_NULL` probe,
+reported hung through `IsHungAppWindow`, and had
+`Process.Responding == false`. The Job snapshots contained 13 and 15 process
+identities; each cleanup enabled kill-on-close, requested Job termination, used
+no fallback, and verified zero Job or identity survivors. Both isolated
+profiles were retained for diagnosis.
 
-The harness clears and reads `LastError` on every synchronous call and checks
-`IsHungAppWindow`, preserving the distinction between `ERROR_TIMEOUT` and
-immediate `SMTO_ABORTIFHUNG` results.
-
-Its controlled dump has the same `WaitOnAddress -> reentrant mutex ->
+The controlled beta.3 dump has the same `WaitOnAddress -> reentrant mutex ->
 SendMessageW -> PeekMessageW` stack as the production dump. The reentrant lock
 return remains RVA `0x2b9cfd`; the outer keyboard-case return is RVA
 `0x2b9361`.
 
 ## Fixed Release verification
 
-The final fixed beta.6 Release executable (`6,002,688` bytes) was built from
-clean source commit `3c657a3b642e9627904cf335c3eae9a3b3d162ed` and ran the
-reviewed harness for three consecutive 15-second rounds starting at
-`2026-08-16T18:51:19.6325698+08:00`:
+The final fixed beta.6 Release was built from clean source commit
+`132b77ce6a0b97da6a7e84ecc6947654c72e3230` and ran the final harness for
+three consecutive 15-second rounds beginning at
+`2026-08-16T19:38:59.2898643+08:00`:
 
-| Round | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Responsive |
-| ---: | ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 28,635 | 0 | 57,107 | 0 | 0 ms | yes |
-| 2 | 29,932 | 0 | 59,846 | 0 | 0 ms | yes |
-| 3 | 29,600 | 0 | 59,209 | 0 | 0 ms | yes |
-| **Total** | **88,167** | **0** | **176,162** | **0** | **0 ms** | **yes** |
+| Round | Posted / failures | Completed keyboard | Keyboard failures | Completed focus | Focus failures | Longest failure | Responsive |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| 1 | 1,924 / 0 | 97,298 | 0 | 181,271 | 0 | 0 ms | yes |
+| 2 | 1,918 / 0 | 97,618 | 0 | 187,762 | 0 | 0 ms | yes |
+| 3 | 1,922 / 0 | 96,908 | 0 | 186,010 | 0 | 0 ms | yes |
+| **Total** | **5,764 / 0** | **291,824** | **0** | **555,043** | **0** | **0 ms** | **yes** |
 
-The fixed process started at `35,196,928` working-set bytes, `7,782,400`
-private bytes, `399` handles, and `37` threads. After round three it remained
-responsive at `51,625,984` working-set bytes, `30,953,472` private bytes,
-`416` handles, and `40` threads. The harness then terminated and waited for
-its owned process tree. Its pre-termination snapshot contained 15 process
-identities; verification by PID plus creation time found zero survivors. The
-harness removed its generated profile and verified the directory absent.
+The fixed process started at `32,616,448` working-set bytes, `8,282,112`
+private bytes, `389` handles, and `36` threads. After round three it remained
+responsive at `33,325,056` working-set bytes, `8,445,952` private bytes,
+`407` handles, and `40` threads. Its Job snapshot contained 15
+host/WebView/terminal identities. Cleanup enabled kill-on-close, requested Job
+termination, used no fallback, verified zero Job and identity survivors,
+closed the Job handle, removed the generated profile, and verified absence.
 
-An additional two-second run passed with an explicitly supplied data-directory
-argument ending in `\`. It completed `3,889` synchronous keyboard messages and
-`7,677` focus messages with zero failures. `data.db` was created at the exact
-supplied path, the process tree was verified empty, and the test directory was
-removed after a guarded path check.
+An additional two-second run used an explicitly supplied data-directory path
+that contained spaces and ended in `\`. It accepted 262/262 posted messages,
+completed `12,523` synchronous keyboard messages and `24,072` focus messages
+with zero failures, created `data.db` at the exact supplied path, verified zero
+process survivors, and removed the guarded test directory.
 
-The Windows hook regression now forces the client to connect, write, and close
-before the server calls `ConnectNamedPipe`. It observes `ERROR_NO_DATA` (`232`)
-and verifies that the complete buffered report reaches the sink.
+The Windows hook regression forces the client to connect, write, and close
+before the server calls `ConnectNamedPipe`. It observes `ERROR_NO_DATA`
+(`232`) and verifies that the complete buffered report reaches the sink.
+
+## Independent review
+
+Four agents independently reviewed the PR without conversation context.
+Their actionable findings were resolved:
+
+- unrelated lockfile churn was removed and Rust 1.88 was tested directly;
+- the posted stream was paced and a maximum 10% post-failure gate was added;
+- generated diagnostics are retained whenever stress or cleanup fails;
+- process ancestry reconstruction was replaced with pre-resume Windows Job
+  assignment and identity verification;
+- dependency checks now validate Cargo metadata package IDs and resolved edges;
+- cleanup enables kill-on-close before fallible queries, always attempts Job
+  termination, records the root fallback, and closes the Job in `finally`;
+- profile deletion occurs after Job-handle closure and requires zero cleanup
+  errors;
+- all stale Release measurements were replaced by runs from the final clean
+  source commit.
+
+The reporting reviewer rechecked the final code changes and found no remaining
+concrete code issue. The final evidence records the current harness gates,
+Rust 1.88 MSRV, source commit, and executable hash.
 
 ## Repository gates
 
 - `pnpm format:check`: passed;
-- `pnpm check`: the exact Tauri/Tao/Wry dependency assertion, TypeScript, and
-  Rust workspace checks passed with the locked dependency graph;
-- `cargo +1.90.0 check --workspace --locked`: passed at the declared MSRV;
-- `pnpm test`: `166` Rust tests and `288` frontend tests passed;
-- `pnpm desktop:build:release`: passed and produced the fixed binary hash
-  recorded above;
-- two beta.3 control runs: both reproduced the freeze with zero completed
-  synchronous keyboard or focus messages;
-- fixed Release deadlock harness: three rounds passed with zero synchronous
-  keyboard/focus failures and every activity, response, and cleanup gate
-  satisfied;
+- `pnpm check`: Cargo metadata dependency edges, TypeScript, and the Rust
+  workspace passed with the locked graph;
+- `cargo +1.88.0 check --workspace --locked`: passed at the declared MSRV;
+- `pnpm test`: 166 Rust tests and 288 frontend tests passed;
+- `pnpm verify:version`: passed;
+- `pnpm desktop:build:release`: passed and produced the fixed hash above;
+- PowerShell parser, Job cleanup smoke, and already-exited-root cleanup:
+  passed;
+- beta.3 controls: 2/2 reproduced the same frozen-window state;
+- fixed Release harness: 3/3 rounds passed every activity, response,
+  post-quality, and cleanup gate;
+- trailing-separator and spaced data-directory transport: passed;
 - deterministic Windows pre-connect hook regression: passed.
 
 Machine-readable measurements are in [`result.json`](result.json), and the
