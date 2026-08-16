@@ -8,7 +8,7 @@
 - v2 采用 greenfield 实现；旧 Node 产品作为行为参考，v2 数据和协议不承担兼容或迁移。
 - 新增规格必须加入 `README.md` 索引，并避免与现有文档重复定义同一个所有者。
 - 产品文档描述用户概念、行为和范围；技术文档描述数据结构、协议、算法和平台 adapter；测试文档描述测试分层、harness、fixture system、环境、可观测性和门禁架构。
-- 测试规格分为 Automated Testing 与 Development Testing；`playwright-cli` 等开发者按需工具归入 Development Testing，CI/Gate 使用无人值守 Suites。
+- 测试规格分为 Automated Testing 与 Development Testing；Development Testing 使用 Microsoft [`playwright-cli`](https://github.com/microsoft/playwright-cli) 连接运行中的 dev WebView。命令缺失时提示用户通过 `npm install -g @playwright/cli@latest` 安装；CI/Gate 使用无人值守 Suites。
 - 目标平台始终是 Windows、macOS、Linux；当前实现可 Windows-first，平台专属代码统一位于 adapter 内，并在规格中标注各平台实现状态。
 
 ## 文档尺寸

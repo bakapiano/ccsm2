@@ -1,6 +1,6 @@
-# 本地 Desktop E2E 调试
+# 本地桌面测试与调试
 
-本文定义开发者在本机调试 CCSM 桌面场景的统一方式。本地与 GitHub Actions 使用相同的 WebdriverIO scenarios、`@wdio/tauri-service`、embedded provider 和 E2E executable。
+本文定义两个本地入口：Microsoft [`playwright-cli`](https://github.com/microsoft/playwright-cli) 连接运行中的 dev WebView，完成交互式检查；WebdriverIO、`@wdio/tauri-service` 和 embedded provider 运行可重复 Desktop E2E，并与 GitHub Actions 共用 scenarios 和 E2E executable。
 
 ## 两个本地循环
 
@@ -10,7 +10,7 @@
 pnpm dev
 ```
 
-该命令提供 Tauri dev 与 Vite HMR。需要自动操作 executable、复现 CI 场景或调试测试时使用 Desktop E2E 入口：
+该命令提供 Tauri dev 与 Vite HMR。Playwright CLI 连接这个正在运行的 WebView。需要执行可重复断言、复现 CI 场景或调试测试时使用 Desktop E2E 入口：
 
 ```powershell
 pnpm test:desktop:build
@@ -18,6 +18,59 @@ pnpm test:desktop
 ```
 
 前者构建启用测试插件的 E2E executable，后者通过 `@wdio/tauri-service` 启动应用并执行场景。
+
+## 使用 Playwright CLI 连接 dev WebView
+
+交互检查统一使用 Microsoft 官方 `playwright-cli`。开始前检查命令：
+
+```powershell
+Get-Command playwright-cli -ErrorAction SilentlyContinue
+```
+
+Linux/macOS 使用：
+
+```bash
+command -v playwright-cli
+```
+
+命令缺失时，向用户提示官方安装命令，由用户确认并执行：
+
+```powershell
+npm install -g @playwright/cli@latest
+playwright-cli --help
+```
+
+终端一启动开发实例并保持运行：
+
+```powershell
+pnpm dev
+```
+
+主 WebView2 的 dev 配置开放 CDP `9226`。终端二确认 endpoint ready，然后创建具名连接：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9226/json/version
+playwright-cli -s=ccsm-dev attach --cdp=http://127.0.0.1:9226
+```
+
+连接后使用同一个 session 检查页面：
+
+```powershell
+playwright-cli -s=ccsm-dev tab-list
+playwright-cli -s=ccsm-dev snapshot --depth=4
+playwright-cli -s=ccsm-dev find "New Tab"
+playwright-cli -s=ccsm-dev click <ref>
+playwright-cli -s=ccsm-dev console
+playwright-cli -s=ccsm-dev screenshot
+```
+
+`snapshot` 或 `find` 返回当前页面的 element ref，后续 `click`、`fill`、`hover` 使用该 ref。检查完成后 detach，Tauri dev 继续运行：
+
+```powershell
+playwright-cli -s=ccsm-dev detach
+```
+
+Playwright CLI session 负责开发实例的交互探索、DOM 状态确认、console/network 检查和临时截图。稳定复现步骤进入下方 WDIO Desktop Scenario，形成可重复断言。
 
 ## 本地架构
 
