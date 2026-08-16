@@ -31,7 +31,8 @@
     "@lezer/highlight": "1.2.3",
     "@tauri-apps/api": "2.11.1",
     "codemirror": "6.0.2",
-    "dockview": "7.0.4"
+    "dockview": "7.0.4",
+    "vditor": "3.11.2"
   },
   "devDependencies": {
     "@ffmpeg-installer/ffmpeg": "1.1.0",

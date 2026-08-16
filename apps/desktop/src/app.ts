@@ -131,6 +131,7 @@ export class CcsmApp {
     theme.subscribe((nextTheme) => {
       updateThemeButton(themeButton, nextTheme);
       this.#terminalProvider.setTheme(nextTheme);
+      this.#fileEditorProvider.setTheme(nextTheme);
       void desktopClient.windowChrome.setTheme(nextTheme).catch((error) => {
         this.#setGlobalStatus("error", `theme · ${describeError(error)}`);
       });
@@ -147,6 +148,7 @@ export class CcsmApp {
     );
     this.#registry.register(this.#browserProvider);
     this.#fileEditorProvider = new FileEditorTabProvider(desktopClient, {
+      theme: theme.current,
       presentationChanged: () => this.#refreshFileEditorTitles(),
       setDialogVisible: (visible) =>
         this.#surfaceOcclusion.set("file-editor-dialog", visible),

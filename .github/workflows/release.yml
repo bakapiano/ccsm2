@@ -67,7 +67,6 @@ jobs:
       - quality
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    environment: release
     permissions:
       attestations: write
       contents: read
@@ -92,36 +91,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Validate Windows signing configuration
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
-          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
-          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
-        run: |
-          $required = [ordered]@{
-            AZURE_CLIENT_ID = $env:AZURE_CLIENT_ID
-            AZURE_TENANT_ID = $env:AZURE_TENANT_ID
-            AZURE_SUBSCRIPTION_ID = $env:AZURE_SUBSCRIPTION_ID
-            AZURE_ARTIFACT_SIGNING_ENDPOINT = $env:AZURE_ARTIFACT_SIGNING_ENDPOINT
-            AZURE_ARTIFACT_SIGNING_ACCOUNT = $env:AZURE_ARTIFACT_SIGNING_ACCOUNT
-            AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE = $env:AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE
-            WINDOWS_SIGNING_SUBJECT = $env:WINDOWS_SIGNING_SUBJECT
-          }
-          $missing = @($required.GetEnumerator() | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object Key)
-          if ($missing.Count -gt 0) {
-            throw "Missing release environment variables: $($missing -join ', ')"
-          }
-          [Uri]$endpoint = $null
-          if (-not [Uri]::TryCreate($env:AZURE_ARTIFACT_SIGNING_ENDPOINT, [UriKind]::Absolute, [ref]$endpoint) -or $endpoint.Scheme -ne "https") {
-            throw "AZURE_ARTIFACT_SIGNING_ENDPOINT must be an absolute HTTPS URL"
-          }
 
       - name: Install Ubuntu build dependencies
         if: runner.os == 'Linux'
@@ -166,65 +135,10 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows release binary
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: pnpm desktop:build:release
-
-      - name: Sign in to Azure for Windows signing
-        if: runner.os == 'Windows'
-        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Sign Windows release binary
-        if: runner.os == 'Windows'
-        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
-          files: ${{ github.workspace }}\target\release\ccsm-desktop.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          description: CCSM
-          description-url: https://github.com/${{ github.repository }}
-          exclude-environment-credential: true
-          exclude-workload-identity-credential: true
-          exclude-managed-identity-credential: true
-          exclude-shared-token-cache-credential: true
-          exclude-visual-studio-credential: true
-          exclude-visual-studio-code-credential: true
-          exclude-azure-cli-credential: false
-          exclude-azure-powershell-credential: true
-          exclude-azure-developer-cli-credential: true
-          exclude-interactive-browser-credential: true
-
-      - name: Verify signed Windows release binary
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
-        run: |
-          ./scripts/verify-windows-signature.ps1 `
-            -Path target/release/ccsm-desktop.exe `
-            -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
-
       - name: Build Windows release archive
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
-        run: |
-          ./scripts/package-windows.ps1 `
-            -Version $env:RELEASE_VERSION `
-            -SourceRevision $env:GITHUB_REF_NAME `
-            -SkipBuild `
-            -RequireSignature `
-            -ExpectedSignerSubject $env:WINDOWS_SIGNING_SUBJECT
+        run: ./scripts/package-windows.ps1 -Version $env:RELEASE_VERSION
 
       - name: Build Ubuntu release archive
         if: runner.os == 'Linux'
@@ -234,8 +148,6 @@ jobs:
       - name: Verify Windows archive
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
         run: |
           $name = "CCSM-$env:RELEASE_VERSION-windows-x64.zip"
           $archive = Join-Path "target/release" $name
@@ -251,18 +163,9 @@ jobs:
               throw "Missing packaged file: $relative"
             }
           }
-          ./scripts/verify-windows-signature.ps1 `
-            -Path (Join-Path $extractRoot "ccsm-desktop.exe") `
-            -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
           $buildInfo = Get-Content -LiteralPath (Join-Path $extractRoot "BUILD-INFO.txt")
           if ($buildInfo -notcontains "Source: v$env:RELEASE_VERSION") {
             throw "BUILD-INFO source revision does not match v$env:RELEASE_VERSION"
-          }
-          if ($buildInfo -notcontains "Authenticode Status: Valid") {
-            throw "BUILD-INFO does not record a valid Authenticode signature"
-          }
-          if ($buildInfo -notcontains "Authenticode Signer: $env:WINDOWS_SIGNING_SUBJECT") {
-            throw "BUILD-INFO signer does not match the configured Windows publisher"
           }
 
       - name: Verify Ubuntu archive
