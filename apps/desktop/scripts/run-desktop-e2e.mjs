@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -47,7 +46,10 @@ const sourceAppBinary = resolve(
     join(repositoryRoot, "target", "debug", binaryName),
 );
 const isolatedBinaryDirectory = join(temporaryRoot, "bin");
-const appBinary = join(isolatedBinaryDirectory, binaryName);
+const usesIsolatedBinary = process.platform === "win32";
+const appBinary = usesIsolatedBinary
+  ? join(isolatedBinaryDirectory, binaryName)
+  : sourceAppBinary;
 const modelMockFile = join(temporaryRoot, "model-mock.json");
 const modelMockLog = join(artifactDirectory, "logs", "model-mock.jsonl");
 const dataDirectory = join(temporaryRoot, "app-data");
@@ -60,6 +62,13 @@ mkdirSync(spacesDirectory, { recursive: true });
 for (const provider of ["claude", "codex", "copilot"]) {
   mkdirSync(join(spacesDirectory, provider), { recursive: true });
 }
+const baselineSourceProcessIds = new Set(
+  usesIsolatedBinary
+    ? []
+    : listUnixProcesses()
+        .filter((entry) => entry.CommandLine.includes(sourceAppBinary))
+        .map((entry) => entry.ProcessId),
+);
 writeFileSync(
   modelMockFile,
   `${JSON.stringify({ defaultResponse: "CCSM_E2E_DEFAULT_RESPONSE", providers: {} }, null, 2)}\n`,
@@ -122,10 +131,7 @@ if (!existsSync(sourceAppBinary)) {
   runnerError = `E2E executable does not exist at ${sourceAppBinary}; run pnpm test:desktop:build first`;
   console.error(runnerError);
 } else {
-  copyFileSync(sourceAppBinary, appBinary);
-  if (process.platform !== "win32") {
-    chmodSync(appBinary, statSync(sourceAppBinary).mode);
-  }
+  if (usesIsolatedBinary) copyFileSync(sourceAppBinary, appBinary);
   const wdioCli = join(
     desktopRoot,
     "node_modules",
@@ -164,6 +170,7 @@ writeFileSync(
     {
       sourceAppBinary,
       appBinary,
+      binaryMode: usesIsolatedBinary ? "isolated-copy" : "job-build",
       ownershipRoot: temporaryRoot,
       checkedAt: new Date().toISOString(),
       clean: lingeringProcesses.length === 0,
@@ -285,24 +292,32 @@ function listProcesses(ownershipRoot) {
       const parsed = JSON.parse(output);
       return Array.isArray(parsed) ? parsed : [parsed];
     }
-    const output = execFileSync("ps", ["-eo", "pid=,ppid=,args="], {
-      encoding: "utf8",
-    });
-    return output
-      .split("\n")
-      .filter((line) => line.includes(ownershipRoot))
-      .map((line) => {
-        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
-        return match
-          ? {
-              ProcessId: Number(match[1]),
-              ParentProcessId: Number(match[2]),
-              CommandLine: match[3],
-            }
-          : { CommandLine: line.trim() };
-      });
+    return listUnixProcesses().filter(
+      (entry) =>
+        !baselineSourceProcessIds.has(entry.ProcessId) &&
+        (entry.CommandLine.includes(ownershipRoot) ||
+          (!usesIsolatedBinary && entry.CommandLine.includes(sourceAppBinary))),
+    );
   } catch (error) {
     return [{ inspectionError: error.message }];
+  }
+}
+
+function listUnixProcesses() {
+  try {
+    return execFileSync("ps", ["-eo", "pid=,ppid=,args="], {
+      encoding: "utf8",
+    })
+      .split("\n")
+      .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/))
+      .filter(Boolean)
+      .map((match) => ({
+        ProcessId: Number(match[1]),
+        ParentProcessId: Number(match[2]),
+        CommandLine: match[3],
+      }));
+  } catch {
+    return [];
   }
 }
 

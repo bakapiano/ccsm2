@@ -279,6 +279,10 @@ fn argument_value(name: &str) -> Option<String> {
 
 fn runtime_shim_root(executable: &std::path::Path, data_dir: &std::path::Path) -> PathBuf {
     let suffix = format!("ccsm-runtime-shims-{}", std::process::id());
+    if cfg!(feature = "e2e") {
+        ccsm_platform::cleanup_stale_runtime_shim_roots(data_dir);
+        return data_dir.join(suffix);
+    }
     if let Some(parent) = executable.parent() {
         ccsm_platform::cleanup_stale_runtime_shim_roots(parent);
         let adjacent = parent.join(&suffix);

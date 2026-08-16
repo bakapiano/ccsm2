@@ -6,10 +6,12 @@
 
 受保护分支配置以下必需检查：
 
+- `Verify (windows-2022)`
+- `Verify (ubuntu-24.04)`
 - `desktop-e2e-windows`
 - `desktop-e2e-linux`
 
-两个检查全部成功后，reviewer 检查两个平台的验收证据并批准 PR。自动断言负责确定行为正确性，人工验收负责检查布局、交互过程和平台视觉结果。
+四个检查全部成功后，reviewer 检查两个平台的验收证据并批准 PR。自动断言负责确定行为正确性，人工验收负责检查布局、交互过程和平台视觉结果。
 
 本阶段门禁矩阵固定为 Windows 与 Linux，两个平台具有同等门禁权重。macOS 是目标平台，当前 Desktop Gate 状态为 Planned；后续 macOS job 复用相同 harness、scenarios 和 artifact contract。
 
@@ -18,22 +20,25 @@
 ```text
 Pull Request / main push
         │
+        ├── Verify (windows-2022 / ubuntu-24.04)
+        │       └── formatting + contracts + check + unit/integration tests
+        │
         ├── desktop-e2e-windows ── windows-2022
-        │       ├── check + unit/integration tests
         │       ├── build Windows E2E executable
+        │       ├── test E2E-only backend
         │       ├── WDIO desktop scenarios
         │       ├── acceptance GIF + result files
         │       └── upload Actions Artifact (7 days)
         │
         └── desktop-e2e-linux ──── ubuntu-24.04 + virtual display
-                ├── check + unit/integration tests
                 ├── build Linux E2E executable
+                ├── test E2E-only backend
                 ├── WDIO desktop scenarios
                 ├── acceptance GIF + result files
                 └── upload Actions Artifact (7 days)
 ```
 
-两个 job 并行执行。每个 job 独立完成依赖安装、构建、应用启动、测试、teardown 和证据上传；每个平台消费本 job 构建的产物。
+Verify matrix 与两个 Desktop E2E jobs 并行执行。Verify matrix 负责静态检查和默认 feature 测试；每个 Desktop job 独立完成依赖安装、E2E 构建、应用启动、场景、teardown 和证据上传，并消费本 job 构建的产物。
 
 ## 平台 job 契约
 
@@ -48,8 +53,6 @@ Pull Request / main push
 initialize failure evidence
 → checkout
 → install pinned toolchains and locked dependencies
-→ pnpm check
-→ pnpm test
 → pnpm test:desktop:build
 → test E2E-only backend
 → pnpm test:desktop:ci
@@ -109,7 +112,7 @@ Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。�
 
 公开仓库必需门禁的全部输入由确定性 fixture、虚拟 provider 数据和隔离目录组成。真实 provider credential 归属受保护的专项验收 workflow。
 
-每次运行复制一份独立 E2E executable 到临时 ownership root。应用、runtime shim、Hook reporter、watchdog 与 provider fixture 都从该目录启动。teardown 结束后按 ownership root 检查完整进程集合，记录 graceful cleanup、强制回收前后的进程信息，并将结果写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
+Windows 每次运行复制一份独立 E2E executable 到临时 ownership root。Linux 直接启动本 job 构建的 executable，保留 WebKit 的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。teardown 结束后按 ownership root、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
 
 ## Provider model mock
 
@@ -201,14 +204,14 @@ PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短�
 
 Reviewer 在批准 PR 前完成：
 
-1. 确认 `desktop-e2e-windows` 与 `desktop-e2e-linux` 均成功。
+1. 确认 Verify matrix、`desktop-e2e-windows` 与 `desktop-e2e-linux` 均成功。
 2. 从同一次 workflow run 下载两个 artifact。
 3. 打开各平台 `result.json`，确认预期场景完整执行。
 4. 查看 `acceptance/*.gif`，检查关键操作、布局和最终状态。
 5. 对涉及 native surface 的改动检查对应完整窗口截图。
 6. 在 PR review 中批准或指出需要重跑的场景。
 
-PR review 是人工验收记录；两个 required status checks 是自动门禁记录。重新推送 commit 后使用新 workflow run 的证据重新验收。
+PR review 是人工验收记录；四个 required status checks 是自动门禁记录。重新推送 commit 后使用新 workflow run 的证据重新验收。
 
 ## Workflow 触发与资源控制
 
@@ -223,10 +226,10 @@ PR review 是人工验收记录；两个 required status checks 是自动门禁�
 
 门禁实现完成时必须满足：
 
-- Windows 与 Linux 在 GitHub Actions 中显示为两个独立 required checks。
+- Verify matrix 与 Windows/Linux Desktop E2E 在 GitHub Actions 中显示为四个 required checks。
 - 两个平台都通过 `@wdio/tauri-service` embedded provider 启动真实 executable。
 - 本地与 CI 调用同一份 WDIO 配置和 Desktop Scenarios。
 - 每个平台运行都生成结构化测试结果与可播放 GIF。
 - 失败运行仍上传诊断证据并保留失败状态。
 - artifact 的 `retention-days` 为 `7`。
-- branch protection 同时要求两个平台检查和 PR review。
+- branch protection 同时要求 Verify matrix、两个平台 E2E 检查和 PR review。

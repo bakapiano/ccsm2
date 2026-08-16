@@ -163,13 +163,13 @@ build E2E executable once
 
 ```text
 test-results/desktop/<run_id>/
-<os-temp>/ccsm-e2e-<platform>-*/bin/<e2e-executable>
+<os-temp>/ccsm-e2e-windows-*/bin/<e2e-executable>
 <os-temp>/ccsm-e2e-<platform>-*/app-data/
 <os-temp>/ccsm-e2e-<platform>-*/spaces/
 <os-temp>/ccsm-e2e-<platform>-*/model-mock.json
 ```
 
-运行器复制独立 executable，向应用传入 `CCSM_DATA_DIR`、fixture root 和 `run_id`，并按 ownership root 记录、清理本次运行创建的 app、shim、provider、watchdog、WebView、profile 和目录。
+Windows 运行器复制独立 executable。Linux 运行器直接启动当前 job 的构建产物并记录进程基线，保留 WebKit 资源路由。两者都向应用传入 `CCSM_DATA_DIR`、fixture root 和 `run_id`；E2E runtime shims 进入隔离 data root，runner 按 ownership root 与新增 PID 记录、清理 app、shim、provider、watchdog、WebView、profile 和目录。
 
 同一 workspace 同时保留一个 Desktop E2E session，以避免 executable、display、profile 和端口竞争。调试结束后 runner 执行标准 teardown，并报告残留资源。
 
