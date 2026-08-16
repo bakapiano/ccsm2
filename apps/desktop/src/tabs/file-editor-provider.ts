@@ -627,7 +627,7 @@ const codeMirrorTheme = EditorView.theme({
   },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
-    fontFamily: "var(--mono)",
+    fontFamily: "var(--file-editor-mono)",
     fontSize: "12px",
     lineHeight: "20px",
     overflow: "auto",

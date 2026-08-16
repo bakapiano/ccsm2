@@ -72,6 +72,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - UI 字体栈：`Geist, Segoe UI, system-ui, sans-serif`。
 - 等宽字体栈：`JetBrains Mono, Cascadia Mono, Cascadia Code, Consolas, monospace`。
+- File Editor 代码字体栈：`Consolas, Courier New, monospace`，与 Windows 版 VS Code 默认代码字体一致。
 - 正文基准为 14px，工具栏与路径使用 10–12px。
 - 数值、时间、PID 和路径启用 tabular numerals。
 - 标题主要依靠位置和字重形成层级，避免大字号跳变。
