@@ -7,11 +7,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 edition = "2024"
 license = "MIT"
 authors = ["CCSM contributors"]
-rust-version = "1.85"
+rust-version = "1.88"
 
 [workspace.dependencies]
 base64 = "0.22.1"
@@ -29,3 +29,11 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[patch.crates-io]
+# Temporary backport of tauri-apps/tao#1215 while Tauri runtime-wry 2.11.4
+# constrains Tao to ^0.35. Upgrade to the first stable Tauri runtime that
+# resolves Tao >=0.36.0, then remove this patch.
+# The fix moves PeekMessageW outside non-reentrant input-state locks on Windows.
+# This revision also contains 47d38f3, an additive Linux JIS-key mapping fix.
+tao = { git = "https://github.com/tauri-apps/tao", rev = "c704261c519c58cfdd0bc2d58ba24e06a0b71c92" }

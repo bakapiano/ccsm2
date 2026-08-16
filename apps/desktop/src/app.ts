@@ -61,6 +61,7 @@ import {
 } from "./tabs/terminal-provider";
 import { type ThemeController, updateThemeButton } from "./theme";
 import { describeError, desktopClient } from "./transport/desktop-client";
+import { uiIcon, type UiIconName } from "./ui-icons";
 import { bindWindowChrome } from "./window-chrome";
 import type { RendererHealthAppSnapshot } from "./renderer-health";
 import type { RendererReadyResponse } from "./generated/RendererReadyResponse";
@@ -167,7 +168,10 @@ export class CcsmApp {
         button.type = "button";
         button.role = "menuitem";
         button.dataset.newTabAction = action.id;
-        button.textContent = action.label;
+        button.append(newTabActionIcon(action.id));
+        const label = document.createElement("span");
+        label.textContent = action.label;
+        button.append(label);
         return button;
       }),
     );
@@ -1361,6 +1365,29 @@ export class CcsmApp {
       );
     }
   }
+}
+
+const NEW_TAB_ICON_NAMES: Readonly<Record<string, UiIconName>> = {
+  shell: "shell",
+  browser: "browser",
+  files: "files",
+  git: "git",
+};
+
+function newTabActionIcon(actionId: string): HTMLElement {
+  const icon = document.createElement("span");
+  icon.className = "new-tab-menu-icon";
+  icon.setAttribute("aria-hidden", "true");
+  if (actionId === "claude" || actionId === "codex" || actionId === "copilot") {
+    const image = document.createElement("img");
+    image.alt = "";
+    image.src = `/assets/${actionId}-color.svg`;
+    icon.append(image);
+  } else {
+    const name = NEW_TAB_ICON_NAMES[actionId];
+    if (name) icon.innerHTML = uiIcon(name);
+  }
+  return icon;
 }
 
 function requiredElement<T extends Element = HTMLElement>(

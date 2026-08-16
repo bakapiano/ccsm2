@@ -192,6 +192,29 @@ describe("CCSM Tab chrome", () => {
     renderer.dispose();
   });
 
+  test("uses the close-button slot for a File Editor dirty indicator", () => {
+    const editor = tab("file-editor", "notes.md", "notes.md");
+    editor.state = { relativePath: "docs/notes.md" };
+    const renderer = new CcsmTabRenderer(editor, [], () => {});
+    renderer.init({
+      title: "notes.md ●",
+      api: {
+        onDidTitleChange: () => ({ dispose: () => {} }),
+      },
+    } as unknown as TabPartInitParameters);
+
+    expect(renderer.element.dataset.dirty).toBe("true");
+    expect(renderer.element.querySelector(".ccsm-tab-label")?.textContent).toBe(
+      "notes.md",
+    );
+    expect(
+      renderer.element
+        .querySelector(".ccsm-tab-close")
+        ?.getAttribute("aria-label"),
+    ).toBe("Close notes.md");
+    renderer.dispose();
+  });
+
   test("warns for every Agent CLI Tab", () => {
     const sessions = [
       session("shell-1", "shell"),

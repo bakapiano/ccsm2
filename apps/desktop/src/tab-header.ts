@@ -152,9 +152,13 @@ export class CcsmTabRenderer implements ITabRenderer {
   }
 
   #renderTitle(title: string): void {
-    this.#label.textContent = title;
-    this.element.title = this.#tooltip ?? title;
-    this.#close.setAttribute("aria-label", `Close ${title}`);
+    const dirty =
+      this.element.dataset.tabKind === "file-editor" && title.endsWith(" ●");
+    const displayTitle = dirty ? title.slice(0, -2) : title;
+    this.element.dataset.dirty = String(dirty);
+    this.#label.textContent = displayTitle;
+    this.element.title = this.#tooltip ?? displayTitle;
+    this.#close.setAttribute("aria-label", `Close ${displayTitle}`);
   }
 }
 

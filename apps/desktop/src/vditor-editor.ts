@@ -2,12 +2,14 @@ import Vditor from "vditor";
 import "vditor/dist/index.css";
 
 import type { ThemeMode } from "./theme";
+import { uiIcon } from "./ui-icons";
 
 export interface VditorEditorOptions {
   value: string;
   ariaLabel: string;
   theme: ThemeMode;
   editable: boolean;
+  canSave: boolean;
   onInput(value: string): void;
   onSave(): void;
   onScroll(scrollTop: number): void;
@@ -15,17 +17,21 @@ export interface VditorEditorOptions {
 
 export class VditorEditor {
   readonly #scrollElement: HTMLPreElement;
+  readonly #saveButton: HTMLButtonElement;
 
   private constructor(
     private readonly editor: Vditor,
     private readonly assetBase: string,
     private readonly options: VditorEditorOptions,
     scrollElement: HTMLPreElement,
+    saveButton: HTMLButtonElement,
   ) {
     this.#scrollElement = scrollElement;
+    this.#saveButton = saveButton;
     this.#scrollElement.addEventListener("scroll", this.#onScroll, {
       passive: true,
     });
+    this.#saveButton.addEventListener("click", this.#onSave);
   }
 
   static async create(
@@ -123,11 +129,24 @@ export class VditorEditor {
         ".vditor-ir > .vditor-reset",
       );
       if (!scrollElement) throw new Error("Vditor IR surface was not created");
+      const toolbar = host.querySelector<HTMLElement>(".vditor-toolbar");
+      if (!toolbar) throw new Error("Vditor toolbar was not created");
+      const saveButton = document.createElement("button");
+      saveButton.type = "button";
+      saveButton.className =
+        "file-editor-vditor-save control-button control-button-icon";
+      saveButton.title = "Save (Ctrl+S)";
+      saveButton.setAttribute("aria-label", "Save");
+      saveButton.setAttribute("aria-keyshortcuts", "Control+S Meta+S");
+      saveButton.innerHTML = uiIcon("save");
+      saveButton.disabled = !options.canSave;
+      toolbar.prepend(saveButton);
       const result = new VditorEditor(
         editor,
         assetBase,
         options,
         scrollElement,
+        saveButton,
       );
       scrollElement.setAttribute("aria-label", options.ariaLabel);
       scrollElement.setAttribute("aria-multiline", "true");
@@ -164,6 +183,10 @@ export class VditorEditor {
     else this.editor.disabled();
   }
 
+  setSaveEnabled(enabled: boolean): void {
+    this.#saveButton.disabled = !enabled;
+  }
+
   setTheme(theme: ThemeMode): void {
     this.editor.setTheme(
       editorTheme(theme),
@@ -183,8 +206,13 @@ export class VditorEditor {
 
   destroy(): void {
     this.#scrollElement.removeEventListener("scroll", this.#onScroll);
+    this.#saveButton.removeEventListener("click", this.#onSave);
     this.editor.destroy();
   }
+
+  readonly #onSave = (): void => {
+    this.options.onSave();
+  };
 
   readonly #onScroll = (): void => {
     this.options.onScroll(this.#scrollElement.scrollTop);
