@@ -57,3 +57,6 @@ annotated `v<version>` tag whose version matches the repository manifests runs
 the full quality gate, builds both native archives, verifies their contents,
 creates SHA-256 files and provenance attestations, and publishes a GitHub
 pre-release when the version contains a prerelease suffix.
+
+Same-repository pull requests publish their Windows and Linux Desktop E2E
+evidence to an active-PR report on GitHub Pages.
