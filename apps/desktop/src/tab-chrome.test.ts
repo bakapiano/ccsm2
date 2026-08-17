@@ -16,6 +16,11 @@ import type {
 import type { CliSessionDto } from "./generated/CliSessionDto";
 import type { TabDto } from "./generated/TabDto";
 import {
+  browserFaviconUrl,
+  browserFaviconUrlFromState,
+  BrowserFaviconStore,
+} from "./browser-favicon";
+import {
   createTabContextMenuItems,
   TAB_CONTEXT_MENU_LABELS,
 } from "./tab-context-menu";
@@ -127,6 +132,56 @@ describe("CCSM Tab chrome", () => {
     expect(resolveTabIconKind(tab("git", "Git", "git-1"), sessions)).toBe(
       "git",
     );
+  });
+
+  test("resolves Browser favicon URLs from the current website origin", () => {
+    expect(
+      browserFaviconUrl("https://docs.example.com/guide/page?q=1#install"),
+    ).toBe("https://docs.example.com/favicon.ico");
+    expect(browserFaviconUrl("http://localhost:8080/app")).toBe(
+      "http://localhost:8080/favicon.ico",
+    );
+    expect(browserFaviconUrl("about:blank")).toBeNull();
+    expect(browserFaviconUrl("not a URL")).toBeNull();
+    expect(
+      browserFaviconUrlFromState({ lastUrl: "https://example.com/path" }),
+    ).toBe("https://example.com/favicon.ico");
+    expect(browserFaviconUrlFromState({})).toBeNull();
+  });
+
+  test("shows a loaded website favicon and restores the Browser icon", () => {
+    const browser = tab("browser", "Example", "browser-1");
+    browser.state = { lastUrl: "https://example.com/start" };
+    const favicons = new BrowserFaviconStore();
+    const renderer = new CcsmTabRenderer(browser, [], () => {}, favicons);
+    renderer.init({
+      title: "Example",
+      api: {
+        onDidTitleChange: () => ({ dispose: () => {} }),
+      },
+    } as unknown as TabPartInitParameters);
+
+    const icon = renderer.element.querySelector<HTMLElement>(".ccsm-tab-icon")!;
+    expect(icon.dataset.favicon).toBe("loading");
+    expect(icon.dataset.faviconUrl).toBe("https://example.com/favicon.ico");
+    const loadedImage = icon.querySelector<HTMLImageElement>("img")!;
+    loadedImage.dispatchEvent(new Event("load"));
+    expect(icon.dataset.favicon).toBe("website");
+    expect(icon.querySelector("svg")).toBeNull();
+    expect(icon.querySelector("img")?.hidden).toBe(false);
+
+    favicons.setPageUrl(browser.id, "https://docs.example.com/page");
+    expect(icon.dataset.favicon).toBe("loading");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    const failedImage = icon.querySelector<HTMLImageElement>("img")!;
+    failedImage.dispatchEvent(new Event("error"));
+    expect(icon.dataset.favicon).toBe("fallback");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.querySelector("img")).toBeNull();
+
+    favicons.setPageUrl(browser.id, "about:blank");
+    expect(icon.dataset.favicon).toBe("fallback");
+    renderer.dispose();
   });
 
   test("reproduces the original menu order and group-local actions", () => {

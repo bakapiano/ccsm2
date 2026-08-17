@@ -3,6 +3,7 @@ mod commands;
 mod directory_browser;
 mod native_input;
 mod renderer_health;
+mod webview_focus;
 
 use std::{
     path::PathBuf,
@@ -22,6 +23,7 @@ use tauri::{Emitter, Manager, RunEvent};
 
 use native_input::NativeInputObserver;
 use renderer_health::RendererHealthMonitor;
+use webview_focus::MainWebviewFocusRestorer;
 
 pub struct DesktopState {
     backend: Arc<AppBackend>,
@@ -31,6 +33,7 @@ pub struct DesktopState {
     home_dir: PathBuf,
     hook_endpoint: LocalHookEndpoint,
     renderer_health: Arc<RendererHealthMonitor>,
+    main_webview_focus: Mutex<Option<MainWebviewFocusRestorer>>,
     native_input: Mutex<Option<NativeInputObserver>>,
     shim_root: PathBuf,
     shutdown_started: AtomicBool,
@@ -47,6 +50,11 @@ impl DesktopState {
             observer.shutdown();
         }
         self.renderer_health.shutdown();
+        if let Ok(restorer) = self.main_webview_focus.lock()
+            && let Some(restorer) = restorer.as_ref()
+        {
+            restorer.shutdown();
+        }
         self.browser.shutdown(app);
         self.backend.shutdown();
         self.hook_endpoint.shutdown();
@@ -156,6 +164,7 @@ pub fn run() {
                 home_dir,
                 hook_endpoint,
                 renderer_health: Arc::clone(&renderer_health),
+                main_webview_focus: Mutex::new(None),
                 native_input: Mutex::new(None),
                 shim_root,
                 shutdown_started: AtomicBool::new(false),
@@ -179,6 +188,20 @@ pub fn run() {
             );
             if let Some(main_window) = app.get_webview_window("main") {
                 renderer_health.start(app.handle().clone(), main_window.clone());
+                if let Some(main_webview) = app.get_webview("main") {
+                    match MainWebviewFocusRestorer::start(&main_window, &main_webview) {
+                        Ok(restorer) => {
+                            if let Ok(mut slot) =
+                                app.state::<DesktopState>().main_webview_focus.lock()
+                            {
+                                *slot = Some(restorer);
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("CCSM main WebView focus restorer unavailable: {error}")
+                        }
+                    }
+                }
                 match NativeInputObserver::start(&main_window, Arc::clone(&renderer_health)) {
                     Ok(observer) => {
                         renderer_health.set_native_input_observer_active(true);

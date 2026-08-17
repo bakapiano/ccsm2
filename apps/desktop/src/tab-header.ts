@@ -1,5 +1,9 @@
 import type { ITabRenderer, TabPartInitParameters } from "dockview";
 
+import {
+  browserFaviconUrlFromState,
+  type BrowserFaviconStore,
+} from "./browser-favicon";
 import type { CliSessionDto } from "./generated/CliSessionDto";
 import type { TabDto } from "./generated/TabDto";
 
@@ -82,17 +86,25 @@ export function resolveTabIconKind(
 
 export class CcsmTabRenderer implements ITabRenderer {
   readonly element = document.createElement("div");
+  readonly #icon = document.createElement("span");
   readonly #label = document.createElement("span");
   readonly #close = document.createElement("button");
   readonly #tooltip: string | null;
   readonly #requestClose: () => void;
+  readonly #tab: TabDto;
+  readonly #faviconStore: BrowserFaviconStore | null;
   #titleSubscription: { dispose(): void } | null = null;
+  #faviconSubscription: { dispose(): void } | null = null;
+  #faviconRequest = 0;
 
   constructor(
     tab: TabDto,
     cliSessions: readonly CliSessionDto[],
     requestClose: (tabId: string) => void,
+    faviconStore: BrowserFaviconStore | null = null,
   ) {
+    this.#tab = tab;
+    this.#faviconStore = faviconStore;
     this.element.className = "ccsm-tab";
     this.element.dataset.tabId = tab.id;
     this.element.dataset.tabKind = tab.kind;
@@ -107,10 +119,9 @@ export class CcsmTabRenderer implements ITabRenderer {
     this.#requestClose = () => requestClose(tab.id);
 
     const iconKind = resolveTabIconKind(tab, cliSessions);
-    const icon = document.createElement("span");
-    icon.className = "ccsm-tab-icon";
-    icon.dataset.icon = iconKind;
-    icon.setAttribute("aria-hidden", "true");
+    this.#icon.className = "ccsm-tab-icon";
+    this.#icon.dataset.icon = iconKind;
+    this.#icon.setAttribute("aria-hidden", "true");
     if (
       iconKind === "claude" ||
       iconKind === "codex" ||
@@ -120,9 +131,12 @@ export class CcsmTabRenderer implements ITabRenderer {
       image.alt = "";
       image.draggable = false;
       image.src = `/assets/${iconKind}-color.svg`;
-      icon.append(image);
+      this.#icon.append(image);
     } else {
-      icon.innerHTML = ICONS[iconKind];
+      this.#icon.innerHTML = ICONS[iconKind];
+    }
+    if (tab.kind === "browser") {
+      this.#renderBrowserFavicon(browserFaviconUrlFromState(tab.state));
     }
 
     this.#label.className = "ccsm-tab-label";
@@ -130,7 +144,7 @@ export class CcsmTabRenderer implements ITabRenderer {
     this.#close.type = "button";
     this.#close.title = "Close tab";
     this.#close.innerHTML = CLOSE_ICON;
-    this.element.append(icon, this.#label, this.#close);
+    this.element.append(this.#icon, this.#label, this.#close);
   }
 
   init(parameters: TabPartInitParameters): void {
@@ -138,6 +152,12 @@ export class CcsmTabRenderer implements ITabRenderer {
     this.#titleSubscription = parameters.api.onDidTitleChange(({ title }) =>
       this.#renderTitle(title),
     );
+    if (this.#tab.kind === "browser" && this.#faviconStore) {
+      this.#faviconSubscription = this.#faviconStore.subscribe(
+        this.#tab.id,
+        (faviconUrl) => this.#renderBrowserFavicon(faviconUrl),
+      );
+    }
     this.#close.addEventListener("pointerdown", stopCloseEvent);
     this.#close.addEventListener("click", (event) => {
       event.preventDefault();
@@ -149,6 +169,9 @@ export class CcsmTabRenderer implements ITabRenderer {
   dispose(): void {
     this.#titleSubscription?.dispose();
     this.#titleSubscription = null;
+    this.#faviconSubscription?.dispose();
+    this.#faviconSubscription = null;
+    this.#faviconRequest += 1;
   }
 
   #renderTitle(title: string): void {
@@ -159,6 +182,43 @@ export class CcsmTabRenderer implements ITabRenderer {
     this.#label.textContent = displayTitle;
     this.element.title = this.#tooltip ?? displayTitle;
     this.#close.setAttribute("aria-label", `Close ${displayTitle}`);
+  }
+
+  #renderBrowserFavicon(faviconUrl: string | null): void {
+    const request = ++this.#faviconRequest;
+    this.#icon.innerHTML = ICONS.browser;
+    this.#icon.dataset.favicon = faviconUrl ? "loading" : "fallback";
+    delete this.#icon.dataset.faviconUrl;
+    if (!faviconUrl) return;
+
+    const image = document.createElement("img");
+    image.alt = "";
+    image.decoding = "async";
+    image.draggable = false;
+    image.hidden = true;
+    image.referrerPolicy = "no-referrer";
+    image.addEventListener(
+      "load",
+      () => {
+        if (request !== this.#faviconRequest) return;
+        image.hidden = false;
+        this.#icon.replaceChildren(image);
+        this.#icon.dataset.favicon = "website";
+      },
+      { once: true },
+    );
+    image.addEventListener(
+      "error",
+      () => {
+        if (request !== this.#faviconRequest) return;
+        image.remove();
+        this.#icon.dataset.favicon = "fallback";
+      },
+      { once: true },
+    );
+    image.src = faviconUrl;
+    this.#icon.dataset.faviconUrl = faviconUrl;
+    this.#icon.append(image);
   }
 }
 

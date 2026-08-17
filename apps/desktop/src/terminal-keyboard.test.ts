@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   cliShortcutInput,
   installCliInputFollow,
+  installCliWindowFocusRestore,
   isAgentCliCopyShortcut,
 } from "./terminal-keyboard";
 
@@ -74,10 +75,11 @@ describe("cliShortcutInput", () => {
 });
 
 describe("installCliInputFollow", () => {
-  test("follows Claude and Codex keyboard, paste, and IME input", () => {
+  test("follows Claude and Codex input while modifier-only keys preserve scrollback", () => {
     const host = new EventTarget();
     let provider: "shell" | "claude" | "codex" = "shell";
-    let keyListener: (() => void) | null = null;
+    let keyListener: ((event: { domEvent: KeyboardEvent }) => void) | null =
+      null;
     let scrollCount = 0;
     const dispose = installCliInputFollow(
       {
@@ -93,12 +95,35 @@ describe("installCliInputFollow", () => {
       () => provider,
     );
 
-    keyListener!();
+    keyListener!({ domEvent: { key: "a" } as KeyboardEvent });
     host.dispatchEvent(new Event("paste"));
     expect(scrollCount).toBe(0);
 
     provider = "codex";
-    keyListener!();
+    keyListener!({ domEvent: { key: "Control" } as KeyboardEvent });
+    keyListener!({ domEvent: { key: "Shift" } as KeyboardEvent });
+    keyListener!({ domEvent: { key: "Alt" } as KeyboardEvent });
+    keyListener!({
+      domEvent: {
+        key: "c",
+        code: "KeyC",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      } as KeyboardEvent,
+    });
+    keyListener!({
+      domEvent: {
+        key: "v",
+        code: "KeyV",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      } as KeyboardEvent,
+    });
+    expect(scrollCount).toBe(0);
+
+    keyListener!({ domEvent: { key: "a" } as KeyboardEvent });
     host.dispatchEvent(new Event("paste"));
     expect(scrollCount).toBe(2);
 
@@ -110,5 +135,155 @@ describe("installCliInputFollow", () => {
     host.dispatchEvent(new Event("paste"));
     expect(keyListener).toBeNull();
     expect(scrollCount).toBe(3);
+  });
+});
+
+describe("installCliWindowFocusRestore", () => {
+  function focusWindow(documentHasFocus = true): {
+    hostWindow: Window;
+    setDocumentFocus(focused: boolean): void;
+  } {
+    let focused = documentHasFocus;
+    const hostWindow = new EventTarget() as Window;
+    Object.defineProperty(hostWindow, "document", {
+      value: { hasFocus: () => focused },
+    });
+    return {
+      hostWindow,
+      setDocumentFocus: (next) => (focused = next),
+    };
+  }
+
+  test("restores CLI input focus when the application window returns", () => {
+    const { hostWindow } = focusWindow();
+    let hasFocus = true;
+    let canRestoreFocus = true;
+    let restoreCount = 0;
+    const dispose = installCliWindowFocusRestore(
+      {
+        hasFocus: () => hasFocus,
+        canRestoreFocus: () => canRestoreFocus,
+        restoreFocus: () => {
+          hasFocus = true;
+          restoreCount += 1;
+        },
+      },
+      hostWindow,
+    );
+
+    hostWindow.dispatchEvent(new Event("blur"));
+    hasFocus = false;
+    hostWindow.dispatchEvent(new Event("focus"));
+    expect(restoreCount).toBe(1);
+
+    hostWindow.dispatchEvent(new Event("blur"));
+    hasFocus = false;
+    canRestoreFocus = false;
+    hostWindow.dispatchEvent(new Event("focus"));
+    expect(restoreCount).toBe(1);
+
+    canRestoreFocus = true;
+    hasFocus = true;
+    hostWindow.dispatchEvent(new Event("blur"));
+    hasFocus = false;
+    dispose();
+    hostWindow.dispatchEvent(new Event("focus"));
+    expect(restoreCount).toBe(1);
+  });
+
+  test("keeps the current focus when CLI input was not focused", () => {
+    const { hostWindow } = focusWindow();
+    let restoreCount = 0;
+    const dispose = installCliWindowFocusRestore(
+      {
+        hasFocus: () => false,
+        canRestoreFocus: () => true,
+        restoreFocus: () => (restoreCount += 1),
+      },
+      hostWindow,
+    );
+
+    hostWindow.dispatchEvent(new Event("blur"));
+    hostWindow.dispatchEvent(new Event("focus"));
+    expect(restoreCount).toBe(0);
+    dispose();
+  });
+
+  test("restores CLI input from the native window focus signal", async () => {
+    const { hostWindow } = focusWindow();
+    let hasFocus = true;
+    let restoreCount = 0;
+    let unlistenCount = 0;
+    let nativeFocusListener: ((focused: boolean) => void) | null = null;
+    const dispose = installCliWindowFocusRestore(
+      {
+        hasFocus: () => hasFocus,
+        canRestoreFocus: () => true,
+        restoreFocus: () => {
+          hasFocus = true;
+          restoreCount += 1;
+        },
+      },
+      hostWindow,
+      async (listener) => {
+        nativeFocusListener = listener;
+        return () => (unlistenCount += 1);
+      },
+    );
+    await Promise.resolve();
+
+    nativeFocusListener!(false);
+    hasFocus = false;
+    nativeFocusListener!(true);
+    expect(restoreCount).toBe(1);
+
+    dispose();
+    expect(unlistenCount).toBe(1);
+  });
+
+  test("remembers CLI focus when element blur arrives before window blur", () => {
+    const { hostWindow, setDocumentFocus } = focusWindow();
+    let hasFocus = true;
+    let restoreCount = 0;
+    const dispose = installCliWindowFocusRestore(
+      {
+        hasFocus: () => hasFocus,
+        canRestoreFocus: () => true,
+        restoreFocus: () => {
+          hasFocus = true;
+          restoreCount += 1;
+        },
+      },
+      hostWindow,
+    );
+
+    setDocumentFocus(false);
+    hasFocus = false;
+    hostWindow.dispatchEvent(new Event("focusout"));
+    hostWindow.dispatchEvent(new Event("blur"));
+    hostWindow.dispatchEvent(new Event("focus"));
+    expect(restoreCount).toBe(1);
+    dispose();
+  });
+
+  test("releases CLI focus after focus moves inside the application", () => {
+    const { hostWindow } = focusWindow();
+    let hasFocus = true;
+    let restoreCount = 0;
+    const dispose = installCliWindowFocusRestore(
+      {
+        hasFocus: () => hasFocus,
+        canRestoreFocus: () => true,
+        restoreFocus: () => (restoreCount += 1),
+      },
+      hostWindow,
+    );
+
+    hasFocus = false;
+    hostWindow.dispatchEvent(new Event("focusout"));
+    hostWindow.dispatchEvent(new Event("blur"));
+    hostWindow.dispatchEvent(new Event("focus"));
+    expect(restoreCount).toBe(0);
+    dispose();
   });
 });

@@ -6,9 +6,38 @@ type ModifierKeyEvent = Pick<
 >;
 
 interface CliInputTerminal {
-  onKey(listener: () => void): { dispose(): void };
+  onKey(listener: (event: { domEvent: KeyboardEvent }) => void): {
+    dispose(): void;
+  };
   scrollToBottom(): void;
 }
+
+interface CliFocusTarget {
+  hasFocus(): boolean;
+  canRestoreFocus(): boolean;
+  restoreFocus(): void;
+}
+
+type WindowFocusSubscriber = (
+  listener: (focused: boolean) => void,
+) => Promise<() => void>;
+
+const MODIFIER_ONLY_KEYS = new Set([
+  "Alt",
+  "AltGraph",
+  "CapsLock",
+  "Control",
+  "Fn",
+  "FnLock",
+  "Hyper",
+  "Meta",
+  "NumLock",
+  "ScrollLock",
+  "Shift",
+  "Super",
+  "Symbol",
+  "SymbolLock",
+]);
 
 /**
  * Translate host chords whose standalone-terminal compatibility encoding is
@@ -58,7 +87,20 @@ export function installCliInputFollow(
       terminal.scrollToBottom();
     }
   };
-  const keySubscription = terminal.onKey(followInput);
+  const keySubscription = terminal.onKey(({ domEvent }) => {
+    const provider = getProvider();
+    const pasteShortcut =
+      domEvent.code === "KeyV" &&
+      (domEvent.ctrlKey || domEvent.metaKey) &&
+      !domEvent.altKey;
+    if (
+      !MODIFIER_ONLY_KEYS.has(domEvent.key) &&
+      !isAgentCliCopyShortcut(provider, domEvent) &&
+      !pasteShortcut
+    ) {
+      followInput();
+    }
+  });
   host.addEventListener("paste", followInput, true);
   host.addEventListener("compositionend", followInput, true);
 
@@ -66,5 +108,67 @@ export function installCliInputFollow(
     keySubscription.dispose();
     host.removeEventListener("paste", followInput, true);
     host.removeEventListener("compositionend", followInput, true);
+  };
+}
+
+export function installCliWindowFocusRestore(
+  target: CliFocusTarget,
+  hostWindow: Window,
+  subscribeWindowFocus?: WindowFocusSubscriber,
+): () => void {
+  let targetWasFocused = target.hasFocus();
+  let restoreOnActivation = false;
+  let nativeFocusUnlisten: (() => void) | null = null;
+  let disposed = false;
+
+  const rememberTargetFocus = (): void => {
+    targetWasFocused = target.hasFocus();
+  };
+  const releaseTargetFocus = (): void => {
+    if (hostWindow.document.hasFocus()) {
+      targetWasFocused = target.hasFocus();
+    }
+  };
+  const rememberFocus = (): void => {
+    restoreOnActivation = targetWasFocused || target.hasFocus();
+  };
+  const restoreFocus = (): void => {
+    if (!restoreOnActivation) return;
+    restoreOnActivation = false;
+    if (target.canRestoreFocus()) {
+      target.restoreFocus();
+      targetWasFocused = true;
+    }
+  };
+  const handleWindowFocusChanged = (focused: boolean): void => {
+    if (focused) restoreFocus();
+    else rememberFocus();
+  };
+
+  hostWindow.addEventListener("focusin", rememberTargetFocus);
+  hostWindow.addEventListener("focusout", releaseTargetFocus);
+  hostWindow.addEventListener("blur", rememberFocus);
+  hostWindow.addEventListener("focus", restoreFocus);
+  if (subscribeWindowFocus) {
+    void subscribeWindowFocus(handleWindowFocusChanged).then(
+      (unlisten) => {
+        if (disposed) unlisten();
+        else nativeFocusUnlisten = unlisten;
+      },
+      () => {
+        // DOM focus events remain available as the browser fallback.
+      },
+    );
+  }
+
+  return () => {
+    disposed = true;
+    restoreOnActivation = false;
+    nativeFocusUnlisten?.();
+    nativeFocusUnlisten = null;
+    hostWindow.removeEventListener("focusin", rememberTargetFocus);
+    hostWindow.removeEventListener("focusout", releaseTargetFocus);
+    hostWindow.removeEventListener("blur", rememberFocus);
+    hostWindow.removeEventListener("focus", restoreFocus);
   };
 }

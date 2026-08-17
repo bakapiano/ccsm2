@@ -2,6 +2,8 @@
 
 CLI Session Tab 通过稳定 `cli_session_id` 引用 Session，并在 mount 时 attach 当前 runtime。spawn/resume 通过 per-invocation Hook 绑定 provider native Session ID。
 
+Terminal renderer将产生CLI输入的键盘事件、paste和IME提交作为input-follow触发源，单独的修饰键保留scrollback viewport。顶层窗口失活时记录可见CLI的textarea焦点，窗口重新激活后恢复同一输入目标。Windows Alt+Tab将键盘焦点留在Tauri顶层容器时，宿主检测该空悬焦点并将其转交给main WebView，再由Terminal恢复textarea。
+
 ## Built-in Providers
 
 | Provider       | Launch                 | Native Session    | Cold resume             |

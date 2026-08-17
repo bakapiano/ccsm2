@@ -13,6 +13,7 @@ import {
   showAppDialog,
 } from "./app-dialog";
 import { agentCliTabCloseDialogOptions } from "./cli-tab-close-dialog";
+import { BrowserFaviconStore } from "./browser-favicon";
 import type { AgentSummaryDto } from "./generated/AgentSummaryDto";
 import type { BootstrapDto } from "./generated/BootstrapDto";
 import { DirectoryPickerDialog } from "./directory-picker";
@@ -74,6 +75,7 @@ export class CcsmApp {
   readonly #registry = new TabProviderRegistry();
   readonly #restoreScheduler = new FrameTaskScheduler(2);
   readonly #materializedTabIds = new Set<string>();
+  readonly #browserFavicons = new BrowserFaviconStore();
   readonly #browserProvider: BrowserTabProvider;
   readonly #fileEditorProvider: FileEditorTabProvider;
   readonly #terminalProvider: TerminalTabProvider;
@@ -142,6 +144,7 @@ export class CcsmApp {
     });
     this.#registry.register(this.#terminalProvider);
     this.#browserProvider = new BrowserTabProvider(desktopClient, {
+      faviconStore: this.#browserFavicons,
       nativeSurfacesEnabled: import.meta.env.MODE !== "e2e",
     });
     this.#surfaceOcclusion = new SurfaceOcclusionController((occluded) =>
@@ -194,6 +197,7 @@ export class CcsmApp {
           tab,
           this.#activeSnapshot?.cliSessions ?? [],
           (tabId) => this.#requestTabClose(tabId),
+          this.#browserFavicons,
         );
       },
       defaultTabComponent: "ccsm-tab",

@@ -1360,6 +1360,15 @@ button:disabled {
   height: 14px;
 }
 
+.ccsm-tab-icon img[hidden] {
+  display: none;
+}
+
+.ccsm-tab-icon[data-icon="browser"] img {
+  border-radius: 2px;
+  object-fit: contain;
+}
+
 .ccsm-tab-icon svg {
   fill: none;
   stroke: currentColor;

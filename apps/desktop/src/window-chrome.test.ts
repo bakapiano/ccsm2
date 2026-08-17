@@ -11,6 +11,7 @@ describe("frameless window chrome", () => {
       startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
+      subscribeFocusChanged: mock(async () => () => {}),
       subscribeCloseRequested: mock(async () => () => {}),
     };
 
@@ -30,6 +31,7 @@ describe("frameless window chrome", () => {
       startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
+      subscribeFocusChanged: mock(async () => () => {}),
       subscribeCloseRequested: mock(async () => () => {}),
     };
 
@@ -45,6 +47,7 @@ describe("frameless window chrome", () => {
       startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
+      subscribeFocusChanged: mock(async () => () => {}),
       subscribeCloseRequested: mock(async () => () => {}),
     };
 
@@ -63,6 +66,7 @@ describe("frameless window chrome", () => {
       startResizeDragging: mock(async () => {}),
       setTheme: mock(async () => {}),
       close: mock(async () => {}),
+      subscribeFocusChanged: mock(async () => () => {}),
       subscribeCloseRequested: mock(async () => () => {}),
     };
 
