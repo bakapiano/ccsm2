@@ -1,0 +1,20 @@
+[
+  {
+    "prNumber": 42,
+    "status": "passed",
+    "commitSha": "61ccf2d04f792da500328fbc88bf6c6a889be23d",
+    "runId": 32582706262,
+    "runAttempt": 1,
+    "generatedAt": "2026-08-22T16:00:27.714Z",
+    "platforms": [
+      {
+        "platform": "windows",
+        "finalStatus": "passed"
+      },
+      {
+        "platform": "linux",
+        "finalStatus": "passed"
+      }
+    ]
+  }
+]
