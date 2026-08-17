@@ -10,25 +10,25 @@ describe("File Editor layout", () => {
     expect(cssRule(".file-editor-panel")).toContain(
       "grid-template-rows: var(--toolbar-height) auto minmax(0, 1fr) var(--statusbar-height)",
     );
-    expect(
-      cssRule('.file-editor-panel[data-editor-engine="vditor-ir"]'),
-    ).toContain(
-      "grid-template-rows: 0 auto minmax(0, 1fr) var(--statusbar-height)",
-    );
     expect(cssRule(".file-editor-toolbar")).toContain("grid-row: 1");
     expect(cssRule(".file-editor-banner")).toContain("grid-row: 2");
     expect(cssRule(".file-editor-body")).toContain("grid-row: 3");
     expect(cssRule(".file-editor-footer")).toContain("grid-row: 4");
     expect(cssRule(".file-editor-codemirror")).toContain("height: 100%");
-    expect(cssRule(".file-editor-vditor")).toContain("height: 100%");
-    expect(css).toContain('[data-editor-engine="vditor-ir"]');
-    expect(css).toContain("file-editor-vditor-save");
-    expect(cssRule(".file-editor-vditor .vditor-toolbar")).toContain(
-      "flex-wrap: nowrap",
+    expect(cssRule(".file-editor-markdown-preview")).toContain("height: 100%");
+    expect(cssRule(".file-editor-markdown-preview")).toContain(
+      "overflow: auto",
     );
-    expect(cssRule(".file-editor-vditor .vditor-toolbar")).toContain(
-      "scrollbar-width: none",
+    expect(cssRule("[tabindex]:focus-visible")).toContain(
+      "outline: 1px solid var(--accent)",
     );
+    expect(css).toContain('[data-editor-engine="markdown"]');
+    expect(css).toContain('[data-markdown-mode="preview"]');
+    expect(css).toContain('[data-markdown-mode="edit"]');
+    expect(css).toContain(
+      ".file-editor-markdown-preview > .markdown-preview-content",
+    );
+    expect(cssRule(".file-editor-markdown-modes")).toContain("display: none");
     expect(css).toContain(".file-editor-overflow-menu");
   });
 

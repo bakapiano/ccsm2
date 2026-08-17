@@ -6,36 +6,38 @@ const provider = await Bun.file(
 const packageJson = await Bun.file(
   new URL("../package.json", import.meta.url),
 ).json();
-const vditorEditor = await Bun.file(
-  new URL("./vditor-editor.ts", import.meta.url),
+const markdownPreview = await Bun.file(
+  new URL("./markdown-preview.ts", import.meta.url),
 ).text();
 
 describe("File Editor engine", () => {
-  test("pins CodeMirror 6 for text files", () => {
+  test("pins CodeMirror 6 for editable text", () => {
     expect(packageJson.dependencies.codemirror).toBe("6.0.2");
     expect(packageJson.dependencies["@codemirror/view"]).toBe("6.43.8");
     expect(provider).toContain("new EditorView");
+    expect(provider).toContain("session.applyEditorChanges");
     expect(provider).toContain("editorEngineForPath(session.relativePath)");
     expect(provider).toContain("readonly #panels");
     expect(provider).toContain("this.#panels.get(tab.id)");
-    expect(
-      provider.match(/dataset\.documentLength = String/g)?.length,
-    ).toBeGreaterThan(3);
   });
 
-  test("loads Vditor IR with the full Markdown renderers", () => {
-    expect(packageJson.dependencies.vditor).toBe("3.11.2");
-    expect(provider).toContain('import("../vditor-editor")');
-    expect(vditorEditor).toContain('mode: "ir"');
-    expect(vditorEditor).toContain('engine: "KaTeX"');
-    expect(vditorEditor).toContain("style: codeTheme(options.theme)");
-    expect(vditorEditor).toContain("sanitize: true");
+  test("uses markdown-it for the Markdown preview mode", () => {
+    expect(packageJson.dependencies["markdown-it"]).toBe("15.0.0");
+    expect(packageJson.dependencies.vditor).toBeUndefined();
+    expect(markdownPreview).toContain('from "markdown-it"');
+    expect(markdownPreview).toContain("html: false");
+    expect(markdownPreview).toContain("noopener noreferrer");
+    expect(provider).toContain('data-editor-action="markdown-edit"');
+    expect(provider).toContain('data-editor-action="markdown-preview"');
+    expect(provider).toContain("renderMarkdownPreview(source)");
   });
 
-  test("does not retain the handwritten textarea editor", () => {
+  test("keeps one CodeMirror document across edit and preview modes", () => {
+    expect(provider.match(/new EditorView/g)).toHaveLength(1);
+    expect(provider).toContain("view.state.doc.toString()");
+    expect(provider).toContain('this.#setMarkdownMode("edit")');
+    expect(provider).toContain('this.#setMarkdownMode("preview")');
     expect(provider).not.toContain("<textarea");
-    expect(provider).not.toContain("highlightSource");
-    expect(provider).not.toContain("#replaceAll");
-    expect(provider).not.toContain("recordHistory");
+    expect(provider).not.toContain("applySerializedEditorContent");
   });
 });
