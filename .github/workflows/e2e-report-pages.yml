@@ -1,0 +1,283 @@
+name: E2E report Pages
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  pull_request_target:
+    types:
+      - closed
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-report-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish PR E2E report
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: github-pages
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CCSM_REPORT_REPOSITORY: ${{ github.repository }}
+      CCSM_REPORT_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+      CCSM_REPORT_RUN_ID: ${{ github.event.workflow_run.id }}
+      CCSM_REPORT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      CCSM_REPORT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      CCSM_REPORT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+      CCSM_REPORT_CREATED_AT: ${{ github.event.workflow_run.created_at }}
+      CCSM_REPORT_UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+
+    steps:
+      - name: Validate trusted event metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          pulls_json="$(gh api -H "Accept: application/vnd.github+json" "repos/${GITHUB_REPOSITORY}/commits/${CCSM_REPORT_COMMIT_SHA}/pulls")"
+          pull_json="$(jq -c \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg sha "${CCSM_REPORT_COMMIT_SHA}" \
+            '[.[] | select(.state == "open" and .head.sha == $sha and .head.repo.full_name == $repository and .base.repo.full_name == $repository)] |
+             if length == 1 then .[0] else error("expected exactly one matching pull request") end' \
+            <<<"${pulls_json}")"
+          pr_number="$(jq -r .number <<<"${pull_json}")"
+          pr_url="$(jq -r .html_url <<<"${pull_json}")"
+          test "${pr_number}" -gt 0
+          test "${pr_url}" = "https://github.com/${GITHUB_REPOSITORY}/pull/${pr_number}"
+          echo "CCSM_REPORT_PR_NUMBER=${pr_number}" >>"${GITHUB_ENV}"
+          echo "CCSM_REPORT_PR_URL=${pr_url}" >>"${GITHUB_ENV}"
+
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CCSM_REPORT_RUN_ID}/artifacts?per_page=100")"
+          expected_prefix="desktop-e2e-"
+          expected_suffix="-${CCSM_REPORT_RUN_ID}-${CCSM_REPORT_RUN_ATTEMPT}"
+          jq -e \
+            --arg prefix "${expected_prefix}" \
+            --arg suffix "${expected_suffix}" \
+            '[.artifacts[] | select(.name | startswith($prefix) and endswith($suffix))] |
+             length <= 2 and all(.size_in_bytes <= 25000000 and .expired == false)' \
+            <<<"${artifacts_json}" >/dev/null
+
+      - name: Check out trusted report generator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted-source
+          persist-credentials: false
+
+      - name: Prepare isolated artifact directory
+        shell: bash
+        run: mkdir -p "${RUNNER_TEMP}/e2e-artifacts"
+
+      - name: Download Windows E2E evidence
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: desktop-e2e-windows-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: ${{ runner.temp }}/e2e-artifacts/windows
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Download Linux E2E evidence
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: desktop-e2e-linux-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: ${{ runner.temp }}/e2e-artifacts/linux
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Read workflow job results
+        shell: bash
+        run: >-
+          gh api
+          "repos/${GITHUB_REPOSITORY}/actions/runs/${CCSM_REPORT_RUN_ID}/jobs?filter=latest&per_page=100"
+          >"${RUNNER_TEMP}/workflow-jobs.json"
+
+      - name: Build validated static report
+        shell: bash
+        run: |
+          node trusted-source/apps/desktop/scripts/build-e2e-report.mjs \
+            --artifacts "${RUNNER_TEMP}/e2e-artifacts" \
+            --workflow-jobs "${RUNNER_TEMP}/workflow-jobs.json" \
+            --output "${RUNNER_TEMP}/e2e-report"
+
+      - name: Check out Pages snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: pages
+          fetch-depth: 1
+
+      - name: Install PR report into Pages snapshot
+        shell: bash
+        run: |
+          node trusted-source/apps/desktop/scripts/manage-e2e-pages.mjs install \
+            --site pages \
+            --report "${RUNNER_TEMP}/e2e-report" \
+            --pr "${CCSM_REPORT_PR_NUMBER}"
+
+      - name: Publish single-commit Pages snapshot
+        shell: bash
+        working-directory: pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "Pages snapshot is current."
+          else
+            git commit --amend -m "Publish active E2E reports"
+            git push --force-with-lease origin HEAD:gh-pages
+          fi
+
+      - name: Resolve Pages report URL
+        id: report-url
+        shell: bash
+        run: |
+          base_url="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .html_url)"
+          echo "url=${base_url%/}/e2e/pr/${CCSM_REPORT_PR_NUMBER}/" >>"${GITHUB_OUTPUT}"
+
+      - name: Update pull request report comment
+        shell: bash
+        env:
+          REPORT_URL: ${{ steps.report-url.outputs.url }}
+        run: |
+          set -euo pipefail
+          marker='<!-- ccsm-e2e-report -->'
+          body="${marker}
+          ## Desktop E2E report
+
+          [Open the Windows/Linux screenshot report](${REPORT_URL})
+
+          Source: [CI run ${CCSM_REPORT_RUN_ID} attempt ${CCSM_REPORT_RUN_ATTEMPT}](${CCSM_REPORT_RUN_URL}) · commit \`${CCSM_REPORT_COMMIT_SHA}\`
+
+          The stable report URL updates after each PR run and is removed when the PR closes."
+          comment_id="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${CCSM_REPORT_PR_NUMBER}/comments" --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"${marker}\"))) | .id" | head -n 1)"
+          if [[ -n "${comment_id}" ]]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" -f body="${body}" >/dev/null
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${CCSM_REPORT_PR_NUMBER}/comments" -f body="${body}" >/dev/null
+          fi
+
+  cleanup-closed:
+    name: Remove closed PR report
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: github-pages
+    permissions:
+      contents: write
+    env:
+      CCSM_REPORT_PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Check out trusted report manager
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted-source
+          persist-credentials: false
+
+      - name: Check out Pages snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: pages
+          fetch-depth: 1
+
+      - name: Remove report and refresh index
+        run: >-
+          node trusted-source/apps/desktop/scripts/manage-e2e-pages.mjs remove
+          --site pages
+          --pr "${CCSM_REPORT_PR_NUMBER}"
+
+      - name: Publish single-commit Pages snapshot
+        shell: bash
+        working-directory: pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "Pages snapshot is current."
+          else
+            git commit --amend -m "Publish active E2E reports"
+            git push --force-with-lease origin HEAD:gh-pages
+          fi
+
+  prune:
+    name: Prune inactive PR reports
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: github-pages
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out trusted report manager
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted-source
+          persist-credentials: false
+
+      - name: Check out Pages snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: pages
+          fetch-depth: 1
+
+      - name: Read active pull requests
+        shell: bash
+        run: >-
+          gh pr list
+          --repo "${GITHUB_REPOSITORY}"
+          --state open
+          --limit 1000
+          --json number
+          >"${RUNNER_TEMP}/open-prs.json"
+
+      - name: Prune reports and refresh index
+        run: >-
+          node trusted-source/apps/desktop/scripts/manage-e2e-pages.mjs prune
+          --site pages
+          --open-prs "${RUNNER_TEMP}/open-prs.json"
+
+      - name: Publish single-commit Pages snapshot
+        shell: bash
+        working-directory: pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "Pages snapshot is current."
+          else
+            git commit --amend -m "Publish active E2E reports"
+            git push --force-with-lease origin HEAD:gh-pages
+          fi
