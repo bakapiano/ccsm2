@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <title>CCSM E2E reports</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0d12; --panel:#131722; --panel-2:#191f2c; --line:#293146; --text:#f1f5ff; --muted:#9ba7bd; --accent:#79a7ff; --pass:#43d17d; --fail:#ff6b78; --warn:#f3c969; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at top left,#17213a 0,var(--bg) 34rem); color:var(--text); min-height:100vh; }
+    a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+    code { font:0.9em ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+    .hero { max-width:1240px; margin:auto; padding:64px 28px 34px; display:flex; align-items:end; justify-content:space-between; gap:24px; }
+    h1 { font-size:clamp(2.5rem,7vw,5.5rem); letter-spacing:-0.055em; line-height:.92; margin:.18em 0; } h2 { margin:.15em 0; font-size:clamp(1.6rem,3vw,2.5rem); } h3 { margin:0 0 14px; } h4 { margin:20px 0 8px; }
+    .eyebrow { color:var(--accent); text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:800; margin:0; }
+    .lede,.muted,.section-heading>p,small { color:var(--muted); }
+    main { max-width:1240px; margin:auto; padding:0 28px 72px; }
+    section { margin:36px 0; }
+    .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .summary-card,.panel,.job,.scenario,.report-card { background:linear-gradient(145deg,var(--panel),#10141d); border:1px solid var(--line); border-radius:16px; box-shadow:0 18px 50px #0004; }
+    .summary-card { padding:18px; } .summary-card strong { display:block; font-size:1.45rem; margin-top:8px; }
+    .links,.meta-row,.platform-pills { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; color:var(--muted); }
+    .links { padding:18px 0; border-bottom:1px solid var(--line); }
+    .section-heading { display:flex; align-items:end; justify-content:space-between; gap:20px; margin:48px 0 18px; }
+    .job-list,.scenario-list { display:grid; gap:10px; }
+    details>summary { cursor:pointer; list-style:none; } details>summary::-webkit-details-marker { display:none; }
+    .job>summary,.scenario>summary,.contract>summary { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px 18px; }
+    .job>summary>span:first-child,.scenario>summary>span:first-child { display:grid; gap:5px; }
+    .job table,.scenario table { border-top:1px solid var(--line); }
+    .badge { display:inline-flex; align-items:center; border-radius:999px; padding:4px 9px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; background:#30384b; color:#d8dfed; }
+    .badge.passed { background:#143923; color:#75eba3; } .badge.failed,.badge.cancelled { background:#481d27; color:#ff9ba5; } .badge.missing,.badge.unknown,.badge.skipped { background:#3b3218; color:#f5d77b; }
+    .two-column,.scenario-media { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:14px; margin:16px 0; }
+    .panel { padding:20px; } .contract { margin-top:16px; } .contract>summary { margin:-20px; margin-bottom:18px; border-bottom:1px solid var(--line); }
+    table { width:100%; border-collapse:collapse; } th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-size:.74rem; text-transform:uppercase; letter-spacing:.07em; }
+    .table-scroll { overflow:auto; }
+    .health-list { list-style:none; padding:0; margin:0; display:grid; gap:9px; } .health-list li { display:flex; justify-content:space-between; gap:16px; }
+    .scenario { overflow:hidden; } .scenario-result { display:flex; align-items:center; gap:12px; color:var(--muted); }
+    .scenario-media { padding:0 18px 20px; align-items:start; }
+    .gif { display:block; border-radius:12px; overflow:hidden; border:1px solid var(--line); background:#080a0f; } .gif img { display:block; width:100%; height:auto; }
+    .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+    figure { margin:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#090c12; } figure img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; object-position:top; } figcaption { display:flex; gap:9px; padding:9px 10px; color:var(--muted); font-size:.78rem; } figcaption span { color:var(--accent); font-family:ui-monospace,monospace; }
+    .empty,.notice,.failure { border:1px dashed var(--line); border-radius:12px; padding:18px; color:var(--muted); } .notice { border-color:#765f28; color:#f3d98f; } .failure { margin:0 18px 16px; border-color:#71303a; color:#ffabb3; }
+    .report-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; } .report-card { padding:20px; display:grid; gap:14px; } .report-card>div:first-child { display:flex; align-items:start; justify-content:space-between; }
+    footer { max-width:1240px; margin:auto; padding:24px 28px 48px; border-top:1px solid var(--line); color:var(--muted); font-size:.86rem; }
+    @media (max-width:760px) { .hero,.section-heading { align-items:start; flex-direction:column; } .two-column,.scenario-media { grid-template-columns:1fr; } .scenario>summary { align-items:start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <header class="hero"><div><p class="eyebrow">CCSM quality evidence</p><h1>Desktop E2E reports</h1><p class="lede">Temporary reports for active pull requests</p></div></header>
+  <main><section class="report-grid"><article class="report-card">
+        <div><p class="eyebrow">Pull request</p><h2><a href="./pr/55/">PR #55</a></h2></div>
+        <span class="badge passed">passed</span>
+        <p><code>9ea1e8496c97</code> · run 33835169362.1</p>
+        <div class="platform-pills"><span>Windows <span class="badge passed">passed</span></span><span>Linux <span class="badge passed">passed</span></span></div>
+        <small>Updated Sep 4, 2026, 4:16:46 AM</small>
+      </article></section></main>
+  <footer>Reports contain validated PNG/GIF evidence and sanitized test summaries.</footer>
+</body>
+</html>
