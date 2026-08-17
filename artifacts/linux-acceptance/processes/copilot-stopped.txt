@@ -1,8 +1,0 @@
-31542 31523 31503 31503 S+               tau                  \_ tauri-driver --port 4444 --native-port 4445 --native-driver /usr/bin/WebKitWebDriver
-31543 31542 31503 31503 Sl+              Web                  |   \_ /usr/bin/WebKitWebDriver --port=4445 --host=127.0.0.1
-31570 31543 31503 31503 Sl+              ccs                  |       \_ /home/bakapiano/.cache/ccsm-target/debug/ccsm-desktop
-31594 31570 31503 31503 SLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess 1 22
-31685 31570 31503 31503 RLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess 4 29
-31819 31570 31503 31503 SLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess 5 48
-31822 31570 31503 31503 SLl+             Web                  |           \_ /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess 7 46
-31894 31570 31503 31503 S+               ccs                  |           \_ /home/bakapiano/.cache/ccsm-target/debug/ccsm-desktop process-watchdog 31893
