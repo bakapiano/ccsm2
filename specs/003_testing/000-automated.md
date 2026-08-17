@@ -1,6 +1,6 @@
 # GitHub Actions 测试门禁
 
-本文定义 CCSM 公开仓库的必需测试门禁。每个 Pull Request 在 GitHub 托管的 Windows 与 Linux 桌面 runner 上分别构建并启动真实 Tauri executable，通过 [`@wdio/tauri-service`](https://v2.tauri.app/develop/tests/webdriver/) 操作主 WebView，并上传可供 reviewer 验收的 GIF 与测试结果。
+本文定义 CCSM 公开仓库的必需测试门禁。每个 Pull Request 在 GitHub 托管的 Windows 与 Linux 桌面 runner 上分别构建并启动真实 Tauri executable，通过 [`@wdio/tauri-service`](https://v2.tauri.app/develop/tests/webdriver/) 操作主 WebView，并发布可供 owner 验收的临时静态报告、GIF 与测试结果。
 
 ## 合并条件
 
@@ -11,7 +11,7 @@
 - `desktop-e2e-windows`
 - `desktop-e2e-linux`
 
-四个检查全部成功后，reviewer 检查两个平台的验收证据并批准 PR。自动断言负责确定行为正确性，人工验收负责检查布局、交互过程和平台视觉结果。
+四个检查全部成功后，owner 检查两个平台的验收证据并执行合并。自动断言负责确定行为正确性，人工验收负责检查布局、交互过程和平台视觉结果。
 
 本阶段门禁矩阵固定为 Windows 与 Linux，两个平台具有同等门禁权重。macOS 是目标平台，当前 Desktop Gate 状态为 Planned；后续 macOS job 复用相同 harness、scenarios 和 artifact contract。
 
@@ -38,6 +38,14 @@ Pull Request / main push
                 ├── WDIO desktop scenarios
                 ├── acceptance GIF + result files
                 └── upload Actions Artifact (7 days)
+
+completed pull_request CI
+        └── trusted workflow_run publisher
+                ├── bind run head SHA to same-repository PR
+                ├── validate manifest, size, SHA-256, media and credential scan
+                ├── render all job/platform/scenario results
+                ├── publish /e2e/pr/<number>/
+                └── update the stable PR comment
 ```
 
 Verify matrix 与两个 Desktop E2E jobs 并行执行。Verify matrix 负责静态检查和默认 feature 测试；每个 Desktop job 独立完成依赖安装、E2E 构建、应用启动、场景、teardown 和证据上传，并消费本 job 构建的产物。
@@ -224,18 +232,37 @@ artifact 上传使用仓库锁定的 `actions/upload-artifact` 版本，公开�
 
 PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短上传时间。Actions run summary 显示平台结果、失败场景和 artifact 名称。
 
+## PR静态报告发布
+
+每次`pull_request` CI完成后，独立`workflow_run`发布器从默认分支加载受信任workflow与report generator。发布器通过GitHub API将run head SHA唯一绑定到同仓库open PR，并按`run ID + attempt + platform`下载Windows/Linux evidence。PR workflow保持`contents: read`；发布器job持有Pages snapshot与PR评论所需写权限。
+
+上游Artifact作为外部数据处理。下载前限制匹配artifact数量和单项archive尺寸；下载目录位于`runner.temp`。生成器对manifest执行schema与路径检查，重新计算公开文件的byte size和SHA-256，验证PNG/GIF signature，并解析credential scan、cleanup、log diagnostics、JUnit、provider package与contract checks。公开媒体由通过credential scan的PNG/GIF组成。页面HTML、CSS、JSON与Content Security Policy由默认分支生成器创建。Actions Artifact管理原始日志、provider输出、完整manifest和JUnit XML。
+
+静态报告使用稳定地址：
+
+```text
+https://<owner>.github.io/<repository>/e2e/pr/<number>/
+```
+
+报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时、3个acceptance GIF和48个checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
+
+`gh-pages`保存当前active PR报告集合，并通过串行concurrency group发布单一orphan snapshot commit。`pull_request_target: closed`从默认分支执行对应目录清理；每日prune以GitHub API返回的open PR集合刷新站点。报告发布job提供人工验收导航，四个原生required checks继续提供合并结论。
+
+首次启用由owner使用成功CI run的同格式Artifact和当前分支中的受信任生成器创建orphan snapshot，再将GitHub Pages source绑定到`gh-pages / root`。默认分支接管后续自动发布与清理。
+
 ## 人工验收流程
 
-Reviewer 在批准 PR 前完成：
+Owner在合并PR前完成：
 
 1. 确认 Verify matrix、`desktop-e2e-windows` 与 `desktop-e2e-linux` 均成功。
-2. 从同一次 workflow run 下载两个 artifact。
-3. 打开各平台 `result.json`，确认预期场景完整执行。
-4. 查看 `acceptance/*.gif`，检查关键操作、布局和最终状态。
-5. 对涉及 native surface 的改动检查对应完整窗口截图。
-6. 在 PR review 中批准或指出需要重跑的场景。
+2. 从PR评论打开对应commit的Pages静态报告。
+3. 检查两个平台的workflow steps、evidence health与预期场景集合。
+4. 查看全部`acceptance/*.gif`与关键checkpoint PNG，检查操作、布局和最终状态。
+5. 对涉及native surface的改动检查对应完整窗口截图。
+6. 需要深度诊断时从同一workflow run下载原始artifact。
+7. 记录owner验收结论或指出需要重跑的场景。
 
-PR review 是人工验收记录；四个 required status checks 是自动门禁记录。重新推送 commit 后使用新 workflow run 的证据重新验收。
+PR Pages评论与owner结论是人工验收记录；四个required status checks是自动门禁记录。重新推送commit后，稳定报告地址更新为新workflow run的证据。
 
 ## Workflow 触发与资源控制
 
@@ -257,4 +284,4 @@ PR review 是人工验收记录；四个 required status checks 是自动门禁�
 - 每个平台运行都生成结构化测试结果与可播放 GIF。
 - finalizer 在任一前置步骤失败时从零生成 `result.json`、manifest、credential scan、process/display cleanup 状态与 provider contract 状态；失败运行仍上传完整诊断证据并保留失败状态。
 - artifact 的 `retention-days` 为 `7`。
-- branch protection 同时要求 Verify matrix、两个平台 E2E 检查和 PR review。
+- branch protection 同时要求 Verify matrix、两个平台 E2E 检查、resolved conversations 和 administrator enforcement。
