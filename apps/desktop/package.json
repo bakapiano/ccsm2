@@ -17,7 +17,6 @@
     "test:desktop:ci": "node scripts/run-desktop-e2e.mjs --ci",
     "test:desktop:debug": "node scripts/run-desktop-e2e.mjs --debug",
     "test:desktop:evidence": "node scripts/run-desktop-e2e.mjs --evidence",
-    "test:desktop:linux": "node scripts/run-desktop-e2e.mjs",
     "test:provider-cli-contract": "node scripts/run-provider-cli-contract.mjs",
     "tauri": "tauri",
     "build:desktop:debug": "tauri build --debug --no-bundle -- --locked",
