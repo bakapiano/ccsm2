@@ -145,6 +145,9 @@ export interface WindowChromeClient {
   startResizeDragging(direction: WindowResizeDirection): Promise<void>;
   setTheme(theme: ThemeMode): Promise<void>;
   close(): Promise<void>;
+  subscribeFocusChanged(
+    listener: (focused: boolean) => void,
+  ): Promise<UnlistenFn>;
   subscribeCloseRequested(listener: () => void): Promise<UnlistenFn>;
 }
 
@@ -421,6 +424,14 @@ class TauriWindowChromeClient implements WindowChromeClient {
   close(): Promise<void> {
     this.#allowClose = true;
     return getCurrentWindow().close();
+  }
+
+  subscribeFocusChanged(
+    listener: (focused: boolean) => void,
+  ): Promise<UnlistenFn> {
+    return getCurrentWindow().onFocusChanged((event) =>
+      listener(event.payload),
+    );
   }
 
   subscribeCloseRequested(listener: () => void): Promise<UnlistenFn> {

@@ -17,6 +17,7 @@ import {
 import {
   cliShortcutInput,
   installCliInputFollow,
+  installCliWindowFocusRestore,
   isAgentCliCopyShortcut,
 } from "../terminal-keyboard";
 import {
@@ -205,6 +206,7 @@ class TerminalPanel implements IContentRenderer {
   #resetOnNextRuntimeOutput = false;
   #lastOutputRuntimeId: string | null = null;
   #inputFollowDispose: (() => void) | null = null;
+  #windowFocusDispose: (() => void) | null = null;
   #resizeGestureDispose: (() => void) | null = null;
   #unlisten: (() => void) | null = null;
 
@@ -332,6 +334,8 @@ class TerminalPanel implements IContentRenderer {
     this.#unlisten = null;
     this.#inputFollowDispose?.();
     this.#inputFollowDispose = null;
+    this.#windowFocusDispose?.();
+    this.#windowFocusDispose = null;
     this.#resizeGestureDispose?.();
     this.#resizeGestureDispose = null;
     this.#terminal?.dispose();
@@ -435,6 +439,23 @@ class TerminalPanel implements IContentRenderer {
         this.#terminal,
         this.#host,
         () => this.#session?.provider ?? null,
+      );
+      this.#windowFocusDispose = installCliWindowFocusRestore(
+        {
+          hasFocus: () =>
+            this.#terminal?.textarea ===
+            this.element.ownerDocument.activeElement,
+          canRestoreFocus: () =>
+            Boolean(
+              this.#attached &&
+                this.#panelApi?.isVisible &&
+                this.#terminal &&
+                !this.#terminal.options.disableStdin,
+            ),
+          restoreFocus: () => this.#terminal?.focus(),
+        },
+        this.element.ownerDocument.defaultView ?? window,
+        (listener) => this.#client.windowChrome.subscribeFocusChanged(listener),
       );
       this.#terminal.onData((data) => this.#enqueueInput(data));
       this.#terminal.attachCustomKeyEventHandler((event) => {

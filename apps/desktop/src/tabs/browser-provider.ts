@@ -3,6 +3,7 @@ import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 import type { BrowserBounds } from "../generated/BrowserBounds";
 import type { BrowserTitleChangedRequest } from "../generated/BrowserTitleChangedRequest";
 import type { TabDto } from "../generated/TabDto";
+import { BrowserFaviconStore } from "../browser-favicon";
 import { planNativeVisibility } from "../browser-visibility";
 import {
   clearBrowserSnapshot,
@@ -25,6 +26,7 @@ interface BrowserTabState {
 }
 
 interface BrowserTabProviderOptions {
+  faviconStore?: BrowserFaviconStore;
   nativeSurfacesEnabled?: boolean;
 }
 
@@ -35,12 +37,14 @@ export class BrowserTabProvider implements TabProvider {
   #destroyed = false;
 
   readonly #nativeSurfacesEnabled: boolean;
+  readonly #faviconStore: BrowserFaviconStore;
 
   constructor(
     private readonly client: CcsmDesktopClient,
     options: BrowserTabProviderOptions = {},
   ) {
     this.#nativeSurfacesEnabled = options.nativeSurfacesEnabled ?? true;
+    this.#faviconStore = options.faviconStore ?? new BrowserFaviconStore();
     void client.browser
       .subscribeTitleChanged((event) => {
         for (const panel of this.#panels) panel.handleTitleChanged(event);
@@ -55,6 +59,7 @@ export class BrowserTabProvider implements TabProvider {
     const panel = new BrowserPanel(
       tab,
       this.client,
+      this.#faviconStore,
       this.#nativeSurfacesEnabled,
       () => this.#panels.delete(panel),
     );
@@ -112,6 +117,7 @@ class BrowserPanel implements IContentRenderer {
   constructor(
     tab: TabDto,
     client: CcsmDesktopClient,
+    private readonly faviconStore: BrowserFaviconStore,
     private readonly nativeSurfacesEnabled: boolean,
     private readonly onDispose: () => void,
   ) {
@@ -120,6 +126,7 @@ class BrowserPanel implements IContentRenderer {
     this.#surfaceId = tab.resourceId ?? tab.id;
     const state = parseState(tab.state);
     this.#currentUrl = state.lastUrl;
+    this.faviconStore.setPageUrl(tab.id, this.#currentUrl);
     this.#zoom = state.zoom ?? 1;
     this.element.className = "browser-panel";
     this.element.dataset.nativeVisible = "false";
@@ -213,6 +220,7 @@ class BrowserPanel implements IContentRenderer {
     if (this.#disposed || event.surfaceId !== this.#surfaceId) return;
     const previousUrl = this.#currentUrl;
     if (/^(https?:|about:)/i.test(event.url)) this.#currentUrl = event.url;
+    this.faviconStore.setPageUrl(this.#tab.id, this.#currentUrl);
     const title = browserTabTitle(event.title, this.#currentUrl);
     if (title === this.#tab.title && previousUrl === this.#currentUrl) return;
     this.#tab.title = title;
@@ -330,6 +338,7 @@ class BrowserPanel implements IContentRenderer {
         this.#created = true;
         this.#engine = info.engine;
         this.#currentUrl = info.url;
+        this.faviconStore.setPageUrl(this.#tab.id, this.#currentUrl);
         this.#address!.value = info.url;
         this.#lastBounds = bounds;
         this.#lastVisible = true;
@@ -415,6 +424,7 @@ class BrowserPanel implements IContentRenderer {
         this.#scheduleSync();
       }
       this.#address!.value = this.#currentUrl;
+      this.faviconStore.setPageUrl(this.#tab.id, this.#currentUrl);
       await this.#persistState();
       await this.#client.browser.focus(this.#surfaceId);
     } catch (error) {

@@ -23,6 +23,8 @@ Navigation、title和load failure通过`BrowserSurfaceEvent`进入统一DesktopE
 
 native child WebView的`on_document_title_changed`发送`surface_id + document title + current URL`。Browser Provider按surface identity更新Dockview Panel title并串行持久化Tab title/state；空白title使用hostname或`Browser`，网页输入最多保留160个Unicode字符。
 
+Browser Provider根据当前HTTP/HTTPS URL生成同源`/favicon.ico`地址并发布给Tab header。Tab header在图片加载成功后替换Browser类型图标；导航、加载失败和非Web URL恢复Browser类型图标。favicon请求使用`no-referrer`策略。
+
 `window.open`和`target="_blank"`由native WebView的new-window callback拦截。desktop host拒绝系统窗口并发送`source_surface_id + URL`；前端创建持久Browser Tab，并以`direction='within'`加入来源Browser Panel的Dockview group。
 
 CLI Terminal输出中的HTTP/HTTPS与OSC 8 Web链接通过Terminal link handler进入同一Browser Tab创建流程，并相对来源CLI Panel放置。Terminal renderer不直接调用系统`window.open`。Browser Tab URL白名单继续由AppBackend验证。
