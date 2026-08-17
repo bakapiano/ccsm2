@@ -1,0 +1,3543 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-04T04:16:46.936Z",
+  "context": {
+    "repository": "bakapiano/ccsm2",
+    "prNumber": 55,
+    "commitSha": "9ea1e8496c97153ebf69529a043b5b44c6e7e780",
+    "runId": 33835169362,
+    "runAttempt": 1,
+    "conclusion": "passed",
+    "runUrl": "https://github.com/bakapiano/ccsm2/actions/runs/33835169362",
+    "prUrl": "https://github.com/bakapiano/ccsm2/pull/55",
+    "createdAt": "2026-09-04T03:59:39.000Z",
+    "updatedAt": "2026-09-04T04:16:28.000Z"
+  },
+  "status": "passed",
+  "jobs": [
+    {
+      "name": "Verify (ubuntu-24.04)",
+      "status": "completed",
+      "conclusion": "passed",
+      "startedAt": "2026-09-04T03:59:42.000Z",
+      "completedAt": "2026-09-04T04:05:25.000Z",
+      "durationMs": 343000,
+      "url": "https://github.com/bakapiano/ccsm2/actions/runs/33835169362/job/100906082998",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Install Ubuntu build dependencies",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 88000
+        },
+        {
+          "name": "Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 153000
+        },
+        {
+          "name": "Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 7000
+        },
+        {
+          "name": "Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Set up Rust",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 9000
+        },
+        {
+          "name": "Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 28000
+        },
+        {
+          "name": "Install frontend dependencies",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Verify release version consistency",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Check formatting",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 3000
+        },
+        {
+          "name": "Verify generated contracts",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 20000
+        },
+        {
+          "name": "Run static checks",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 9000
+        },
+        {
+          "name": "Run test suites",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 17000
+        },
+        {
+          "name": "Post Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        }
+      ]
+    },
+    {
+      "name": "desktop-e2e-windows",
+      "status": "completed",
+      "conclusion": "passed",
+      "startedAt": "2026-09-04T03:59:42.000Z",
+      "completedAt": "2026-09-04T04:16:27.000Z",
+      "durationMs": 1005000,
+      "url": "https://github.com/bakapiano/ccsm2/actions/runs/33835169362/job/100906083168",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Initialize Windows E2E evidence",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 3000
+        },
+        {
+          "name": "Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 5000
+        },
+        {
+          "name": "Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 129000
+        },
+        {
+          "name": "Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 15000
+        },
+        {
+          "name": "Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Set up Rust",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 13000
+        },
+        {
+          "name": "Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 4000
+        },
+        {
+          "name": "Install frontend dependencies",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 4000
+        },
+        {
+          "name": "Test E2E-only backend",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 227000
+        },
+        {
+          "name": "Build Windows E2E executable",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 46000
+        },
+        {
+          "name": "Verify pinned provider CLI contracts",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 38000
+        },
+        {
+          "name": "Run Windows Desktop E2E",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 347000
+        },
+        {
+          "name": "Build Windows A/B updater E2E packages",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 107000
+        },
+        {
+          "name": "Install and update Windows E2E package",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 20000
+        },
+        {
+          "name": "Finalize Windows Desktop E2E evidence",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Upload Windows Desktop E2E evidence",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Post Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 36000
+        },
+        {
+          "name": "Post Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        }
+      ]
+    },
+    {
+      "name": "Verify (windows-2022)",
+      "status": "completed",
+      "conclusion": "passed",
+      "startedAt": "2026-09-04T03:59:42.000Z",
+      "completedAt": "2026-09-04T04:03:49.000Z",
+      "durationMs": 247000,
+      "url": "https://github.com/bakapiano/ccsm2/actions/runs/33835169362/job/100906083188",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 4000
+        },
+        {
+          "name": "Install Ubuntu build dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "durationMs": 0
+        },
+        {
+          "name": "Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 89000
+        },
+        {
+          "name": "Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 14000
+        },
+        {
+          "name": "Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 3000
+        },
+        {
+          "name": "Set up Rust",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 11000
+        },
+        {
+          "name": "Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 21000
+        },
+        {
+          "name": "Install frontend dependencies",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 5000
+        },
+        {
+          "name": "Verify release version consistency",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Check formatting",
+          "status": "completed",
+          "conclusion": "skipped",
+          "durationMs": 0
+        },
+        {
+          "name": "Verify generated contracts",
+          "status": "completed",
+          "conclusion": "skipped",
+          "durationMs": 0
+        },
+        {
+          "name": "Run static checks",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 46000
+        },
+        {
+          "name": "Run test suites",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 48000
+        },
+        {
+          "name": "Post Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        }
+      ]
+    },
+    {
+      "name": "desktop-e2e-linux",
+      "status": "completed",
+      "conclusion": "passed",
+      "startedAt": "2026-09-04T03:59:42.000Z",
+      "completedAt": "2026-09-04T04:13:57.000Z",
+      "durationMs": 855000,
+      "url": "https://github.com/bakapiano/ccsm2/actions/runs/33835169362/job/100906083494",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Initialize Linux E2E evidence",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 2000
+        },
+        {
+          "name": "Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Install Ubuntu desktop dependencies",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 66000
+        },
+        {
+          "name": "Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 132000
+        },
+        {
+          "name": "Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 6000
+        },
+        {
+          "name": "Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Set up Rust",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 8000
+        },
+        {
+          "name": "Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 3000
+        },
+        {
+          "name": "Install frontend dependencies",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Test E2E-only backend",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 122000
+        },
+        {
+          "name": "Build Linux E2E executable",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 20000
+        },
+        {
+          "name": "Verify pinned provider CLI contracts",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 18000
+        },
+        {
+          "name": "Run Linux Desktop E2E",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 142000
+        },
+        {
+          "name": "Build Linux A/B updater E2E packages",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 282000
+        },
+        {
+          "name": "Install and update Linux E2E packages",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 35000
+        },
+        {
+          "name": "Finalize Linux Desktop E2E evidence",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Upload Linux Desktop E2E evidence",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        },
+        {
+          "name": "Post Cache Rust build outputs",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 12000
+        },
+        {
+          "name": "Post Set up Bun",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up Node.js",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Set up pnpm",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Post Check out source",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 0
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "passed",
+          "durationMs": 1000
+        }
+      ]
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "windows",
+      "available": true,
+      "architecture": "x64",
+      "appVersion": "0.1.0-beta.10",
+      "webviewVersion": "msedge 131.0.0.0",
+      "finalStatus": "passed",
+      "workflowStatus": "passed",
+      "generatedAt": "2026-09-04T04:15:45.527Z",
+      "mediaPublished": true,
+      "mediaWithheldReason": null,
+      "health": {
+        "credentialScan": "passed",
+        "processCleanup": "passed",
+        "gracefulCleanup": "passed",
+        "displayCleanup": "passed",
+        "logAudit": "passed",
+        "knownWarnings": {
+          "windowsWdioNullableU32": 1212,
+          "linuxHeadlessDesktop": 0
+        }
+      },
+      "stepOutcomes": {
+        "checkout": "success",
+        "dependencies": "success",
+        "backend": "success",
+        "build": "success",
+        "provider_contract": "success",
+        "desktop_e2e": "success",
+        "package_build": "success",
+        "package_smoke": "success"
+      },
+      "scenarios": [
+        {
+          "scenarioId": "markdown-edit-preview",
+          "fullTitle": "Markdown file editor edits and previews Markdown",
+          "state": "passed",
+          "durationMs": 4919,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/markdown-edit-preview.gif",
+          "screenshots": [
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 1,
+              "label": "initial-preview",
+              "path": "assets/windows/screenshots/markdown-edit-preview/001.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 2,
+              "label": "dirty-edit",
+              "path": "assets/windows/screenshots/markdown-edit-preview/002.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 3,
+              "label": "edited-preview",
+              "path": "assets/windows/screenshots/markdown-edit-preview/003.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 4,
+              "label": "saved-preview",
+              "path": "assets/windows/screenshots/markdown-edit-preview/004.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 5,
+              "label": "browser-right",
+              "path": "assets/windows/screenshots/markdown-edit-preview/005.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 6,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/markdown-edit-preview/006.png"
+            }
+          ],
+          "checkpointCount": 6
+        },
+        {
+          "scenarioId": "claude-resume",
+          "fullTitle": "real provider CLI with stubbed model API creates a Space and resumes Claude",
+          "state": "passed",
+          "durationMs": 20643,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/claude-resume.gif",
+          "screenshots": [
+            {
+              "scenarioId": "claude-resume",
+              "frame": 1,
+              "label": "space-created",
+              "path": "assets/windows/screenshots/claude-resume/001.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 2,
+              "label": "cli-started",
+              "path": "assets/windows/screenshots/claude-resume/002.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 3,
+              "label": "first-model-response",
+              "path": "assets/windows/screenshots/claude-resume/003.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 4,
+              "label": "cli-closed",
+              "path": "assets/windows/screenshots/claude-resume/004.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 5,
+              "label": "cli-resumed",
+              "path": "assets/windows/screenshots/claude-resume/005.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 6,
+              "label": "resumed-model-response",
+              "path": "assets/windows/screenshots/claude-resume/006.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 7,
+              "label": "board-rendered",
+              "path": "assets/windows/screenshots/claude-resume/007.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 8,
+              "label": "board-interacted",
+              "path": "assets/windows/screenshots/claude-resume/008.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 9,
+              "label": "cli-stopped",
+              "path": "assets/windows/screenshots/claude-resume/009.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 10,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/claude-resume/010.png"
+            }
+          ],
+          "checkpointCount": 10
+        },
+        {
+          "scenarioId": "codex-resume",
+          "fullTitle": "real provider CLI with stubbed model API creates a Space and resumes Codex",
+          "state": "passed",
+          "durationMs": 47591,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/codex-resume.gif",
+          "screenshots": [
+            {
+              "scenarioId": "codex-resume",
+              "frame": 1,
+              "label": "space-created",
+              "path": "assets/windows/screenshots/codex-resume/001.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 2,
+              "label": "cli-started",
+              "path": "assets/windows/screenshots/codex-resume/002.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 3,
+              "label": "win32-modified-enter",
+              "path": "assets/windows/screenshots/codex-resume/003.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 4,
+              "label": "first-model-response",
+              "path": "assets/windows/screenshots/codex-resume/004.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 5,
+              "label": "ephemeral-side-chat-returned",
+              "path": "assets/windows/screenshots/codex-resume/005.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 6,
+              "label": "cli-closed",
+              "path": "assets/windows/screenshots/codex-resume/006.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 7,
+              "label": "cli-resumed",
+              "path": "assets/windows/screenshots/codex-resume/007.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 8,
+              "label": "resumed-model-response",
+              "path": "assets/windows/screenshots/codex-resume/008.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 9,
+              "label": "board-rendered",
+              "path": "assets/windows/screenshots/codex-resume/009.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 10,
+              "label": "board-interacted",
+              "path": "assets/windows/screenshots/codex-resume/010.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 11,
+              "label": "persistent-fork-bound",
+              "path": "assets/windows/screenshots/codex-resume/011.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 12,
+              "label": "clear-session-bound",
+              "path": "assets/windows/screenshots/codex-resume/012.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 13,
+              "label": "cli-stopped",
+              "path": "assets/windows/screenshots/codex-resume/013.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 14,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/codex-resume/014.png"
+            }
+          ],
+          "checkpointCount": 14
+        },
+        {
+          "scenarioId": "ghcp-resume",
+          "fullTitle": "real provider CLI with stubbed model API creates a Space and resumes GHCP",
+          "state": "passed",
+          "durationMs": 36439,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/ghcp-resume.gif",
+          "screenshots": [
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 1,
+              "label": "space-created",
+              "path": "assets/windows/screenshots/ghcp-resume/001.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 2,
+              "label": "cli-started",
+              "path": "assets/windows/screenshots/ghcp-resume/002.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 3,
+              "label": "first-model-response",
+              "path": "assets/windows/screenshots/ghcp-resume/003.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 4,
+              "label": "cli-closed",
+              "path": "assets/windows/screenshots/ghcp-resume/004.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 5,
+              "label": "cli-resumed",
+              "path": "assets/windows/screenshots/ghcp-resume/005.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 6,
+              "label": "resumed-model-response",
+              "path": "assets/windows/screenshots/ghcp-resume/006.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 7,
+              "label": "board-rendered",
+              "path": "assets/windows/screenshots/ghcp-resume/007.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 8,
+              "label": "board-interacted",
+              "path": "assets/windows/screenshots/ghcp-resume/008.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 9,
+              "label": "cli-stopped",
+              "path": "assets/windows/screenshots/ghcp-resume/009.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 10,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/ghcp-resume/010.png"
+            }
+          ],
+          "checkpointCount": 10
+        },
+        {
+          "scenarioId": "cli-theme-switch",
+          "fullTitle": "real provider CLI with stubbed model API switches running CLI composer surfaces with the application theme",
+          "state": "passed",
+          "durationMs": 30288,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/cli-theme-switch.gif",
+          "screenshots": [
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 1,
+              "label": "claude-dark",
+              "path": "assets/windows/screenshots/cli-theme-switch/001.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 2,
+              "label": "claude-light",
+              "path": "assets/windows/screenshots/cli-theme-switch/002.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 3,
+              "label": "codex-dark",
+              "path": "assets/windows/screenshots/cli-theme-switch/003.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 4,
+              "label": "codex-light",
+              "path": "assets/windows/screenshots/cli-theme-switch/004.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 5,
+              "label": "copilot-dark",
+              "path": "assets/windows/screenshots/cli-theme-switch/005.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 6,
+              "label": "copilot-light",
+              "path": "assets/windows/screenshots/cli-theme-switch/006.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 7,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/cli-theme-switch/007.png"
+            }
+          ],
+          "checkpointCount": 7
+        },
+        {
+          "scenarioId": "settings-update",
+          "fullTitle": "Application settings opens Settings and checks updates",
+          "state": "passed",
+          "durationMs": 4041,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/settings-update.gif",
+          "screenshots": [
+            {
+              "scenarioId": "settings-update",
+              "frame": 1,
+              "label": "settings-open",
+              "path": "assets/windows/screenshots/settings-update/001.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 2,
+              "label": "dark-theme",
+              "path": "assets/windows/screenshots/settings-update/002.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 3,
+              "label": "default-browser-links-changed",
+              "path": "assets/windows/screenshots/settings-update/003.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 4,
+              "label": "update-check-result",
+              "path": "assets/windows/screenshots/settings-update/004.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 5,
+              "label": "settings-reopened",
+              "path": "assets/windows/screenshots/settings-update/005.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 6,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/settings-update/006.png"
+            }
+          ],
+          "checkpointCount": 6
+        },
+        {
+          "scenarioId": "sidebar-collapse",
+          "fullTitle": "Sidebar navigation collapses and expands the sidebar",
+          "state": "passed",
+          "durationMs": 2561,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/sidebar-collapse.gif",
+          "screenshots": [
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 1,
+              "label": "expanded-sidebar",
+              "path": "assets/windows/screenshots/sidebar-collapse/001.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 2,
+              "label": "collapsed-sidebar",
+              "path": "assets/windows/screenshots/sidebar-collapse/002.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 3,
+              "label": "restored-collapsed-sidebar",
+              "path": "assets/windows/screenshots/sidebar-collapse/003.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 4,
+              "label": "expanded-again",
+              "path": "assets/windows/screenshots/sidebar-collapse/004.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 5,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/sidebar-collapse/005.png"
+            }
+          ],
+          "checkpointCount": 5
+        },
+        {
+          "scenarioId": "terminal-clipboard-interrupt",
+          "fullTitle": "Terminal keyboard routing copies and pastes terminal text and interrupts with Control-C",
+          "state": "passed",
+          "durationMs": 66452,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/terminal-clipboard-interrupt.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 1,
+              "label": "terminal-selection",
+              "path": "assets/windows/screenshots/terminal-clipboard-interrupt/001.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 2,
+              "label": "copy-shortcut",
+              "path": "assets/windows/screenshots/terminal-clipboard-interrupt/002.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 3,
+              "label": "terminal-pasted",
+              "path": "assets/windows/screenshots/terminal-clipboard-interrupt/003.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 4,
+              "label": "pty-interrupted",
+              "path": "assets/windows/screenshots/terminal-clipboard-interrupt/004.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 5,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/terminal-clipboard-interrupt/005.png"
+            }
+          ],
+          "checkpointCount": 5
+        },
+        {
+          "scenarioId": "terminal-cjk-font",
+          "fullTitle": "Terminal keyboard routing renders Chinese shell output with the configured fallback font",
+          "state": "passed",
+          "durationMs": 8632,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/terminal-cjk-font.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-cjk-font",
+              "frame": 1,
+              "label": "cjk-terminal-output",
+              "path": "assets/windows/screenshots/terminal-cjk-font/001.png"
+            },
+            {
+              "scenarioId": "terminal-cjk-font",
+              "frame": 2,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/terminal-cjk-font/002.png"
+            }
+          ],
+          "checkpointCount": 2
+        },
+        {
+          "scenarioId": "provider-markdown-links",
+          "fullTitle": "Terminal links opens wrapped link and file path output from provider Markdown and tables",
+          "state": "passed",
+          "durationMs": 13742,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/provider-markdown-links.gif",
+          "screenshots": [
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 1,
+              "label": "provider-started",
+              "path": "assets/windows/screenshots/provider-markdown-links/001.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 2,
+              "label": "provider-markdown-rendered-and-wrapped",
+              "path": "assets/windows/screenshots/provider-markdown-links/002.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 3,
+              "label": "provider-markdown-url-opened",
+              "path": "assets/windows/screenshots/provider-markdown-links/003.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 4,
+              "label": "provider-table-url-opened",
+              "path": "assets/windows/screenshots/provider-markdown-links/004.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 5,
+              "label": "provider-markdown-file-opened",
+              "path": "assets/windows/screenshots/provider-markdown-links/005.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 6,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/provider-markdown-links/006.png"
+            }
+          ],
+          "checkpointCount": 6
+        },
+        {
+          "scenarioId": "terminal-links",
+          "fullTitle": "Terminal links opens wrapped link and file path output with Control-click",
+          "state": "passed",
+          "durationMs": 10016,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/terminal-links.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-links",
+              "frame": 1,
+              "label": "terminal-links-wrapped",
+              "path": "assets/windows/screenshots/terminal-links/001.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 2,
+              "label": "url-hover-tooltip",
+              "path": "assets/windows/screenshots/terminal-links/002.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 3,
+              "label": "wrapped-url-opened",
+              "path": "assets/windows/screenshots/terminal-links/003.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 4,
+              "label": "browser-url-opened-externally",
+              "path": "assets/windows/screenshots/terminal-links/004.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 5,
+              "label": "terminal-url-opened-externally",
+              "path": "assets/windows/screenshots/terminal-links/005.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 6,
+              "label": "file-hover-tooltip",
+              "path": "assets/windows/screenshots/terminal-links/006.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 7,
+              "label": "wrapped-file-opened",
+              "path": "assets/windows/screenshots/terminal-links/007.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 8,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/terminal-links/008.png"
+            }
+          ],
+          "checkpointCount": 8
+        },
+        {
+          "scenarioId": "terminal-render-lifecycle",
+          "fullTitle": "Terminal rendering lifecycle keeps retained terminal rendering bounded across Space switches",
+          "state": "passed",
+          "durationMs": 13773,
+          "failureStep": null,
+          "gif": "assets/windows/acceptance/terminal-render-lifecycle.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 1,
+              "label": "first-terminal-idle",
+              "path": "assets/windows/screenshots/terminal-render-lifecycle/001.png"
+            },
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 2,
+              "label": "second-terminal-idle",
+              "path": "assets/windows/screenshots/terminal-render-lifecycle/002.png"
+            },
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 3,
+              "label": "first-terminal-restored",
+              "path": "assets/windows/screenshots/terminal-render-lifecycle/003.png"
+            },
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 4,
+              "label": "final-state",
+              "path": "assets/windows/screenshots/terminal-render-lifecycle/004.png"
+            }
+          ],
+          "checkpointCount": 4
+        }
+      ],
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timeSeconds": null
+      },
+      "providerContract": {
+        "status": "passed",
+        "startedAt": "2026-09-04T04:07:14.919Z",
+        "completedAt": "2026-09-04T04:07:50.997Z",
+        "packages": [
+          {
+            "provider": "claude",
+            "package": "@anthropic-ai/claude-code",
+            "pinnedVersion": "2.1.233",
+            "platformPackage": "@anthropic-ai/claude-code-win32-x64",
+            "platformPackageVersion": "2.1.233",
+            "observedVersion": "2.1.233 (Claude Code)",
+            "integrity": "passed"
+          },
+          {
+            "provider": "codex",
+            "package": "@openai/codex",
+            "pinnedVersion": "0.147.0",
+            "platformPackage": "@openai/codex-win32-x64",
+            "platformPackageVersion": "0.147.0-win32-x64",
+            "observedVersion": "codex-cli 0.147.0",
+            "integrity": "passed"
+          },
+          {
+            "provider": "copilot",
+            "package": "@github/copilot",
+            "pinnedVersion": "1.0.80",
+            "platformPackage": "@github/copilot-win32-x64",
+            "platformPackageVersion": "1.0.80",
+            "observedVersion": "GitHub Copilot CLI 1.0.80.",
+            "integrity": "passed"
+          }
+        ],
+        "checks": [
+          {
+            "id": "install-pinned-provider-clis",
+            "provider": null,
+            "kind": "download",
+            "status": "passed",
+            "durationMs": 11756,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-version",
+            "provider": "claude",
+            "kind": "version",
+            "status": "passed",
+            "durationMs": 1015,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-resume-interface",
+            "provider": "claude",
+            "kind": "resume-interface",
+            "status": "passed",
+            "durationMs": 383,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-binary-integrity",
+            "provider": "claude",
+            "kind": "binary-integrity",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-version",
+            "provider": "codex",
+            "kind": "version",
+            "status": "passed",
+            "durationMs": 391,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-resume-interface",
+            "provider": "codex",
+            "kind": "resume-interface",
+            "status": "passed",
+            "durationMs": 19,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-binary-integrity",
+            "provider": "codex",
+            "kind": "binary-integrity",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-version",
+            "provider": "copilot",
+            "kind": "version",
+            "status": "passed",
+            "durationMs": 2556,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-resume-interface",
+            "provider": "copilot",
+            "kind": "resume-interface",
+            "status": "passed",
+            "durationMs": 685,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-binary-integrity",
+            "provider": "copilot",
+            "kind": "binary-integrity",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-wrapper-cold",
+            "provider": "claude",
+            "kind": "wrapper-cold",
+            "status": "passed",
+            "durationMs": 80,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-wrapper-resume",
+            "provider": "claude",
+            "kind": "wrapper-resume",
+            "status": "passed",
+            "durationMs": 73,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-wrapper-cold",
+            "provider": "codex",
+            "kind": "wrapper-cold",
+            "status": "passed",
+            "durationMs": 72,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-wrapper-resume",
+            "provider": "codex",
+            "kind": "wrapper-resume",
+            "status": "passed",
+            "durationMs": 71,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-wrapper-cold",
+            "provider": "copilot",
+            "kind": "wrapper-cold",
+            "status": "passed",
+            "durationMs": 71,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-wrapper-resume",
+            "provider": "copilot",
+            "kind": "wrapper-resume",
+            "status": "passed",
+            "durationMs": 70,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-local-model-cold",
+            "provider": "claude",
+            "kind": "local-model",
+            "status": "passed",
+            "durationMs": 1753,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-local-model-resume",
+            "provider": "claude",
+            "kind": "local-model-resume",
+            "status": "passed",
+            "durationMs": 1573,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-real-hook-delivery",
+            "provider": "claude",
+            "kind": "hook-delivery",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-resume-hook",
+            "provider": "claude",
+            "kind": "resume-hook",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-local-model",
+            "provider": "codex",
+            "kind": "local-model",
+            "status": "passed",
+            "durationMs": 3518,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-local-model-resume",
+            "provider": "codex",
+            "kind": "local-model-resume",
+            "status": "passed",
+            "durationMs": 3338,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-real-hook-delivery",
+            "provider": "codex",
+            "kind": "hook-delivery",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-resume-hook",
+            "provider": "codex",
+            "kind": "resume-hook",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-local-model-cold",
+            "provider": "copilot",
+            "kind": "local-model",
+            "status": "passed",
+            "durationMs": 3530,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-local-model-resume",
+            "provider": "copilot",
+            "kind": "local-model-resume",
+            "status": "passed",
+            "durationMs": 3460,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-real-hook-delivery",
+            "provider": "copilot",
+            "kind": "hook-delivery",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-resume-hook",
+            "provider": "copilot",
+            "kind": "resume-hook",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          }
+        ]
+      },
+      "media": {
+        "gifs": [
+          {
+            "scenarioId": "claude-resume",
+            "path": "assets/windows/acceptance/claude-resume.gif"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "path": "assets/windows/acceptance/cli-theme-switch.gif"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "path": "assets/windows/acceptance/codex-resume.gif"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "path": "assets/windows/acceptance/ghcp-resume.gif"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "path": "assets/windows/acceptance/markdown-edit-preview.gif"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "path": "assets/windows/acceptance/provider-markdown-links.gif"
+          },
+          {
+            "scenarioId": "settings-update",
+            "path": "assets/windows/acceptance/settings-update.gif"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "path": "assets/windows/acceptance/sidebar-collapse.gif"
+          },
+          {
+            "scenarioId": "terminal-cjk-font",
+            "path": "assets/windows/acceptance/terminal-cjk-font.gif"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "path": "assets/windows/acceptance/terminal-clipboard-interrupt.gif"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "path": "assets/windows/acceptance/terminal-links.gif"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "path": "assets/windows/acceptance/terminal-render-lifecycle.gif"
+          }
+        ],
+        "screenshots": [
+          {
+            "scenarioId": "claude-resume",
+            "frame": 1,
+            "label": "space-created",
+            "path": "assets/windows/screenshots/claude-resume/001.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 2,
+            "label": "cli-started",
+            "path": "assets/windows/screenshots/claude-resume/002.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 3,
+            "label": "first-model-response",
+            "path": "assets/windows/screenshots/claude-resume/003.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 4,
+            "label": "cli-closed",
+            "path": "assets/windows/screenshots/claude-resume/004.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 5,
+            "label": "cli-resumed",
+            "path": "assets/windows/screenshots/claude-resume/005.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 6,
+            "label": "resumed-model-response",
+            "path": "assets/windows/screenshots/claude-resume/006.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 7,
+            "label": "board-rendered",
+            "path": "assets/windows/screenshots/claude-resume/007.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 8,
+            "label": "board-interacted",
+            "path": "assets/windows/screenshots/claude-resume/008.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 9,
+            "label": "cli-stopped",
+            "path": "assets/windows/screenshots/claude-resume/009.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 10,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/claude-resume/010.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 1,
+            "label": "claude-dark",
+            "path": "assets/windows/screenshots/cli-theme-switch/001.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 2,
+            "label": "claude-light",
+            "path": "assets/windows/screenshots/cli-theme-switch/002.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 3,
+            "label": "codex-dark",
+            "path": "assets/windows/screenshots/cli-theme-switch/003.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 4,
+            "label": "codex-light",
+            "path": "assets/windows/screenshots/cli-theme-switch/004.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 5,
+            "label": "copilot-dark",
+            "path": "assets/windows/screenshots/cli-theme-switch/005.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 6,
+            "label": "copilot-light",
+            "path": "assets/windows/screenshots/cli-theme-switch/006.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 7,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/cli-theme-switch/007.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 1,
+            "label": "space-created",
+            "path": "assets/windows/screenshots/codex-resume/001.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 2,
+            "label": "cli-started",
+            "path": "assets/windows/screenshots/codex-resume/002.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 3,
+            "label": "win32-modified-enter",
+            "path": "assets/windows/screenshots/codex-resume/003.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 4,
+            "label": "first-model-response",
+            "path": "assets/windows/screenshots/codex-resume/004.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 5,
+            "label": "ephemeral-side-chat-returned",
+            "path": "assets/windows/screenshots/codex-resume/005.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 6,
+            "label": "cli-closed",
+            "path": "assets/windows/screenshots/codex-resume/006.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 7,
+            "label": "cli-resumed",
+            "path": "assets/windows/screenshots/codex-resume/007.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 8,
+            "label": "resumed-model-response",
+            "path": "assets/windows/screenshots/codex-resume/008.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 9,
+            "label": "board-rendered",
+            "path": "assets/windows/screenshots/codex-resume/009.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 10,
+            "label": "board-interacted",
+            "path": "assets/windows/screenshots/codex-resume/010.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 11,
+            "label": "persistent-fork-bound",
+            "path": "assets/windows/screenshots/codex-resume/011.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 12,
+            "label": "clear-session-bound",
+            "path": "assets/windows/screenshots/codex-resume/012.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 13,
+            "label": "cli-stopped",
+            "path": "assets/windows/screenshots/codex-resume/013.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 14,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/codex-resume/014.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 1,
+            "label": "space-created",
+            "path": "assets/windows/screenshots/ghcp-resume/001.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 2,
+            "label": "cli-started",
+            "path": "assets/windows/screenshots/ghcp-resume/002.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 3,
+            "label": "first-model-response",
+            "path": "assets/windows/screenshots/ghcp-resume/003.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 4,
+            "label": "cli-closed",
+            "path": "assets/windows/screenshots/ghcp-resume/004.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 5,
+            "label": "cli-resumed",
+            "path": "assets/windows/screenshots/ghcp-resume/005.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 6,
+            "label": "resumed-model-response",
+            "path": "assets/windows/screenshots/ghcp-resume/006.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 7,
+            "label": "board-rendered",
+            "path": "assets/windows/screenshots/ghcp-resume/007.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 8,
+            "label": "board-interacted",
+            "path": "assets/windows/screenshots/ghcp-resume/008.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 9,
+            "label": "cli-stopped",
+            "path": "assets/windows/screenshots/ghcp-resume/009.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 10,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/ghcp-resume/010.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 1,
+            "label": "initial-preview",
+            "path": "assets/windows/screenshots/markdown-edit-preview/001.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 2,
+            "label": "dirty-edit",
+            "path": "assets/windows/screenshots/markdown-edit-preview/002.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 3,
+            "label": "edited-preview",
+            "path": "assets/windows/screenshots/markdown-edit-preview/003.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 4,
+            "label": "saved-preview",
+            "path": "assets/windows/screenshots/markdown-edit-preview/004.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 5,
+            "label": "browser-right",
+            "path": "assets/windows/screenshots/markdown-edit-preview/005.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 6,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/markdown-edit-preview/006.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 1,
+            "label": "provider-started",
+            "path": "assets/windows/screenshots/provider-markdown-links/001.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 2,
+            "label": "provider-markdown-rendered-and-wrapped",
+            "path": "assets/windows/screenshots/provider-markdown-links/002.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 3,
+            "label": "provider-markdown-url-opened",
+            "path": "assets/windows/screenshots/provider-markdown-links/003.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 4,
+            "label": "provider-table-url-opened",
+            "path": "assets/windows/screenshots/provider-markdown-links/004.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 5,
+            "label": "provider-markdown-file-opened",
+            "path": "assets/windows/screenshots/provider-markdown-links/005.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 6,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/provider-markdown-links/006.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 1,
+            "label": "settings-open",
+            "path": "assets/windows/screenshots/settings-update/001.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 2,
+            "label": "dark-theme",
+            "path": "assets/windows/screenshots/settings-update/002.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 3,
+            "label": "default-browser-links-changed",
+            "path": "assets/windows/screenshots/settings-update/003.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 4,
+            "label": "update-check-result",
+            "path": "assets/windows/screenshots/settings-update/004.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 5,
+            "label": "settings-reopened",
+            "path": "assets/windows/screenshots/settings-update/005.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 6,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/settings-update/006.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 1,
+            "label": "expanded-sidebar",
+            "path": "assets/windows/screenshots/sidebar-collapse/001.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 2,
+            "label": "collapsed-sidebar",
+            "path": "assets/windows/screenshots/sidebar-collapse/002.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 3,
+            "label": "restored-collapsed-sidebar",
+            "path": "assets/windows/screenshots/sidebar-collapse/003.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 4,
+            "label": "expanded-again",
+            "path": "assets/windows/screenshots/sidebar-collapse/004.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 5,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/sidebar-collapse/005.png"
+          },
+          {
+            "scenarioId": "terminal-cjk-font",
+            "frame": 1,
+            "label": "cjk-terminal-output",
+            "path": "assets/windows/screenshots/terminal-cjk-font/001.png"
+          },
+          {
+            "scenarioId": "terminal-cjk-font",
+            "frame": 2,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/terminal-cjk-font/002.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 1,
+            "label": "terminal-selection",
+            "path": "assets/windows/screenshots/terminal-clipboard-interrupt/001.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 2,
+            "label": "copy-shortcut",
+            "path": "assets/windows/screenshots/terminal-clipboard-interrupt/002.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 3,
+            "label": "terminal-pasted",
+            "path": "assets/windows/screenshots/terminal-clipboard-interrupt/003.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 4,
+            "label": "pty-interrupted",
+            "path": "assets/windows/screenshots/terminal-clipboard-interrupt/004.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 5,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/terminal-clipboard-interrupt/005.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 1,
+            "label": "terminal-links-wrapped",
+            "path": "assets/windows/screenshots/terminal-links/001.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 2,
+            "label": "url-hover-tooltip",
+            "path": "assets/windows/screenshots/terminal-links/002.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 3,
+            "label": "wrapped-url-opened",
+            "path": "assets/windows/screenshots/terminal-links/003.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 4,
+            "label": "browser-url-opened-externally",
+            "path": "assets/windows/screenshots/terminal-links/004.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 5,
+            "label": "terminal-url-opened-externally",
+            "path": "assets/windows/screenshots/terminal-links/005.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 6,
+            "label": "file-hover-tooltip",
+            "path": "assets/windows/screenshots/terminal-links/006.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 7,
+            "label": "wrapped-file-opened",
+            "path": "assets/windows/screenshots/terminal-links/007.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 8,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/terminal-links/008.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 1,
+            "label": "first-terminal-idle",
+            "path": "assets/windows/screenshots/terminal-render-lifecycle/001.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 2,
+            "label": "second-terminal-idle",
+            "path": "assets/windows/screenshots/terminal-render-lifecycle/002.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 3,
+            "label": "first-terminal-restored",
+            "path": "assets/windows/screenshots/terminal-render-lifecycle/003.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 4,
+            "label": "final-state",
+            "path": "assets/windows/screenshots/terminal-render-lifecycle/004.png"
+          }
+        ]
+      }
+    },
+    {
+      "platform": "linux",
+      "available": true,
+      "architecture": "x64",
+      "appVersion": "0.1.0-beta.10",
+      "webviewVersion": "WebKitGTK 605.1.15",
+      "finalStatus": "passed",
+      "workflowStatus": "passed",
+      "generatedAt": "2026-09-04T04:13:42.189Z",
+      "mediaPublished": true,
+      "mediaWithheldReason": null,
+      "health": {
+        "credentialScan": "passed",
+        "processCleanup": "passed",
+        "gracefulCleanup": "passed",
+        "displayCleanup": "passed",
+        "logAudit": "passed",
+        "knownWarnings": {
+          "windowsWdioNullableU32": 0,
+          "linuxHeadlessDesktop": 2
+        }
+      },
+      "stepOutcomes": {
+        "checkout": "success",
+        "dependencies": "success",
+        "backend": "success",
+        "build": "success",
+        "provider_contract": "success",
+        "desktop_e2e": "success",
+        "package_build": "success",
+        "package_smoke": "success"
+      },
+      "scenarios": [
+        {
+          "scenarioId": "markdown-edit-preview",
+          "fullTitle": "Markdown file editor edits and previews Markdown",
+          "state": "passed",
+          "durationMs": 3083,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/markdown-edit-preview.gif",
+          "screenshots": [
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 1,
+              "label": "initial-preview",
+              "path": "assets/linux/screenshots/markdown-edit-preview/001.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 2,
+              "label": "dirty-edit",
+              "path": "assets/linux/screenshots/markdown-edit-preview/002.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 3,
+              "label": "edited-preview",
+              "path": "assets/linux/screenshots/markdown-edit-preview/003.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 4,
+              "label": "saved-preview",
+              "path": "assets/linux/screenshots/markdown-edit-preview/004.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 5,
+              "label": "browser-right",
+              "path": "assets/linux/screenshots/markdown-edit-preview/005.png"
+            },
+            {
+              "scenarioId": "markdown-edit-preview",
+              "frame": 6,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/markdown-edit-preview/006.png"
+            }
+          ],
+          "checkpointCount": 6
+        },
+        {
+          "scenarioId": "claude-resume",
+          "fullTitle": "real provider CLI with stubbed model API creates a Space and resumes Claude",
+          "state": "passed",
+          "durationMs": 10809,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/claude-resume.gif",
+          "screenshots": [
+            {
+              "scenarioId": "claude-resume",
+              "frame": 1,
+              "label": "space-created",
+              "path": "assets/linux/screenshots/claude-resume/001.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 2,
+              "label": "cli-started",
+              "path": "assets/linux/screenshots/claude-resume/002.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 3,
+              "label": "first-model-response",
+              "path": "assets/linux/screenshots/claude-resume/003.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 4,
+              "label": "cli-closed",
+              "path": "assets/linux/screenshots/claude-resume/004.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 5,
+              "label": "cli-resumed",
+              "path": "assets/linux/screenshots/claude-resume/005.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 6,
+              "label": "resumed-model-response",
+              "path": "assets/linux/screenshots/claude-resume/006.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 7,
+              "label": "board-rendered",
+              "path": "assets/linux/screenshots/claude-resume/007.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 8,
+              "label": "board-interacted",
+              "path": "assets/linux/screenshots/claude-resume/008.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 9,
+              "label": "cli-stopped",
+              "path": "assets/linux/screenshots/claude-resume/009.png"
+            },
+            {
+              "scenarioId": "claude-resume",
+              "frame": 10,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/claude-resume/010.png"
+            }
+          ],
+          "checkpointCount": 10
+        },
+        {
+          "scenarioId": "codex-resume",
+          "fullTitle": "real provider CLI with stubbed model API creates a Space and resumes Codex",
+          "state": "passed",
+          "durationMs": 32459,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/codex-resume.gif",
+          "screenshots": [
+            {
+              "scenarioId": "codex-resume",
+              "frame": 1,
+              "label": "space-created",
+              "path": "assets/linux/screenshots/codex-resume/001.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 2,
+              "label": "cli-started",
+              "path": "assets/linux/screenshots/codex-resume/002.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 3,
+              "label": "first-model-response",
+              "path": "assets/linux/screenshots/codex-resume/003.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 4,
+              "label": "ephemeral-side-chat-returned",
+              "path": "assets/linux/screenshots/codex-resume/004.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 5,
+              "label": "cli-closed",
+              "path": "assets/linux/screenshots/codex-resume/005.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 6,
+              "label": "cli-resumed",
+              "path": "assets/linux/screenshots/codex-resume/006.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 7,
+              "label": "resumed-model-response",
+              "path": "assets/linux/screenshots/codex-resume/007.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 8,
+              "label": "board-rendered",
+              "path": "assets/linux/screenshots/codex-resume/008.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 9,
+              "label": "board-interacted",
+              "path": "assets/linux/screenshots/codex-resume/009.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 10,
+              "label": "persistent-fork-bound",
+              "path": "assets/linux/screenshots/codex-resume/010.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 11,
+              "label": "clear-session-bound",
+              "path": "assets/linux/screenshots/codex-resume/011.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 12,
+              "label": "cli-stopped",
+              "path": "assets/linux/screenshots/codex-resume/012.png"
+            },
+            {
+              "scenarioId": "codex-resume",
+              "frame": 13,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/codex-resume/013.png"
+            }
+          ],
+          "checkpointCount": 13
+        },
+        {
+          "scenarioId": "ghcp-resume",
+          "fullTitle": "real provider CLI with stubbed model API creates a Space and resumes GHCP",
+          "state": "passed",
+          "durationMs": 18044,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/ghcp-resume.gif",
+          "screenshots": [
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 1,
+              "label": "space-created",
+              "path": "assets/linux/screenshots/ghcp-resume/001.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 2,
+              "label": "cli-started",
+              "path": "assets/linux/screenshots/ghcp-resume/002.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 3,
+              "label": "first-model-response",
+              "path": "assets/linux/screenshots/ghcp-resume/003.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 4,
+              "label": "cli-closed",
+              "path": "assets/linux/screenshots/ghcp-resume/004.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 5,
+              "label": "cli-resumed",
+              "path": "assets/linux/screenshots/ghcp-resume/005.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 6,
+              "label": "resumed-model-response",
+              "path": "assets/linux/screenshots/ghcp-resume/006.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 7,
+              "label": "board-rendered",
+              "path": "assets/linux/screenshots/ghcp-resume/007.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 8,
+              "label": "board-interacted",
+              "path": "assets/linux/screenshots/ghcp-resume/008.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 9,
+              "label": "cli-stopped",
+              "path": "assets/linux/screenshots/ghcp-resume/009.png"
+            },
+            {
+              "scenarioId": "ghcp-resume",
+              "frame": 10,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/ghcp-resume/010.png"
+            }
+          ],
+          "checkpointCount": 10
+        },
+        {
+          "scenarioId": "cli-theme-switch",
+          "fullTitle": "real provider CLI with stubbed model API switches running CLI composer surfaces with the application theme",
+          "state": "passed",
+          "durationMs": 18321,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/cli-theme-switch.gif",
+          "screenshots": [
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 1,
+              "label": "claude-dark",
+              "path": "assets/linux/screenshots/cli-theme-switch/001.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 2,
+              "label": "claude-light",
+              "path": "assets/linux/screenshots/cli-theme-switch/002.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 3,
+              "label": "codex-dark",
+              "path": "assets/linux/screenshots/cli-theme-switch/003.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 4,
+              "label": "codex-light",
+              "path": "assets/linux/screenshots/cli-theme-switch/004.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 5,
+              "label": "copilot-dark",
+              "path": "assets/linux/screenshots/cli-theme-switch/005.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 6,
+              "label": "copilot-light",
+              "path": "assets/linux/screenshots/cli-theme-switch/006.png"
+            },
+            {
+              "scenarioId": "cli-theme-switch",
+              "frame": 7,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/cli-theme-switch/007.png"
+            }
+          ],
+          "checkpointCount": 7
+        },
+        {
+          "scenarioId": "settings-update",
+          "fullTitle": "Application settings opens Settings and checks updates",
+          "state": "passed",
+          "durationMs": 2596,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/settings-update.gif",
+          "screenshots": [
+            {
+              "scenarioId": "settings-update",
+              "frame": 1,
+              "label": "settings-open",
+              "path": "assets/linux/screenshots/settings-update/001.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 2,
+              "label": "dark-theme",
+              "path": "assets/linux/screenshots/settings-update/002.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 3,
+              "label": "default-browser-links-changed",
+              "path": "assets/linux/screenshots/settings-update/003.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 4,
+              "label": "update-check-result",
+              "path": "assets/linux/screenshots/settings-update/004.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 5,
+              "label": "settings-reopened",
+              "path": "assets/linux/screenshots/settings-update/005.png"
+            },
+            {
+              "scenarioId": "settings-update",
+              "frame": 6,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/settings-update/006.png"
+            }
+          ],
+          "checkpointCount": 6
+        },
+        {
+          "scenarioId": "sidebar-collapse",
+          "fullTitle": "Sidebar navigation collapses and expands the sidebar",
+          "state": "passed",
+          "durationMs": 1766,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/sidebar-collapse.gif",
+          "screenshots": [
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 1,
+              "label": "expanded-sidebar",
+              "path": "assets/linux/screenshots/sidebar-collapse/001.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 2,
+              "label": "collapsed-sidebar",
+              "path": "assets/linux/screenshots/sidebar-collapse/002.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 3,
+              "label": "restored-collapsed-sidebar",
+              "path": "assets/linux/screenshots/sidebar-collapse/003.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 4,
+              "label": "expanded-again",
+              "path": "assets/linux/screenshots/sidebar-collapse/004.png"
+            },
+            {
+              "scenarioId": "sidebar-collapse",
+              "frame": 5,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/sidebar-collapse/005.png"
+            }
+          ],
+          "checkpointCount": 5
+        },
+        {
+          "scenarioId": "terminal-clipboard-interrupt",
+          "fullTitle": "Terminal keyboard routing copies and pastes terminal text and interrupts with Control-C",
+          "state": "passed",
+          "durationMs": 7381,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/terminal-clipboard-interrupt.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 1,
+              "label": "terminal-selection",
+              "path": "assets/linux/screenshots/terminal-clipboard-interrupt/001.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 2,
+              "label": "copy-shortcut",
+              "path": "assets/linux/screenshots/terminal-clipboard-interrupt/002.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 3,
+              "label": "terminal-pasted",
+              "path": "assets/linux/screenshots/terminal-clipboard-interrupt/003.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 4,
+              "label": "pty-interrupted",
+              "path": "assets/linux/screenshots/terminal-clipboard-interrupt/004.png"
+            },
+            {
+              "scenarioId": "terminal-clipboard-interrupt",
+              "frame": 5,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/terminal-clipboard-interrupt/005.png"
+            }
+          ],
+          "checkpointCount": 5
+        },
+        {
+          "scenarioId": "terminal-cjk-font",
+          "fullTitle": "Terminal keyboard routing renders Chinese shell output with the configured fallback font",
+          "state": "passed",
+          "durationMs": 3075,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/terminal-cjk-font.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-cjk-font",
+              "frame": 1,
+              "label": "cjk-terminal-output",
+              "path": "assets/linux/screenshots/terminal-cjk-font/001.png"
+            },
+            {
+              "scenarioId": "terminal-cjk-font",
+              "frame": 2,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/terminal-cjk-font/002.png"
+            }
+          ],
+          "checkpointCount": 2
+        },
+        {
+          "scenarioId": "provider-markdown-links",
+          "fullTitle": "Terminal links opens wrapped link and file path output from provider Markdown and tables",
+          "state": "passed",
+          "durationMs": 9717,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/provider-markdown-links.gif",
+          "screenshots": [
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 1,
+              "label": "provider-started",
+              "path": "assets/linux/screenshots/provider-markdown-links/001.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 2,
+              "label": "provider-markdown-rendered-and-wrapped",
+              "path": "assets/linux/screenshots/provider-markdown-links/002.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 3,
+              "label": "provider-markdown-url-opened",
+              "path": "assets/linux/screenshots/provider-markdown-links/003.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 4,
+              "label": "provider-table-url-opened",
+              "path": "assets/linux/screenshots/provider-markdown-links/004.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 5,
+              "label": "provider-markdown-file-opened",
+              "path": "assets/linux/screenshots/provider-markdown-links/005.png"
+            },
+            {
+              "scenarioId": "provider-markdown-links",
+              "frame": 6,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/provider-markdown-links/006.png"
+            }
+          ],
+          "checkpointCount": 6
+        },
+        {
+          "scenarioId": "terminal-links",
+          "fullTitle": "Terminal links opens wrapped link and file path output with Control-click",
+          "state": "passed",
+          "durationMs": 5818,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/terminal-links.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-links",
+              "frame": 1,
+              "label": "terminal-links-wrapped",
+              "path": "assets/linux/screenshots/terminal-links/001.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 2,
+              "label": "url-hover-tooltip",
+              "path": "assets/linux/screenshots/terminal-links/002.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 3,
+              "label": "wrapped-url-opened",
+              "path": "assets/linux/screenshots/terminal-links/003.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 4,
+              "label": "browser-url-opened-externally",
+              "path": "assets/linux/screenshots/terminal-links/004.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 5,
+              "label": "terminal-url-opened-externally",
+              "path": "assets/linux/screenshots/terminal-links/005.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 6,
+              "label": "file-hover-tooltip",
+              "path": "assets/linux/screenshots/terminal-links/006.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 7,
+              "label": "wrapped-file-opened",
+              "path": "assets/linux/screenshots/terminal-links/007.png"
+            },
+            {
+              "scenarioId": "terminal-links",
+              "frame": 8,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/terminal-links/008.png"
+            }
+          ],
+          "checkpointCount": 8
+        },
+        {
+          "scenarioId": "terminal-render-lifecycle",
+          "fullTitle": "Terminal rendering lifecycle keeps retained terminal rendering bounded across Space switches",
+          "state": "passed",
+          "durationMs": 8491,
+          "failureStep": null,
+          "gif": "assets/linux/acceptance/terminal-render-lifecycle.gif",
+          "screenshots": [
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 1,
+              "label": "first-terminal-idle",
+              "path": "assets/linux/screenshots/terminal-render-lifecycle/001.png"
+            },
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 2,
+              "label": "second-terminal-idle",
+              "path": "assets/linux/screenshots/terminal-render-lifecycle/002.png"
+            },
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 3,
+              "label": "first-terminal-restored",
+              "path": "assets/linux/screenshots/terminal-render-lifecycle/003.png"
+            },
+            {
+              "scenarioId": "terminal-render-lifecycle",
+              "frame": 4,
+              "label": "final-state",
+              "path": "assets/linux/screenshots/terminal-render-lifecycle/004.png"
+            }
+          ],
+          "checkpointCount": 4
+        }
+      ],
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "timeSeconds": null
+      },
+      "providerContract": {
+        "status": "passed",
+        "startedAt": "2026-09-04T04:05:45.736Z",
+        "completedAt": "2026-09-04T04:06:03.667Z",
+        "packages": [
+          {
+            "provider": "claude",
+            "package": "@anthropic-ai/claude-code",
+            "pinnedVersion": "2.1.233",
+            "platformPackage": "@anthropic-ai/claude-code-linux-x64",
+            "platformPackageVersion": "2.1.233",
+            "observedVersion": "2.1.233 (Claude Code)",
+            "integrity": "passed"
+          },
+          {
+            "provider": "codex",
+            "package": "@openai/codex",
+            "pinnedVersion": "0.147.0",
+            "platformPackage": "@openai/codex-linux-x64",
+            "platformPackageVersion": "0.147.0-linux-x64",
+            "observedVersion": "codex-cli 0.147.0",
+            "integrity": "passed"
+          },
+          {
+            "provider": "copilot",
+            "package": "@github/copilot",
+            "pinnedVersion": "1.0.80",
+            "platformPackage": "@github/copilot-linux-x64",
+            "platformPackageVersion": "1.0.80",
+            "observedVersion": "GitHub Copilot CLI 1.0.80.",
+            "integrity": "passed"
+          }
+        ],
+        "checks": [
+          {
+            "id": "install-pinned-provider-clis",
+            "provider": null,
+            "kind": "download",
+            "status": "passed",
+            "durationMs": 8681,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-version",
+            "provider": "claude",
+            "kind": "version",
+            "status": "passed",
+            "durationMs": 109,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-resume-interface",
+            "provider": "claude",
+            "kind": "resume-interface",
+            "status": "passed",
+            "durationMs": 225,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-binary-integrity",
+            "provider": "claude",
+            "kind": "binary-integrity",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-version",
+            "provider": "codex",
+            "kind": "version",
+            "status": "passed",
+            "durationMs": 9,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-resume-interface",
+            "provider": "codex",
+            "kind": "resume-interface",
+            "status": "passed",
+            "durationMs": 8,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-binary-integrity",
+            "provider": "codex",
+            "kind": "binary-integrity",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-version",
+            "provider": "copilot",
+            "kind": "version",
+            "status": "passed",
+            "durationMs": 1699,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-resume-interface",
+            "provider": "copilot",
+            "kind": "resume-interface",
+            "status": "passed",
+            "durationMs": 510,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-binary-integrity",
+            "provider": "copilot",
+            "kind": "binary-integrity",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-wrapper-cold",
+            "provider": "claude",
+            "kind": "wrapper-cold",
+            "status": "passed",
+            "durationMs": 180,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-wrapper-resume",
+            "provider": "claude",
+            "kind": "wrapper-resume",
+            "status": "passed",
+            "durationMs": 46,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-wrapper-cold",
+            "provider": "codex",
+            "kind": "wrapper-cold",
+            "status": "passed",
+            "durationMs": 47,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-wrapper-resume",
+            "provider": "codex",
+            "kind": "wrapper-resume",
+            "status": "passed",
+            "durationMs": 46,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-wrapper-cold",
+            "provider": "copilot",
+            "kind": "wrapper-cold",
+            "status": "passed",
+            "durationMs": 48,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-wrapper-resume",
+            "provider": "copilot",
+            "kind": "wrapper-resume",
+            "status": "passed",
+            "durationMs": 46,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-local-model-cold",
+            "provider": "claude",
+            "kind": "local-model",
+            "status": "passed",
+            "durationMs": 1216,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-local-model-resume",
+            "provider": "claude",
+            "kind": "local-model-resume",
+            "status": "passed",
+            "durationMs": 538,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-real-hook-delivery",
+            "provider": "claude",
+            "kind": "hook-delivery",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "claude-resume-hook",
+            "provider": "claude",
+            "kind": "resume-hook",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-local-model",
+            "provider": "codex",
+            "kind": "local-model",
+            "status": "passed",
+            "durationMs": 1177,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-local-model-resume",
+            "provider": "codex",
+            "kind": "local-model-resume",
+            "status": "passed",
+            "durationMs": 563,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-real-hook-delivery",
+            "provider": "codex",
+            "kind": "hook-delivery",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "codex-resume-hook",
+            "provider": "codex",
+            "kind": "resume-hook",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-local-model-cold",
+            "provider": "copilot",
+            "kind": "local-model",
+            "status": "passed",
+            "durationMs": 907,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-local-model-resume",
+            "provider": "copilot",
+            "kind": "local-model-resume",
+            "status": "passed",
+            "durationMs": 883,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-real-hook-delivery",
+            "provider": "copilot",
+            "kind": "hook-delivery",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          },
+          {
+            "id": "copilot-resume-hook",
+            "provider": "copilot",
+            "kind": "resume-hook",
+            "status": "passed",
+            "durationMs": 0,
+            "exitCode": 0
+          }
+        ]
+      },
+      "media": {
+        "gifs": [
+          {
+            "scenarioId": "claude-resume",
+            "path": "assets/linux/acceptance/claude-resume.gif"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "path": "assets/linux/acceptance/cli-theme-switch.gif"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "path": "assets/linux/acceptance/codex-resume.gif"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "path": "assets/linux/acceptance/ghcp-resume.gif"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "path": "assets/linux/acceptance/markdown-edit-preview.gif"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "path": "assets/linux/acceptance/provider-markdown-links.gif"
+          },
+          {
+            "scenarioId": "settings-update",
+            "path": "assets/linux/acceptance/settings-update.gif"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "path": "assets/linux/acceptance/sidebar-collapse.gif"
+          },
+          {
+            "scenarioId": "terminal-cjk-font",
+            "path": "assets/linux/acceptance/terminal-cjk-font.gif"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "path": "assets/linux/acceptance/terminal-clipboard-interrupt.gif"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "path": "assets/linux/acceptance/terminal-links.gif"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "path": "assets/linux/acceptance/terminal-render-lifecycle.gif"
+          }
+        ],
+        "screenshots": [
+          {
+            "scenarioId": "claude-resume",
+            "frame": 1,
+            "label": "space-created",
+            "path": "assets/linux/screenshots/claude-resume/001.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 2,
+            "label": "cli-started",
+            "path": "assets/linux/screenshots/claude-resume/002.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 3,
+            "label": "first-model-response",
+            "path": "assets/linux/screenshots/claude-resume/003.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 4,
+            "label": "cli-closed",
+            "path": "assets/linux/screenshots/claude-resume/004.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 5,
+            "label": "cli-resumed",
+            "path": "assets/linux/screenshots/claude-resume/005.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 6,
+            "label": "resumed-model-response",
+            "path": "assets/linux/screenshots/claude-resume/006.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 7,
+            "label": "board-rendered",
+            "path": "assets/linux/screenshots/claude-resume/007.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 8,
+            "label": "board-interacted",
+            "path": "assets/linux/screenshots/claude-resume/008.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 9,
+            "label": "cli-stopped",
+            "path": "assets/linux/screenshots/claude-resume/009.png"
+          },
+          {
+            "scenarioId": "claude-resume",
+            "frame": 10,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/claude-resume/010.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 1,
+            "label": "claude-dark",
+            "path": "assets/linux/screenshots/cli-theme-switch/001.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 2,
+            "label": "claude-light",
+            "path": "assets/linux/screenshots/cli-theme-switch/002.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 3,
+            "label": "codex-dark",
+            "path": "assets/linux/screenshots/cli-theme-switch/003.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 4,
+            "label": "codex-light",
+            "path": "assets/linux/screenshots/cli-theme-switch/004.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 5,
+            "label": "copilot-dark",
+            "path": "assets/linux/screenshots/cli-theme-switch/005.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 6,
+            "label": "copilot-light",
+            "path": "assets/linux/screenshots/cli-theme-switch/006.png"
+          },
+          {
+            "scenarioId": "cli-theme-switch",
+            "frame": 7,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/cli-theme-switch/007.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 1,
+            "label": "space-created",
+            "path": "assets/linux/screenshots/codex-resume/001.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 2,
+            "label": "cli-started",
+            "path": "assets/linux/screenshots/codex-resume/002.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 3,
+            "label": "first-model-response",
+            "path": "assets/linux/screenshots/codex-resume/003.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 4,
+            "label": "ephemeral-side-chat-returned",
+            "path": "assets/linux/screenshots/codex-resume/004.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 5,
+            "label": "cli-closed",
+            "path": "assets/linux/screenshots/codex-resume/005.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 6,
+            "label": "cli-resumed",
+            "path": "assets/linux/screenshots/codex-resume/006.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 7,
+            "label": "resumed-model-response",
+            "path": "assets/linux/screenshots/codex-resume/007.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 8,
+            "label": "board-rendered",
+            "path": "assets/linux/screenshots/codex-resume/008.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 9,
+            "label": "board-interacted",
+            "path": "assets/linux/screenshots/codex-resume/009.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 10,
+            "label": "persistent-fork-bound",
+            "path": "assets/linux/screenshots/codex-resume/010.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 11,
+            "label": "clear-session-bound",
+            "path": "assets/linux/screenshots/codex-resume/011.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 12,
+            "label": "cli-stopped",
+            "path": "assets/linux/screenshots/codex-resume/012.png"
+          },
+          {
+            "scenarioId": "codex-resume",
+            "frame": 13,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/codex-resume/013.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 1,
+            "label": "space-created",
+            "path": "assets/linux/screenshots/ghcp-resume/001.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 2,
+            "label": "cli-started",
+            "path": "assets/linux/screenshots/ghcp-resume/002.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 3,
+            "label": "first-model-response",
+            "path": "assets/linux/screenshots/ghcp-resume/003.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 4,
+            "label": "cli-closed",
+            "path": "assets/linux/screenshots/ghcp-resume/004.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 5,
+            "label": "cli-resumed",
+            "path": "assets/linux/screenshots/ghcp-resume/005.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 6,
+            "label": "resumed-model-response",
+            "path": "assets/linux/screenshots/ghcp-resume/006.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 7,
+            "label": "board-rendered",
+            "path": "assets/linux/screenshots/ghcp-resume/007.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 8,
+            "label": "board-interacted",
+            "path": "assets/linux/screenshots/ghcp-resume/008.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 9,
+            "label": "cli-stopped",
+            "path": "assets/linux/screenshots/ghcp-resume/009.png"
+          },
+          {
+            "scenarioId": "ghcp-resume",
+            "frame": 10,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/ghcp-resume/010.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 1,
+            "label": "initial-preview",
+            "path": "assets/linux/screenshots/markdown-edit-preview/001.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 2,
+            "label": "dirty-edit",
+            "path": "assets/linux/screenshots/markdown-edit-preview/002.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 3,
+            "label": "edited-preview",
+            "path": "assets/linux/screenshots/markdown-edit-preview/003.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 4,
+            "label": "saved-preview",
+            "path": "assets/linux/screenshots/markdown-edit-preview/004.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 5,
+            "label": "browser-right",
+            "path": "assets/linux/screenshots/markdown-edit-preview/005.png"
+          },
+          {
+            "scenarioId": "markdown-edit-preview",
+            "frame": 6,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/markdown-edit-preview/006.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 1,
+            "label": "provider-started",
+            "path": "assets/linux/screenshots/provider-markdown-links/001.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 2,
+            "label": "provider-markdown-rendered-and-wrapped",
+            "path": "assets/linux/screenshots/provider-markdown-links/002.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 3,
+            "label": "provider-markdown-url-opened",
+            "path": "assets/linux/screenshots/provider-markdown-links/003.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 4,
+            "label": "provider-table-url-opened",
+            "path": "assets/linux/screenshots/provider-markdown-links/004.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 5,
+            "label": "provider-markdown-file-opened",
+            "path": "assets/linux/screenshots/provider-markdown-links/005.png"
+          },
+          {
+            "scenarioId": "provider-markdown-links",
+            "frame": 6,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/provider-markdown-links/006.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 1,
+            "label": "settings-open",
+            "path": "assets/linux/screenshots/settings-update/001.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 2,
+            "label": "dark-theme",
+            "path": "assets/linux/screenshots/settings-update/002.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 3,
+            "label": "default-browser-links-changed",
+            "path": "assets/linux/screenshots/settings-update/003.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 4,
+            "label": "update-check-result",
+            "path": "assets/linux/screenshots/settings-update/004.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 5,
+            "label": "settings-reopened",
+            "path": "assets/linux/screenshots/settings-update/005.png"
+          },
+          {
+            "scenarioId": "settings-update",
+            "frame": 6,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/settings-update/006.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 1,
+            "label": "expanded-sidebar",
+            "path": "assets/linux/screenshots/sidebar-collapse/001.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 2,
+            "label": "collapsed-sidebar",
+            "path": "assets/linux/screenshots/sidebar-collapse/002.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 3,
+            "label": "restored-collapsed-sidebar",
+            "path": "assets/linux/screenshots/sidebar-collapse/003.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 4,
+            "label": "expanded-again",
+            "path": "assets/linux/screenshots/sidebar-collapse/004.png"
+          },
+          {
+            "scenarioId": "sidebar-collapse",
+            "frame": 5,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/sidebar-collapse/005.png"
+          },
+          {
+            "scenarioId": "terminal-cjk-font",
+            "frame": 1,
+            "label": "cjk-terminal-output",
+            "path": "assets/linux/screenshots/terminal-cjk-font/001.png"
+          },
+          {
+            "scenarioId": "terminal-cjk-font",
+            "frame": 2,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/terminal-cjk-font/002.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 1,
+            "label": "terminal-selection",
+            "path": "assets/linux/screenshots/terminal-clipboard-interrupt/001.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 2,
+            "label": "copy-shortcut",
+            "path": "assets/linux/screenshots/terminal-clipboard-interrupt/002.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 3,
+            "label": "terminal-pasted",
+            "path": "assets/linux/screenshots/terminal-clipboard-interrupt/003.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 4,
+            "label": "pty-interrupted",
+            "path": "assets/linux/screenshots/terminal-clipboard-interrupt/004.png"
+          },
+          {
+            "scenarioId": "terminal-clipboard-interrupt",
+            "frame": 5,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/terminal-clipboard-interrupt/005.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 1,
+            "label": "terminal-links-wrapped",
+            "path": "assets/linux/screenshots/terminal-links/001.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 2,
+            "label": "url-hover-tooltip",
+            "path": "assets/linux/screenshots/terminal-links/002.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 3,
+            "label": "wrapped-url-opened",
+            "path": "assets/linux/screenshots/terminal-links/003.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 4,
+            "label": "browser-url-opened-externally",
+            "path": "assets/linux/screenshots/terminal-links/004.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 5,
+            "label": "terminal-url-opened-externally",
+            "path": "assets/linux/screenshots/terminal-links/005.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 6,
+            "label": "file-hover-tooltip",
+            "path": "assets/linux/screenshots/terminal-links/006.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 7,
+            "label": "wrapped-file-opened",
+            "path": "assets/linux/screenshots/terminal-links/007.png"
+          },
+          {
+            "scenarioId": "terminal-links",
+            "frame": 8,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/terminal-links/008.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 1,
+            "label": "first-terminal-idle",
+            "path": "assets/linux/screenshots/terminal-render-lifecycle/001.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 2,
+            "label": "second-terminal-idle",
+            "path": "assets/linux/screenshots/terminal-render-lifecycle/002.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 3,
+            "label": "first-terminal-restored",
+            "path": "assets/linux/screenshots/terminal-render-lifecycle/003.png"
+          },
+          {
+            "scenarioId": "terminal-render-lifecycle",
+            "frame": 4,
+            "label": "final-state",
+            "path": "assets/linux/screenshots/terminal-render-lifecycle/004.png"
+          }
+        ]
+      }
+    }
+  ]
+}
