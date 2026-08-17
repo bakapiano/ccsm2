@@ -70,6 +70,14 @@ export class OscSequenceStripper {
       options.preserveDynamicColorQueries ?? false;
   }
 
+  reset(): void {
+    this.#inOsc = false;
+    this.#inCsi = false;
+    this.#pendingEsc = false;
+    this.#csiBytes = [];
+    this.#oscBytes = null;
+  }
+
   push(buffer: Uint8Array): Uint8Array {
     const output: number[] = [];
     for (let index = 0; index < buffer.length; index += 1) {

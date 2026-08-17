@@ -3212,11 +3212,23 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 }
 
 .directory-address-form {
+  display: flex;
+  gap: 4px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
-.directory-address,
+.directory-address {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.directory-address-submit {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+}
+
 .directory-create-form input {
   width: 100%;
 }

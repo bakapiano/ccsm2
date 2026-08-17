@@ -1,243 +1,260 @@
-# 自动化测试架构
+# GitHub Actions 测试门禁
 
-本文档定义可重复、无人值守、可进入GitHub Actions和发布门禁的自动化测试。具体功能用例与被验证代码共同维护。
+本文定义 CCSM 公开仓库的必需测试门禁。每个 Pull Request 在 GitHub 托管的 Windows 与 Linux 桌面 runner 上分别构建并启动真实 Tauri executable，通过 [`@wdio/tauri-service`](https://v2.tauri.app/develop/tests/webdriver/) 操作主 WebView，并上传可供 reviewer 验收的 GIF 与测试结果。
 
-开发者按需执行的`playwright-cli`、DevTools、人工交互和问题探索归入[Development Testing](001-development.md)。
+## 合并条件
 
-## 运行结构
+受保护分支配置以下必需检查：
 
-```text
-Rust tests          cargo test --workspace
-TypeScript tests    Vitest
-Contract tests      Rust + TypeScript shared fixtures
-Desktop tests       WDIO + @wdio/tauri-service
-Packaging smoke     platform workflow scripts
-        ↓
-GitHub Actions OS/job matrix
-        ↓
-native job status + uploaded artifacts
-```
+- `Verify (windows-2022)`
+- `Verify (ubuntu-24.04)`
+- `desktop-e2e-windows`
+- `desktop-e2e-linux`
 
-各测试运行器直接发现和执行测试。GitHub Actions定义平台矩阵、执行顺序、secrets条件、超时和artifact保留策略。
+四个检查全部成功后，reviewer 检查两个平台的验收证据并批准 PR。自动断言负责确定行为正确性，人工验收负责检查布局、交互过程和平台视觉结果。
 
-测试系统遵循以下原则：
+本阶段门禁矩阵固定为 Windows 与 Linux，两个平台具有同等门禁权重。macOS 是目标平台，当前 Desktop Gate 状态为 Planned；后续 macOS job 复用相同 harness、scenarios 和 artifact contract。
 
-- 较低层验证纯逻辑和contract；较高层验证真实进程、OS和UI组合。
-- 每个测试创建独立临时目录并清理自己启动的资源。
-- 确定性fixture提供主回归证据；真实provider smoke补充兼容性证据。
-- 测试失败保留日志、截图或状态副本，成功运行使用测试运行器的标准输出。
-- 平台差异由GitHub Actions matrix和平台测试模块显式表达。
-
-## 测试层次
-
-| Layer          | 验证边界                                                               | 运行环境                     |
-| -------------- | ---------------------------------------------------------------------- | ---------------------------- |
-| L0 Static      | schema、types、format、license、dependency policy                      | compiler/linter              |
-| L1 Unit        | reducer、parser、state machine、pure adapter logic                     | in-memory fixtures           |
-| L2 Contract    | Rust/TypeScript protocol、storage、provider contracts                  | local component tests        |
-| L3 Integration | AppBackend、platform adapters、PTY、filesystem、Git、process lifecycle | 真实本地进程和临时资源       |
-| L4 Desktop     | Tauri host、主WebView、Dockview、native surface state、用户流程        | Tauri test build + WebDriver |
-
-功能从最低可证明层开始验证。跨组件行为逐层上移，高层保留关键happy path和风险路径。
-
-L0 dependency-boundary检查解析Cargo metadata：`ccsm-core`的依赖闭包中不得出现Tauri；`ccsm-core/ccsm-platform`源码执行forbidden-import检查，阻止BrowserSurface、window、WebView和renderer类型进入backend crates。TypeScript lint禁止desktop transport adapter之外的代码直接调用raw Tauri invoke/event API。
-
-L2 storage schema snapshot验证runtime、ownership、resume mutex、cleanup queue和独立native binding table不会进入`data.db`，并验证`cli_sessions(provider, native_session_id)`的partial uniqueness。Schema test同时验证layout状态仅存在于`space_layouts`，全局window state仅存在于`settings`。L3并发resume测试验证同一native Session只spawn一次；restart测试验证RuntimeManager从空状态启动，并依据持久化`desired_state + native_session_id`执行恢复。
-
-Cache schema test验证仅存在`git_repositories_cache`和`git_status_cache`，并确认scan generation不会跨进程持久化。
-
-Hook integration tests覆盖认证成功、malformed payload、错误token、旧runtime ID和缺失Hook。缺失Hook场景验证CLI继续运行、退出后binding进入unavailable、重启不自动创建新provider Session，并确认没有provider directory扫描行为。
-
-Agent activity tests覆盖Hook事件状态机、turn关闭后的迟到事件、PTY exit、跨Space Agent snapshot和增量事件。Desktop scenario点击左下Agent并验证Space、Tab和终端焦点同步切换；切换和分屏时验证当前Space内可见Agent的选中背景同步；关闭Agent CLI Tab时验证Panel在确认完成前保持挂载，取消后保留Tab与Session，确认后进程退出、Tab与Session从`data.db`删除且Agent条目消失；普通Shell Tab关闭不展示Agent警告。Browser overflow scenario从箭头菜单激活隐藏Browser Tab，并断言native surface bounds位于workspace header下方。
-
-Browser occlusion tests验证capture、DOM截图解码、native hide、native show和截图释放的顺序；覆盖多个重叠浮层与capture期间快速关闭。Desktop scenario在Browser页面打开New Tab菜单、Tab右键菜单、overflow菜单和Modal，断言静态截图保持原画面且关闭后live页面继续运行。
-
-Application dialog tests覆盖自定义文本输入、必填校验、危险操作、焦点、`Escape`取消，并扫描生产TypeScript以拒绝浏览器原生`alert`、`confirm`和`prompt`调用。
-
-Space tree tests覆盖File Explorer风格的twistie、无前置图标的Space叶节点和22px行网格。Desktop scenario将Space拖入另一个Folder和Unfiled，验证drop target、committed `folder_id/folder_order`及重绘后的树位置。Sidebar layout tests覆盖Spaces/Agents separator的pointer、键盘、持久化与双侧最小高度。
-
-File Editor tests固定CodeMirror 6与Vditor 3依赖边界，并验证Provider不重新引入自制textarea、高亮、搜索或history实现。Desktop scenario覆盖普通文本的CodeMirror DOM挂载、Unicode编辑、保存、Dirty关闭确认和Space切换后的EditorState保留；Markdown scenario覆盖Vditor IR挂载、编辑保存、代码高亮、KaTeX、Mermaid和Graphviz渲染。
-
-Hang-resilience回归使用隔离Linux Tauri profile分阶段运行，并将每项指标写入JSON artifact：
-
-- 1,200目录fixture验证host picker每页200行、快速导航取消，以及Explorer加载完整模型后DOM row window保持有界。
-- 40,000行untracked TypeScript diff验证后端行数上限、按视口读取和diff DOM row window。
-- `yes`连续PTY输出验证未确认bytes保持在512 KiB credit附近、renderer heartbeat推进，以及忽略TERM的process在3秒shared cleanup deadline内返回。
-- 近5 MiB文件执行256次增量transaction，验证文档长度、renderer heartbeat和输入耗时。
-- 持久化61个File Editor Tabs并冷启动，验证首屏mounted renderer与每帧materialization上限，再通过overflow菜单按需实例化目标Tab。
-
-WDIO使用`prepare → setup → editor-tabs → recovery`四个独立应用生命周期；各阶段复用同一隔离`CCSM_DATA_DIR`并将截图、driver日志和`stress-*.json`写入`CCSM_E2E_ARTIFACT_DIR`。
-
-L3 Space切换测试验证相同root复用ActiveRootContext、不同root关闭旧watcher并激活新context，同时确认inactive Space的CLI runtime和Hook继续运行。
-
-L3 process lifecycle测试启动受application Job保护的owner与leaf进程，强杀owner并断言leaf在超时内退出。PTY lifecycle测试验证重复shutdown保持幂等，并在返回前完成process tree终止、线程join和PseudoConsole关闭。shim scavenger测试验证死亡PID目录被清理，活跃PID、符号链接和无关目录得到保留。L4退出场景检查WebView2、OpenConsole、CLI、Hook endpoint和watcher均不再持有进程或handle。
-
-L4通过WebDriver操作主WebView DOM，并通过测试接口读取native surface的bounds、visibility、focus和lifecycle。真实系统输入法候选窗、硬件交互和人工视觉判断进入Development Testing。
-
-## 命令入口
-
-仓库提供稳定的顶层命令：
+## Workflow 拓扑
 
 ```text
-test:static       L0 checks
-test:rust         cargo test --workspace
-test:frontend     Vitest run
-test:contract     shared Rust/TypeScript contract checks
-test:integration  L3 platform integration tests
-test:desktop      WDIO desktop scenarios
-test:all          current-platform L0-L4
+Pull Request / main push
+        │
+        ├── Verify (windows-2022 / ubuntu-24.04)
+        │       └── formatting + contracts + check + unit/integration tests
+        │
+        ├── desktop-e2e-windows ── windows-2022
+        │       ├── test E2E-only backend
+        │       ├── build Windows E2E executable
+        │       ├── pinned real-provider CLI contract
+        │       ├── WDIO desktop scenarios
+        │       ├── acceptance GIF + result files
+        │       └── upload Actions Artifact (7 days)
+        │
+        └── desktop-e2e-linux ──── ubuntu-24.04 + virtual display
+                ├── test E2E-only backend
+                ├── build Linux E2E executable
+                ├── pinned real-provider CLI contract
+                ├── WDIO desktop scenarios
+                ├── acceptance GIF + result files
+                └── upload Actions Artifact (7 days)
 ```
 
-命令可以由package scripts或仓库task runner实现，并向底层工具透传filter和日志级别。CI和本地开发调用同一入口。
+Verify matrix 与两个 Desktop E2E jobs 并行执行。Verify matrix 负责静态检查和默认 feature 测试；每个 Desktop job 独立完成依赖安装、E2E 构建、应用启动、场景、teardown 和证据上传，并消费本 job 构建的产物。
 
-## 跨语言Contract
+## 平台 job 契约
 
-Rust `ccsm-core`定义AppBackend DTO，`ccsm-desktop`定义Browser host DTO；两组model分别生成TypeScript types、JSON Schema和共享fixtures：
+| Job                   | Runner         | 显示环境                  | 必需输出                     |
+| --------------------- | -------------- | ------------------------- | ---------------------------- |
+| `desktop-e2e-windows` | `windows-2022` | runner desktop session    | test result、GIF、截图、日志 |
+| `desktop-e2e-linux`   | `ubuntu-24.04` | Xvfb/虚拟 display session | test result、GIF、截图、日志 |
+
+每个 job 按固定顺序执行：
 
 ```text
-crates/ccsm-core/src/dto/             backend Rust DTOs
-crates/ccsm-desktop/src/browser/dto/  desktop host Rust DTOs
-packages/protocol/generated/          generated TypeScript modules
-protocol/schema/                      generated wire schemas
-protocol/fixtures/                    shared golden vectors
+initialize failure evidence
+→ checkout
+→ install pinned toolchains and locked dependencies
+→ test E2E-only backend
+→ pnpm test:desktop:build
+→ pnpm test:provider-cli-contract
+→ pnpm test:desktop:ci
+→ finalize acceptance evidence
+→ upload artifact
+→ report job status
 ```
 
-CI重新生成artifacts，并通过clean diff验证生成结果与源码同步。
+`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。E2E-only Cargo tests 先执行，平台 build 最后写入带 Tauri E2E config overlay 的 executable。`pnpm test:provider-cli-contract` 使用该 executable 的生产 wrapper 验证固定版本真实 CLI。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
+
+job 开始时创建最小 `workflow-state.json`。测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。finalizer 将 workflow 状态、display cleanup 和 runner 结果汇总为一个最终结论；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
+
+## Desktop 驱动方式
+
+所有 Desktop Scenarios 使用 Tauri 官方推荐的 embedded provider：
 
 ```text
-L0  generated artifacts保持同步
-L1  Rust/TypeScript codecs分别通过unit tests
-L2  shared golden fixtures + bidirectional conformance
-L3  Tauri adapter与真实AppBackend/platform/BrowserSurfaceManager集成
+WDIO test runner
+→ @wdio/tauri-service
+→ launch platform executable
+→ tauri-plugin-wdio-webdriver
+→ main Tauri WebView
+→ DOM interaction and assertions
 ```
 
-L2使用两个runner交叉验证真实encoder/decoder：
+共享配置的核心固定为：
+
+```ts
+export const config: WebdriverIO.Config = {
+  maxInstances: 1,
+  services: [
+    [
+      "tauri",
+      {
+        appBinaryPath: process.env.CCSM_E2E_APP_BINARY,
+        driverProvider: "embedded",
+      },
+    ],
+  ],
+};
+```
+
+`tauri-plugin-wdio-webdriver` 提供 embedded WebDriver server。`tauri-plugin-wdio` 提供 Tauri command 执行、IPC mocking 以及前后端日志采集。Cargo `e2e` feature 启用两个插件，测试构建包含对应 E2E capability。
+
+Windows 与 Linux 共用场景、selector、assertion、fixture 和 reporter。平台模块负责 executable 路径、显示环境、完整应用窗口截图及进程清理。
+
+## 测试隔离
+
+每次 job 创建独立的：
+
+- `CCSM_DATA_DIR`
+- cache/runtime directory
+- fixture Space root
+- Browser profile
+- artifact directory
+- `run_id`
+
+公开仓库必需门禁的全部输入由固定版本 provider CLI、确定性 model response、合成 API key 和隔离目录组成。真实账户验收归属受保护的专项 workflow。
+
+Windows 与 Linux 都直接启动本 job 构建的 executable，保留不同 WebView 版本的资源路由；运行前记录同路径进程基线。E2E feature 将 runtime shim 放入隔离 data root。Space、provider HOME 与工作目录位于 Git repository 外侧的同卷 sibling runtime，`GIT_CEILING_DIRECTORIES` 将 discovery 边界固定在该 runtime。teardown 结束后按 ownership root、显式 child PID、源 executable 新增 PID 与进程命令行检查完整进程集合，记录 graceful cleanup、强制回收前后的信息，并写入 `process-cleanup.json`。Linux workflow finalizer 在 `xvfb-run` 返回后把 display 检查写入 `display-cleanup.json`。
+
+## 真实 Provider CLI 与 model API stub
+
+必需门禁启动 npm lockfile 固定的 Claude Code、Codex 与 GitHub Copilot CLI 原生 executable。三家 CLI 都经过生产 CLI shim、PTY、Hook reporter、native session binding 和 resume 参数组装。runner 上的 loopback HTTP server 实现 Anthropic Messages 与 OpenAI Responses 协议，并向真实 CLI 返回确定性 model response。
+
+`CCSM_E2E_MODEL_STUB_FILE` 指向本次运行的 JSON 配置。测试在发送 prompt 前按 `provider + prompt` 设置返回内容；第二轮响应在 resumed CLI 启动后写入，stub 在 HTTP request 到达时读取最新配置。`CCSM_E2E_MODEL_STUB_LOG` 记录 provider、model、prompt、response 和 API path，供断言及 artifact 验收。
+
+Claude 从生产 shim 生成的 `--session-id` 建立初始绑定。Codex 与 GitHub Copilot 通过真实 `SessionStart` Hook 建立绑定。Stop/Start 后的 CLI 使用生产 resume 参数恢复同一 native session；恢复后的 TUI 必须显示首轮 prompt/response，第二轮 API request 必须携带首轮 inline history 或引用首轮唯一 response ID。E2E 环境启用严格 Hook reporter，Hook delivery 失败直接使场景失败。
+
+## 固定版本 Provider CLI contract
+
+每个平台 job 在 Desktop Scenarios 前从 npm 官方 registry 安装测试专用的 Claude Code、Codex 与 GitHub Copilot CLI。`apps/desktop/e2e/provider-cli-contract/package.json` 固定顶层版本，`package-lock.json` 固定平台包、下载地址和 integrity。`npm ci --ignore-scripts` 执行完整性校验并选择当前 runner 的原生 x64 包。
+
+contract 对每家 provider 执行：
+
+1. 原生 executable 的版本检查。
+2. `resume`、session 与 Hook/plugin 参数接口检查。
+3. argv-capture executable 对 CCSM 生产 `ccsm-provider` wrapper 的 cold-start 完整参数做精确断言。
+4. argv-capture executable 对生产 wrapper 注入的 provider session selection、Hook settings/plugin 与 native session ID 做精确断言。
+5. Claude 真实 CLI 通过本地 Anthropic stub 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
+6. Codex 真实 CLI 通过本地 Responses API stub 完成 cold prompt、native session resume、第二轮 prompt 与 `source=resume` Hook delivery。
+7. GitHub Copilot 真实 CLI 通过 BYOK/offline 本地 Responses API 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
+
+执行环境使用显式 OS/display allowlist、隔离 HOME 与合成 API key。loopback stub 校验每个模型请求携带合成认证；三家的 model base URL 指向 runner loopback stub，辅助 HTTP 客户端收到 closed-loopback proxy 设置。package lockfile、平台原生版本字符串与 executable SHA-256 共同固定测试字节。真实 CLI executable 位于独立安装目录，工作目录位于 Git repository 外的 sibling runtime，job 生命周期负责清理；artifact 保存 `provider-cli-contract.json` 与 model-stub JSONL，其中包含固定版本、实际版本、二进制 SHA-256、模型请求与逐项结果。
+
+该 contract 提供真实发行版的参数兼容证据。下方三条 Desktop Scenarios 提供确定性的完整对话、Hook、session binding 与 resume 行为证据。受保护的手动或 nightly workflow 管理需要真实账户的 provider 对话。
+
+门禁包含三条独立场景：
+
+1. 创建 Space、创建 Claude CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+
+Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 WebView 的控制；对应测试仍创建生产默认 Browser Tab 数据。native Browser child 的 bounds、visibility 与 lifecycle 验收列入后续独立平台套件。
+
+## 自动断言
+
+当前自动门禁覆盖：
+
+1. executable 成功启动且主 WebView ready。
+2. 用户通过可见目录选择、CLI 按钮与真实 WebDriver keyboard action 创建 Space 和三种 CLI。
+3. 每种 CLI 收到按 prompt 动态配置的固定 model response。
+4. Stop 后再次 Start 使用同一 native session，第二轮 prompt 正常返回。
+5. 三家固定版本真实 CLI 接受当前 resume 接口与生产 wrapper 参数。
+6. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
+
+场景从用户可观察结果断言。内部诊断状态补充失败原因。
+
+## 人工验收证据
+
+每个平台 job 都生成一个独立 artifact：
 
 ```text
-TypeScript encode → Rust decode/re-encode → TypeScript assert
-Rust encode → TypeScript decode/re-encode → Rust assert
+desktop-e2e-windows-<run_id>
+desktop-e2e-linux-<run_id>
 ```
 
-Golden fixtures覆盖request、response、event、error、optional/null/missing field、unknown kind、Unicode/path和尺寸边界。Rust与TypeScript对同一fixture执行decode、normalize和encode。
-
-PTY byte fixtures覆盖分段到达、合并到达、空payload、Unicode多字节边界和有序转发。Tauri commands/events/Channel使用生成DTO和相同byte fixtures。Browser host fixtures覆盖create/close/bounds/navigation/load failure。Future Web adapter仅复用core fixtures，并在实现时增加WebSocket framing、authentication和reconnect tests。
-
-Desktop contract tests验证mutation command返回committed result且不发送镜像event。Async tests交错Start Session response与`live/exited/lost` event，验证同一runtime ID不会从后续状态回退到`starting`。Event tests覆盖subscribe-before-snapshot、加载期间buffering、幂等重复event和renderer reload后的完整snapshot恢复。
-
-Filesystem contract tests验证`setWatchScope/clearWatchScope`仅管理监听范围，所有change hints作为`AppEvent`通过统一`DesktopEventStream`到达。
-
-Runtime、Git scan和layout fixtures分别验证runtime ID不匹配、stale scan result和stale layout write会被拒绝。Rust exhaustive `match`与TypeScript discriminated union `assertNever`守住新增message kind的dispatch。
-
-## TestContext
-
-测试共享一个轻量`TestContext` helper：
+内部结构固定为：
 
 ```text
-run_id
-temporary data/cache/runtime paths
-test Space root and provider home
-spawned process handles
-artifact directory
+manifest.json
+result.json
+junit.xml
+acceptance/
+  <scenario-id>.gif
+screenshots/
+  <scenario-id>/<step>.png
+logs/
+  wdio.log
+  frontend.log
+  backend.log
+process-cleanup.json
+display-cleanup.json
+credential-scan.json
+log-diagnostics.json
+provider-cli-contract.json
+workflow-state.json
 ```
 
-Rust通过RAII drop和显式async shutdown清理资源。TypeScript通过`afterEach/afterAll`执行对应cleanup。每个测试直接持有自己的TestContext。
+`manifest.json` 记录 commit SHA、workflow run、平台、架构、应用版本、WebView 版本、最终 gate 状态、cleanup 状态、场景列表以及文件 SHA-256。`result.json` 记录每个场景的 ID、passed/failed、持续时间和失败步骤。`log-diagnostics.json` 分别计数 Windows embedded driver 的 nullable-u32 warning 与 Linux Xvfb 的 AT-SPI/DRI3 warning，并让未登记的 frontend/backend error 进入失败结果。runner 或 teardown 失败会追加结构化 runner failure，确保 job、result、manifest 和 Actions Summary 使用同一个最终结论。
 
-TestContext提供以下基础操作：
+GIF 由场景中的有名称验收 checkpoint 生成，按操作顺序展示启动、关键输入、状态变化和最终结果：
 
-- 创建隔离目录、IPC endpoint名称和测试ID。
-- 启动并记录本测试创建的进程树。
-- 将结构化日志、截图和数据库副本写入artifact目录。
-- 在teardown中关闭WebViews、PTY、进程和临时文件。
-- 为I/O失败、进程退出和时间控制提供局部test doubles。
+- DOM 场景使用 WebDriver screenshot。
+- 包含 native child surface 的场景使用完整应用窗口 screenshot。
+- GIF 使用固定尺寸和低帧率，画面标记平台、场景名称及 checkpoint。
+- 失败场景保留失败前后的可用画面，并在最后一帧标记失败步骤；GIF 生成错误写入独立诊断文件并保留原始测试错误。
 
-领域fixture由普通builder或静态文件提供。领域测试直接选择所需fixture，无全局registry或manifest。
+GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据，E2E status bar 使用 `<E2E_SPACE_ROOT>` 标签。上传前对 JSON、JSONL、XML、TXT 与日志去除 NUL，规范化 workspace/temp 路径并清理 token；credential scan 命中会使 gate 失败并写入 `credential-scan.json`。`logs/wdio.log` 是跨平台人工诊断的规范化入口。
 
-## Fixtures
+## Artifact 上传
 
-```text
-ProcessFixture       shell、CLI/provider、child tree、output behavior
-FilesystemFixture    Space root、files、permissions、path shapes
-RepositoryFixture    repository layout、markers、status state
-BrowserFixture       navigation、storage、focus behavior
-PersistenceFixture   Space/Tab/session/database snapshots
-ProtocolFixture      requests、events、binary bytes、golden schemas
+artifact 上传使用仓库锁定的 `actions/upload-artifact` 版本，公开仓库的验收证据保留 7 天：
+
+```yaml
+- name: Upload desktop E2E evidence
+  if: always()
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  with:
+    name: desktop-e2e-${{ env.CCSM_E2E_PLATFORM }}-${{ github.run_id }}
+    path: test-results/desktop/${{ env.CCSM_E2E_PLATFORM }}/
+    retention-days: 7
+    compression-level: 0
+    if-no-files-found: error
 ```
 
-静态fixture保持immutable。每个测试将输入复制或materialize到自己的TestContext目录。fixture之间使用测试代码中的稳定logical IDs引用。
+PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短上传时间。Actions run summary 显示平台结果、失败场景和 artifact 名称。
 
-`data.db`为每个已发布Schema版本保留golden fixture。Data contract tests验证最新AppBackend能够打开、增量migration并读取所有旧fixture；Schema lint检查durable table/column语义、migration幂等性和`_cache` table重建。
+## 人工验收流程
 
-确定性provider fixture用于PR回归。真实Claude/Codex/Copilot使用独立Credentialed Smoke workflow。
+Reviewer 在批准 PR 前完成：
 
-## Desktop自动化
+1. 确认 Verify matrix、`desktop-e2e-windows` 与 `desktop-e2e-linux` 均成功。
+2. 从同一次 workflow run 下载两个 artifact。
+3. 打开各平台 `result.json`，确认预期场景完整执行。
+4. 查看 `acceptance/*.gif`，检查关键操作、布局和最终状态。
+5. 对涉及 native surface 的改动检查对应完整窗口截图。
+6. 在 PR review 中批准或指出需要重跑的场景。
 
-Desktop tests使用[`@wdio/tauri-service`](https://v2.tauri.app/develop/tests/webdriver/)的embedded provider。测试构建启用`tauri-plugin-wdio-webdriver`；需要backend access、IPC mocking和日志捕获的测试启用`tauri-plugin-wdio`。
+PR review 是人工验收记录；四个 required status checks 是自动门禁记录。重新推送 commit 后使用新 workflow run 的证据重新验收。
 
-```text
-TypeScript/Vite assets
-→ Tauri test build
-→ WDIO launch
-→ DOM interaction + native-state assertions
-```
+## Workflow 触发与资源控制
 
-每个scenario通过TestContext获得独立数据目录。native child WebView状态通过测试专用command查询；浏览器内容仍运行在其平台WebView中。
+- Pull Request：运行两个必需平台 job。
+- `main` push：运行两个平台 job，验证合并结果。
+- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp` 指定诊断范围，结果保留相同证据格式。
+- 同一 PR 的旧 commit 运行通过 concurrency group 取消。
+- job 和单场景设置明确 timeout。
+- artifact 使用 7 天 retention，为 PR 审查和跨时区验收提供完整窗口。
 
-## GitHub Actions
+## 门禁验收标准
 
-GitHub Actions直接表达运行环境：
+门禁实现完成时必须满足：
 
-```text
-windows-latest   Windows adapters + full current suite
-macos-latest     implemented macOS adapters
-ubuntu-latest    implemented Linux adapters + virtual display
-self-hosted      signing、IME、受保护provider或硬件场景
-```
-
-同一runner上冲突的display、provider account和platform singleton使用job串行化或GitHub concurrency group。测试进程内部的并行度由Cargo、Vitest和WDIO原生配置控制。
-
-每个job设置独立data/cache/runtime目录。外部provider credentials通过GitHub secrets引用，运行数据进入隔离provider home。
-
-## Release automation
-
-```text
-Packaging Smoke      build/install/start/stop/uninstall artifact
-Platform Smoke       PTY、WebView runtime、filesystem、process integration
-Credentialed Smoke   非交互认证的真实Claude/Codex/Copilot启动与resume
-```
-
-Packaging和Platform Smoke可在GitHub-hosted或self-hosted runner无人值守执行。Credentialed Smoke使用受保护secrets、额度和runner，并与确定性测试结果分开显示。
-
-## 可观测性
-
-AppBackend、renderer、Hook、PTY和Git日志传播`run_id、resource_id`，并在相关领域附带runtime ID、scan generation或layout revision。测试失败时上传相关结构化日志、WebDriver截图、DOM snapshot和必要的数据库副本。
-
-artifact使用GitHub Actions原生上传和保留策略。credential、token和provider transcript在写入artifact前redact。
-
-## 门禁
-
-```text
-Local Gate     affected L0-L2
-PR Gate        affected L0-L3 + current-platform smoke
-Main Gate      desktop + recovery/security tests
-Nightly Gate   stress + credentialed smoke + extended OS matrix
-Release Gate   L0-L4 + required release automation
-```
-
-workflow通过path filters和显式job dependencies选择测试。GitHub Actions的passed、failed、cancelled和skipped状态作为门禁事实源。
-
-Windows首先覆盖完整门禁。macOS/Linux随着adapter完成度加入相同层次；缺失的实现通过明确的未启用job记录在平台计划中。
-
-## 测试归属
-
-```text
-Rust unit/contract       next to crate/module or crate tests/
-TypeScript unit          next to source module
-Protocol golden          shared protocol package
-Runtime integration      integration tests grouped by domain
-Desktop scenarios        desktop tests grouped by product flow
-Release automation       platform adapter/package test area
-```
-
-产品规格定义用户可观察结果。技术规格定义invariants和contracts。测试名称或注释引用对应Spec ID。
-
-领域重构同时移动其测试。共享TestContext保持轻量，并通过真实测试需求逐步扩展。
+- Verify matrix 与 Windows/Linux Desktop E2E 在 GitHub Actions 中显示为四个 required checks。
+- 两个平台都通过 `@wdio/tauri-service` embedded provider 启动真实 executable。
+- 两个平台都通过 lockfile 安装并验证三家固定版本真实 CLI。
+- 本地与 CI 调用同一份 WDIO 配置和 Desktop Scenarios。
+- 每个平台运行都生成结构化测试结果与可播放 GIF。
+- finalizer 在任一前置步骤失败时从零生成 `result.json`、manifest、credential scan、process/display cleanup 状态与 provider contract 状态；失败运行仍上传完整诊断证据并保留失败状态。
+- artifact 的 `retention-days` 为 `7`。
+- branch protection 同时要求 Verify matrix、两个平台 E2E 检查和 PR review。

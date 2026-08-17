@@ -4,6 +4,10 @@ import { applyDocumentTheme, ThemeController } from "./theme";
 import { RendererHealthController } from "./renderer-health";
 import { desktopClient } from "./transport/desktop-client";
 
+if (import.meta.env.MODE === "e2e") {
+  await import("@wdio/tauri-plugin");
+}
+
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing #app root");
 

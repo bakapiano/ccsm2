@@ -7,6 +7,26 @@ on:
       - main
   workflow_call:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Desktop platform jobs to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+      scenario:
+        description: Provider resume scenario to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - claude
+          - codex
+          - ghcp
 
 permissions:
   contents: read
@@ -18,6 +38,7 @@ concurrency:
 jobs:
   verify:
     name: Verify (${{ matrix.os }})
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -98,3 +119,202 @@ jobs:
 
       - name: Run test suites
         run: pnpm test
+
+  desktop-e2e-windows:
+    name: desktop-e2e-windows
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CCSM_E2E_ARTIFACT_DIR: ${{ github.workspace }}/test-results/desktop/windows
+      CCSM_E2E_PLATFORM: windows
+      CCSM_PROVIDER_CLI_ROOT: ${{ github.workspace }}/test-results/provider-clis-runtime/windows
+      CCSM_E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CCSM_E2E_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.scenario || 'all' }}
+
+    steps:
+      - name: Initialize Windows E2E evidence
+        run: node -e "const fs=require('node:fs'),p=require('node:path'),d=process.env.CCSM_E2E_ARTIFACT_DIR;fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'workflow-state.json'),JSON.stringify({phase:'initialized',platform:'windows',createdAt:new Date().toISOString()},null,2)+'\n')"
+
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.11.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: . -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        id: dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test E2E-only backend
+        id: backend
+        run: cargo test --locked -p ccsm-desktop --features e2e
+
+      - name: Build Windows E2E executable
+        id: build
+        run: pnpm test:desktop:build
+
+      - name: Verify pinned provider CLI contracts
+        id: provider_contract
+        run: pnpm test:provider-cli-contract
+
+      - name: Run Windows Desktop E2E
+        id: desktop_e2e
+        timeout-minutes: 70
+        run: pnpm test:desktop:ci
+
+      - name: Finalize Windows Desktop E2E evidence
+        if: always()
+        env:
+          CCSM_E2E_JOB_STATUS: ${{ job.status }}
+          CCSM_E2E_STEP_OUTCOMES: >-
+            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}"}
+        run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
+
+      - name: Upload Windows Desktop E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-e2e-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/desktop/windows/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+  desktop-e2e-linux:
+    name: desktop-e2e-linux
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CCSM_E2E_ARTIFACT_DIR: ${{ github.workspace }}/test-results/desktop/linux
+      CCSM_E2E_PLATFORM: linux
+      CCSM_PROVIDER_CLI_ROOT: ${{ github.workspace }}/test-results/provider-clis-runtime/linux
+      CCSM_E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CCSM_E2E_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.scenario || 'all' }}
+
+    steps:
+      - name: Initialize Linux E2E evidence
+        run: node -e "const fs=require('node:fs'),p=require('node:path'),d=process.env.CCSM_E2E_ARTIFACT_DIR;fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'workflow-state.json'),JSON.stringify({phase:'initialized',platform:'linux',createdAt:new Date().toISOString()},null,2)+'\n')"
+
+      - name: Check out source
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: false
+
+      - name: Install Ubuntu desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            pkg-config \
+            xauth \
+            xvfb
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.11.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: . -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        id: dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test E2E-only backend
+        id: backend
+        run: cargo test --locked -p ccsm-desktop --features e2e
+
+      - name: Build Linux E2E executable
+        id: build
+        run: pnpm test:desktop:build
+
+      - name: Verify pinned provider CLI contracts
+        id: provider_contract
+        run: pnpm test:provider-cli-contract
+
+      - name: Run Linux Desktop E2E
+        id: desktop_e2e
+        timeout-minutes: 70
+        run: xvfb-run -a --server-args="-screen 0 1440x900x24" pnpm test:desktop:ci
+
+      - name: Finalize Linux Desktop E2E evidence
+        if: always()
+        env:
+          CCSM_E2E_JOB_STATUS: ${{ job.status }}
+          CCSM_E2E_STEP_OUTCOMES: >-
+            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}"}
+        run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
+
+      - name: Upload Linux Desktop E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-e2e-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/desktop/linux/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error

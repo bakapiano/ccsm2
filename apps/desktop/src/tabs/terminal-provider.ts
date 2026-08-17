@@ -202,6 +202,8 @@ class TerminalPanel implements IContentRenderer {
   #pendingExitCode: number | null = null;
   readonly #exitedRuntimeIds = new Set<string>();
   #inputQueue: Promise<void> = Promise.resolve();
+  #resetOnNextRuntimeOutput = false;
+  #lastOutputRuntimeId: string | null = null;
   #inputFollowDispose: (() => void) | null = null;
   #resizeGestureDispose: (() => void) | null = null;
   #unlisten: (() => void) | null = null;
@@ -219,11 +221,11 @@ class TerminalPanel implements IContentRenderer {
     (this.element as TerminalDebugElement).__CCSM_TERMINAL_DEBUG__ = () =>
       this.#debugSnapshot();
     this.element.innerHTML = `
-      <div class="terminal-host" aria-label="Terminal"></div>
+      <div class="terminal-host" data-testid="terminal-input-surface" aria-label="Terminal"></div>
       <div class="terminal-panel-toolbar">
         <span class="terminal-status" data-state="starting">loading terminal</span>
         <span class="terminal-meta">—</span>
-        <button class="terminal-action control-button" type="button">
+        <button class="terminal-action control-button" data-testid="terminal-runtime-action" type="button">
           <span class="control-icon">${uiIcon("stop")}</span>
           <span class="terminal-action-label">Stop</span>
         </button>
@@ -454,6 +456,7 @@ class TerminalPanel implements IContentRenderer {
       const sessionId = this.#tab.resourceId;
       if (!sessionId) throw new Error("CLI Tab is missing resourceId");
       this.#session = await this.#client.backend.getCliSession(sessionId);
+      this.element.dataset.provider = this.#session.provider;
       const attemptedStart = await this.#maybeAutoStart();
       if (!attemptedStart && !this.#starting && !this.#runtimeId)
         this.#renderRuntimeStatus();
@@ -487,6 +490,10 @@ class TerminalPanel implements IContentRenderer {
     this.#syncAction();
     this.#setStatus("starting", `starting ${this.#tab.title}`);
     try {
+      await this.#inputQueue;
+      if (!(await this.#waitForOutputDrain())) this.#dropOutputQueue();
+      this.#pendingExitCode = null;
+      this.#resetOnNextRuntimeOutput = true;
       const started = await this.#client.backend.startRuntime(
         {
           cliSessionId: sessionId,
@@ -524,6 +531,7 @@ class TerminalPanel implements IContentRenderer {
         focusWhenPanelActive(this.#panelApi, () => this.#terminal?.focus());
       }
     } catch (error) {
+      this.#resetOnNextRuntimeOutput = false;
       this.#setStatus("error", `start failed · ${describeError(error)}`);
       this.#terminal.writeln(
         `\r\n\x1b[31m[start failed: ${describeError(error)}]\x1b[0m`,
@@ -538,6 +546,12 @@ class TerminalPanel implements IContentRenderer {
     if (this.#destroyed) return;
     if (event.type === "output") {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
+      this.#lastOutputRuntimeId = event.runtimeId;
+      if (this.#resetOnNextRuntimeOutput) {
+        this.#resetOnNextRuntimeOutput = false;
+        this.#oscStripper.reset();
+        this.#terminal?.reset();
+      }
       this.#runtimeId ??= event.runtimeId;
       const rawOutput = new Uint8Array(event.data);
       this.#resizeOutputSettler?.push(event.runtimeId, rawOutput);
@@ -563,6 +577,7 @@ class TerminalPanel implements IContentRenderer {
       );
       return;
     }
+    this.#resetOnNextRuntimeOutput = false;
     this.#exitedRuntimeIds.add(event.runtimeId);
     if (this.#repaintCapture?.runtimeId === event.runtimeId) {
       this.#repaintCapture.cancel();
@@ -1148,6 +1163,7 @@ class TerminalPanel implements IContentRenderer {
       repaintCaptureActive: Boolean(this.#repaintCapture),
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,
+      lastOutputRuntimeId: this.#lastOutputRuntimeId,
       mouseTracking: terminal?.hasMouseTracking() ?? false,
       mouseSgr: terminal?.getMode(1006) ?? false,
       lastMouseReport: terminal?.getLastMouseReport() ?? null,

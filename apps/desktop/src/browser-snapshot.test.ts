@@ -13,6 +13,9 @@ import {
   clearBrowserSnapshot,
   presentBrowserSnapshot,
 } from "./browser-snapshot";
+import type { TabDto } from "./generated/TabDto";
+import { BrowserTabProvider } from "./tabs/browser-provider";
+import type { CcsmDesktopClient } from "./transport/desktop-client";
 
 const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
 const providerSource = await Bun.file(
@@ -81,5 +84,41 @@ describe("native Browser snapshot placeholder", () => {
     expect(css).toMatch(
       /html\[data-browser-overlay-preparing="true"\] \.dv-context-menu,\s*html\[data-browser-overlay-preparing="true"\] \.dv-tabs-overflow-container\s*{\s*visibility:\s*hidden/,
     );
+  });
+
+  test("uses a DOM placeholder for provider E2E without creating a child WebView", () => {
+    const create = mock(async () => {
+      throw new Error("native Browser creation must stay disabled");
+    });
+    const client = {
+      browser: {
+        subscribeTitleChanged: async () => () => {},
+        create,
+      },
+    } as unknown as CcsmDesktopClient;
+    const tab = {
+      id: "browser-tab",
+      spaceId: "space-1",
+      kind: "browser",
+      title: "Browser",
+      resourceId: "browser-tab",
+      stateVersion: 1,
+      state: { lastUrl: "https://example.com/", zoom: 1 },
+    } as TabDto;
+    const provider = new BrowserTabProvider(client, {
+      nativeSurfacesEnabled: false,
+    });
+    const renderer = provider.createRenderer(tab);
+
+    renderer.init({ api: {} } as never);
+
+    expect(renderer.element.querySelector(".browser-state")?.textContent).toBe(
+      "E2E Browser placeholder",
+    );
+    expect(renderer.element.textContent).toContain(
+      "Native Browser disabled for provider E2E",
+    );
+    expect(create).not.toHaveBeenCalled();
+    provider.destroy();
   });
 });

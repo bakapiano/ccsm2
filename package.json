@@ -15,6 +15,12 @@
     "desktop:dev": "pnpm --filter @ccsm/desktop dev:desktop",
     "desktop:build:debug": "pnpm --filter @ccsm/desktop build:desktop:debug",
     "desktop:build:release": "pnpm --filter @ccsm/desktop tauri build --no-bundle --config src-tauri/tauri.release.conf.json -- --locked",
+    "test:desktop:build": "pnpm --filter @ccsm/desktop build:desktop:e2e",
+    "test:desktop": "pnpm --filter @ccsm/desktop test:desktop",
+    "test:desktop:ci": "pnpm --filter @ccsm/desktop test:desktop:ci",
+    "test:desktop:debug": "pnpm --filter @ccsm/desktop test:desktop:debug",
+    "test:desktop:evidence": "pnpm --filter @ccsm/desktop test:desktop:evidence",
+    "test:provider-cli-contract": "pnpm --filter @ccsm/desktop test:provider-cli-contract",
     "package:ubuntu": "bash scripts/package-ubuntu.sh",
     "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1",
     "contracts": "cargo test --locked -p ccsm-core export_bindings && cargo test --locked -p ccsm-desktop export_bindings"

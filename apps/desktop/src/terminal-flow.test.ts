@@ -182,6 +182,16 @@ describe("terminal flow control", () => {
     );
   });
 
+  test("resets a partial provider escape sequence before a new runtime", () => {
+    const stripper = new OscSequenceStripper();
+    const encode = (value: string) => new TextEncoder().encode(value);
+    const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+    expect(decode(stripper.push(encode("old\x1b]0;partial")))).toBe("old");
+    stripper.reset();
+    expect(decode(stripper.push(encode("new runtime")))).toBe("new runtime");
+  });
+
   test("preserves split dynamic-color queries for the terminal responder", () => {
     const stripper = new OscSequenceStripper({
       preserveDynamicColorQueries: true,
