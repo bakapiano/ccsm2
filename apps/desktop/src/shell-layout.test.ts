@@ -31,6 +31,10 @@ describe("application shell layout", () => {
 
   test("keeps the sidebar toggle in the lower-right compact rail", () => {
     expect(html).toContain('data-testid="sidebar-toggle"');
+    expect(html.match(/class="sidebar-toggle-icon"/g)).toHaveLength(1);
+    expect(html).toContain('<path d="M6 2.5v11" />');
+    expect(html).not.toContain("sidebar-toggle-collapse-icon");
+    expect(html).not.toContain("sidebar-toggle-expand-icon");
     expect(cssRule(".sidebar-toggle")).toContain("grid-row: 5");
     expect(cssRule(".sidebar-toggle")).toContain("justify-self: end");
     expect(cssRule(".sidebar-toggle")).toContain("margin-right: 8px");

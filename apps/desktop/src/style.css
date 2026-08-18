@@ -590,20 +590,8 @@ button:disabled {
   stroke-width: 1.15;
 }
 
-.sidebar-toggle-expand-icon {
-  display: none;
-}
-
 .app-shell[data-sidebar-collapsed="true"] .sidebar-toggle {
   grid-row: 2;
-}
-
-.app-shell[data-sidebar-collapsed="true"] .sidebar-toggle-collapse-icon {
-  display: none;
-}
-
-.app-shell[data-sidebar-collapsed="true"] .sidebar-toggle-expand-icon {
-  display: block;
 }
 
 .sidebar-tree-scroll {
