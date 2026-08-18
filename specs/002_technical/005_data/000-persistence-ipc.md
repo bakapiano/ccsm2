@@ -16,7 +16,7 @@ CCSM data directory
 
 ## data.db
 
-`data.db`同时保存durable产品事实、rebuildable cache和有界operational log：
+`data.db`同时保存durable产品事实和rebuildable cache：
 
 ```text
 # durable
@@ -32,9 +32,6 @@ tabs
 # rebuildable
 git_repositories_cache
 git_status_cache
-
-# bounded operational log
-renderer_health_log
 ```
 
 - `space_roots`保存`id/display_path/real_path/timestamps`；`real_path`建立唯一索引。
@@ -52,7 +49,6 @@ renderer_health_log
 - Hook确认后直接更新`cli_sessions.native_session_id/native_binding_state`；ID冲突时拒绝更新并返回domain error。
 - `settings`仅保存非敏感应用设置。CCSM首版不持久化credential或secret。
 - `_cache`表通过foreign keys引用durable IDs，并在对应资源删除时cascade清理。
-- `renderer_health_log`保存native input probe、状态转换和soft reload结果，并执行固定byte预算与TTL裁剪。
 - `data.db`使用`synchronous=FULL`；cache更新使用debounce和批量transaction减少同步写入。
 
 ## Schema compatibility
@@ -63,7 +59,7 @@ renderer_health_log
 - 演进优先使用新增table、nullable/default column和index。
 - 已发布的table/column语义保持稳定；结构替换通过新增结构、数据回填和兼容读取完成。
 - `schema_meta`记录Schema版本和已完成migration IDs；migration保持幂等。
-- durable tables执行兼容migration；`_cache` tables可在migration中清空或重建，并随后重新扫描Space roots；bounded log tables通过新增table和index迁移，不参与产品事实恢复。
+- durable tables执行兼容migration；`_cache` tables可在migration中清空或重建，并随后重新扫描Space roots。
 - 早期开发数据库中的nullable `spaces.archived_at`作为兼容占位保留；打开数据库时将历史值归一化为`NULL`，产品模型和IPC不暴露Archive语义。
 
 Space lifecycle写入规则：
@@ -88,39 +84,12 @@ git_status_cache
 - cache记录损坏、格式过期或引用失效时删除对应rows，并重新扫描相关Space roots。
 - cache writes和关联的durable metadata可以在一个SQLite transaction内提交。
 
-## Bounded operational log
-
-`renderer_health_log`由AppBackend的`data.db` single-writer队列写入：
-
-```text
-renderer_health_log {
-  id INTEGER PRIMARY KEY,
-  incident_id TEXT NOT NULL,
-  recorded_at INTEGER NOT NULL,
-  event_kind TEXT NOT NULL,
-  input_seq INTEGER,
-  state TEXT NOT NULL,
-  latency_ms INTEGER,
-  payload_bytes INTEGER NOT NULL,
-  details_json TEXT NOT NULL
-}
-```
-
-`recorded_at`和`incident_id`分别建立index。`payload_bytes`保存`details_json`的UTF-8 byte长度，并用于确定性容量裁剪。
-
-- 单行`details_json`最多8 KiB；超出时移除低优先级字段并记录`truncated=true`。
-- active rows最多2048行，`payload_bytes`总和最多8 MiB。
-- TTL为7天。
-- 每次incident写入后和应用启动时，在同一transaction中删除过期行，再按`recorded_at/id`最旧优先裁剪行数和byte预算。
-- 删除后的SQLite pages由后续数据库写入复用；普通启动和前台恢复流程不执行full `VACUUM`。
-- 日志不保存DOM文本、终端内容、Agent prompt、文件内容、URL、剪贴板、credential或原生Session ID。
-
 ## Filesystem stores
 
 - 显式 `--ccsm-data-dir` 或 `CCSM_DATA_DIR` 覆盖将主界面 WebView profile 放入同一数据目录的 `main-webview/`，使隔离实例可与正式实例并行运行。
 - `browser-profile/` 是全局持久 WebView profile，保存共享 cookies、账号登录、storage 和 HTTP cache。
 - 主界面和 Browser Tabs 使用不同的 WebView profile；启动隔离实例时不设置进程级 `WEBVIEW2_USER_DATA_FOLDER`。
-- `logs/` 保存AppBackend、desktop adapter和测试的非结构化可观测日志；结构化renderer health incident保存在`renderer_health_log`。
+- `logs/` 保存AppBackend、desktop adapter和测试的非结构化可观测日志。
 - Agent CLI provider transcripts保持在provider data directory；CCSM不读取或扫描这些目录来推断native Session ID。
 - Agent CLI登录由provider CLI管理；Git认证由Git工具链管理；Browser认证由platform WebView profile管理。
 - Hook token属于单次runtime，保存在RuntimeManager和子进程环境中，并在runtime结束时丢弃。
