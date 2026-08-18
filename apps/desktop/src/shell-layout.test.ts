@@ -4,24 +4,24 @@ const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
 const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
 
 describe("application shell layout", () => {
-  test("uses VS Code-style full-width title and status bars", () => {
+  test("uses a full-width titlebar and gives content the remaining height", () => {
     expect(cssRule(".app-shell")).toContain(
       "grid-template-columns: var(--sidebar-width) minmax(0, 1fr)",
     );
     expect(cssRule(".app-shell")).toContain(
-      "grid-template-rows: 35px minmax(0, 1fr) 22px",
+      "grid-template-rows: 35px minmax(0, 1fr)",
     );
     expect(cssRule(".app-titlebar")).toContain("grid-area: titlebar");
-    expect(cssRule(".app-statusbar")).toContain("grid-area: statusbar");
+    expect(html).not.toContain('class="app-statusbar"');
   });
 
-  test("overlays the sidebar resizer between title and status bars", () => {
+  test("overlays the sidebar resizer from the titlebar to the window bottom", () => {
     expect(cssRule(".sidebar-resizer")).toContain("position: absolute");
     expect(cssRule(".sidebar-resizer")).toContain(
       "left: calc(var(--sidebar-width) - 2px)",
     );
     expect(cssRule(".sidebar-resizer")).toContain("top: 35px");
-    expect(cssRule(".sidebar-resizer")).toContain("bottom: 22px");
+    expect(cssRule(".sidebar-resizer")).toContain("bottom: 0");
   });
 
   test("aligns the Spaces and Agents heading text", () => {

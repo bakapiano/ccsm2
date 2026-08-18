@@ -2,16 +2,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 import {
-  BROWSER_POPUP_DOCK_DIRECTION,
+  createDefaultSpaceDockLayout,
   DOCKVIEW_DND_STRATEGY,
   findDockPanelById,
   findNearestRightAlignedDockGroup,
+  findPreferredRightDockGroup,
   findRestoredActivePanel,
   findSourceBrowserTab,
   findVisibleDockPanelIds,
   shouldDeleteRemovedTab,
   syncDockPanelTitles,
 } from "./dock-behavior";
+import type { TabDto } from "./generated/TabDto";
 
 beforeAll(() => GlobalRegistrator.register());
 afterAll(() => GlobalRegistrator.unregister());
@@ -43,6 +45,16 @@ describe("Dockview regressions", () => {
     expect(findNearestRightAlignedDockGroup(source, [source, below])).toBe(
       undefined,
     );
+    expect(
+      findPreferredRightDockGroup(source, [source, nearest, farther]),
+    ).toBe(nearest);
+    expect(findPreferredRightDockGroup(nearest, [source, nearest])).toBe(
+      nearest,
+    );
+    expect(findPreferredRightDockGroup(source, [source])).toBeUndefined();
+    expect(
+      findPreferredRightDockGroup(source, [source, below]),
+    ).toBeUndefined();
   });
 
   test("uses pointer DnD for the embedded WebView host", async () => {
@@ -67,7 +79,7 @@ describe("Dockview regressions", () => {
     root.remove();
   });
 
-  test("places a browser popup in its source tab list", async () => {
+  test("creates the default Shell and Files/Changes split", async () => {
     const { DockviewComponent } = await import("dockview");
     const root = document.createElement("div");
     document.body.append(root);
@@ -79,22 +91,19 @@ describe("Dockview regressions", () => {
       }),
       dndStrategy: DOCKVIEW_DND_STRATEGY,
     });
-    const source = dockview.addPanel({
-      id: "browser-source",
-      component: "test",
-    });
-    const resolvedSource = findDockPanelById(dockview.panels, source.id);
-    expect(resolvedSource).toBe(source);
-    const popup = dockview.addPanel({
-      id: "browser-popup",
-      component: "test",
-      position: {
-        referencePanel: resolvedSource!.id,
-        direction: BROWSER_POPUP_DOCK_DIRECTION,
-      },
-    });
+    createDefaultSpaceDockLayout(dockview, [
+      tab("shell", "cli-session", "Shell"),
+      tab("files", "file-explorer", "Files"),
+      tab("changes", "git", "Changes"),
+    ]);
 
-    expect(popup.group.id).toBe(source.group.id);
+    const shell = findDockPanelById(dockview.panels, "shell")!;
+    const files = findDockPanelById(dockview.panels, "files")!;
+    const changes = findDockPanelById(dockview.panels, "changes")!;
+    expect(dockview.groups).toHaveLength(2);
+    expect(files.group.id).toBe(changes.group.id);
+    expect(shell.group.id).not.toBe(files.group.id);
+    expect(dockview.activePanel?.id).toBe("shell");
     dockview.dispose();
     root.remove();
   });
@@ -181,3 +190,15 @@ describe("Dockview regressions", () => {
     expect(shouldDeleteRemovedTab(false, undefined)).toBe(false);
   });
 });
+
+function tab(id: string, kind: TabDto["kind"], title: string): TabDto {
+  return {
+    id,
+    spaceId: "space-1",
+    kind,
+    title,
+    resourceId: null,
+    stateVersion: 1,
+    state: {},
+  };
+}

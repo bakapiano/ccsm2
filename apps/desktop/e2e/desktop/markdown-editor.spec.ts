@@ -34,6 +34,7 @@ describe("Markdown file editor", () => {
     try {
       await restoreScenarioUi();
       await createSpace(spaceName, spaceRoot);
+      const rightGroupIndex = await expectDefaultSpaceLayout();
 
       currentStep = "open-markdown";
       await openFileExplorer();
@@ -45,6 +46,7 @@ describe("Markdown file editor", () => {
         '.file-editor-panel[data-editor-engine="markdown"]',
       );
       await panel.waitForDisplayed({ timeout: 30_000 });
+      expect(await dockGroupForTabKind("file-editor")).toBe(rightGroupIndex);
       const previewButton = await panel.$(
         '[data-editor-action="markdown-preview"]',
       );
@@ -104,6 +106,11 @@ describe("Markdown file editor", () => {
       await preview.$("h2=Saved from E2E").waitForDisplayed();
       expect(await panel.getAttribute("data-state")).toBe("clean");
       await evidence.checkpoint("saved-preview");
+
+      currentStep = "open-browser";
+      await openBrowserFromShell();
+      expect(await dockGroupForTabKind("browser")).toBe(rightGroupIndex);
+      await evidence.checkpoint("browser-right");
     } catch (error) {
       primaryError = error;
       writeFileSync(
@@ -193,17 +200,80 @@ async function createSpace(name: string, root: string): Promise<void> {
 }
 
 async function openFileExplorer(): Promise<void> {
-  await $(".dock-new-tab-button").click();
+  const tab = await $('.ccsm-tab[data-tab-kind="file-explorer"]');
+  await tab.waitForDisplayed({ timeout: 20_000 });
+  await tab.click();
+}
+
+async function openBrowserFromShell(): Promise<void> {
+  const shell = await $('.ccsm-tab[data-tab-kind="cli-session"]');
+  await shell.waitForDisplayed({ timeout: 20_000 });
+  await shell.click();
+  await $(".dv-groupview.dv-active-group .dock-new-tab-button").click();
   const menu = await $("#new-tab-menu");
   await menu.waitForDisplayed();
-  await $("#new-tab-menu [data-new-tab-action='files']").click();
+  await $("#new-tab-menu [data-new-tab-action='browser']").click();
   await menu.waitForDisplayed({ reverse: true });
+  await $(".browser-panel").waitForDisplayed({ timeout: 30_000 });
 }
 
 async function activeSpaceName(): Promise<string> {
   return browser.execute(
-    () => document.querySelector("#active-space-name")?.textContent ?? "",
+    () =>
+      document.querySelector('.space-row[aria-selected="true"] .space-name')
+        ?.textContent ?? "",
   );
+}
+
+interface DockLayoutSnapshot {
+  tabs: Array<{ kind: string; title: string; groupIndex: number }>;
+  groupCount: number;
+}
+
+async function expectDefaultSpaceLayout(): Promise<number> {
+  const snapshot = await dockLayoutSnapshot();
+  expect(snapshot.tabs.map((tab) => tab.title).sort()).toEqual([
+    "Changes",
+    "Files",
+    "Shell",
+  ]);
+  expect(snapshot.groupCount).toBe(2);
+  expect(await $(".app-statusbar").isExisting()).toBe(false);
+  const shellGroup = groupForTabKind(snapshot, "cli-session");
+  const filesGroup = groupForTabKind(snapshot, "file-explorer");
+  const changesGroup = groupForTabKind(snapshot, "git");
+  expect(filesGroup).toBe(changesGroup);
+  expect(shellGroup).not.toBe(filesGroup);
+  return filesGroup;
+}
+
+async function dockGroupForTabKind(kind: string): Promise<number> {
+  return groupForTabKind(await dockLayoutSnapshot(), kind);
+}
+
+function groupForTabKind(snapshot: DockLayoutSnapshot, kind: string): number {
+  const tab = snapshot.tabs.find((candidate) => candidate.kind === kind);
+  if (!tab || tab.groupIndex < 0) {
+    throw new Error(`Missing visible ${kind} tab in Dockview`);
+  }
+  return tab.groupIndex;
+}
+
+async function dockLayoutSnapshot(): Promise<DockLayoutSnapshot> {
+  return (await browser.execute(() => {
+    const groups = Array.from(document.querySelectorAll(".dv-groupview"));
+    const tabs = Array.from(
+      document.querySelectorAll<HTMLElement>(".ccsm-tab"),
+    );
+    return {
+      groupCount: groups.length,
+      tabs: tabs.map((tab) => ({
+        kind: tab.dataset.tabKind ?? "",
+        title: tab.querySelector(".ccsm-tab-label")?.textContent?.trim() ?? "",
+        groupIndex: groups.indexOf(tab.closest(".dv-groupview")!),
+      })),
+    };
+  })) as DockLayoutSnapshot;
 }
 
 function normalizedPath(path: string): string {

@@ -1023,7 +1023,6 @@ fn insert_space_graph(
     let space_id = Uuid::new_v4().to_string();
     let session_id = Uuid::new_v4().to_string();
     let terminal_tab_id = Uuid::new_v4().to_string();
-    let browser_tab_id = Uuid::new_v4().to_string();
     let file_tab_id = Uuid::new_v4().to_string();
     let git_tab_id = Uuid::new_v4().to_string();
     let now = now_timestamp();
@@ -1048,19 +1047,6 @@ fn insert_space_graph(
                 id, space_id, kind, title, resource_id, state_version, state_json, created_at, updated_at
              ) VALUES (?1, ?2, 'cli-session', 'Shell', ?3, 1, '{}', ?4, ?4)",
             params![terminal_tab_id, space_id, session_id, now],
-        )
-        .map_err(storage_error)?;
-    transaction
-        .execute(
-            "INSERT INTO tabs(
-                id, space_id, kind, title, resource_id, state_version, state_json, created_at, updated_at
-             ) VALUES (?1, ?2, 'browser', 'Browser', ?1, 1, ?3, ?4, ?4)",
-            params![
-                browser_tab_id,
-                space_id,
-                r#"{"lastUrl":"https://example.com/","zoom":1}"#,
-                now,
-            ],
         )
         .map_err(storage_error)?;
     transaction

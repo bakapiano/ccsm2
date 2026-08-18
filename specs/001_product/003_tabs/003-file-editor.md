@@ -37,7 +37,7 @@
 
 ## 3. 打开文件
 
-- 单击 File Explorer 中的文件时，File Editor Tab 打开。
+- 单击 File Explorer 中的文件时，File Editor Tab 在右侧 Dock 打开；单组布局向右切分后承载该 Tab。
 - 同一路径已经存在对应 Tab 时，已有 Tab 获得焦点。
 - 同一路径在同一 Workspace 内仅对应一个 File Editor Tab。
 - Tab 标题显示文件名。

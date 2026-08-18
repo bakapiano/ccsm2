@@ -2,7 +2,7 @@
 
 ## Space 操作
 
-- New Space：先选择 root folder，再创建空布局或从模板创建。
+- New Space：先选择 root folder，再创建默认工作现场；左侧 Dock 初始包含 Shell，右侧 Dock 初始包含 Files 与 Changes。
 - Switch Space：保存当前布局、detach当前视图并挂载目标Space；后台CLI runtimes继续执行，inactive root的文件/Git实时更新暂停。
 - Rename：更新 Space metadata。
 - Delete：确认后停止该Space的CLI、关闭Tab resources并清理cache。全局Browser Profile保持原样。
@@ -11,6 +11,7 @@
 ## Tab 操作
 
 - New Tab 菜单展示 Shell、Claude Code、Codex、GitHub Copilot、Browser、File Explorer、Git 和其他内置 Providers。
+- 新建 File Editor 与 Browser Tab进入当前水平布局的右侧 Dock；单组布局从来源 Dock 向右切分。右侧 Dock 已存在时复用该组。
 - 新CLI Tab默认在Space root启动；用户可从Git tree选择某个repository root。
 - Tab 支持 drag、split、move group、pin 和 rename；Duplicate由具体 Tab Provider声明。
 - 用户关闭Tab会把它从Space中删除。关闭Agent CLI Tab前显示应用内警告并要求确认，确认后从布局移除Tab、停止runtime并从`data.db`删除Tab与CliSession；普通Shell Tab直接关闭；Browser Tab同时关闭native WebView。Space切换产生的内部视图卸载保持资源。
