@@ -1,8 +1,6 @@
 mod browser;
 mod commands;
 mod directory_browser;
-mod native_input;
-mod renderer_health;
 mod webview_focus;
 
 use std::{
@@ -21,8 +19,6 @@ use ccsm_platform::{
 };
 use tauri::{Emitter, Manager, RunEvent};
 
-use native_input::NativeInputObserver;
-use renderer_health::RendererHealthMonitor;
 use webview_focus::MainWebviewFocusRestorer;
 
 pub struct DesktopState {
@@ -32,9 +28,7 @@ pub struct DesktopState {
     default_root: PathBuf,
     home_dir: PathBuf,
     hook_endpoint: LocalHookEndpoint,
-    renderer_health: Arc<RendererHealthMonitor>,
     main_webview_focus: Mutex<Option<MainWebviewFocusRestorer>>,
-    native_input: Mutex<Option<NativeInputObserver>>,
     shim_root: PathBuf,
     shutdown_started: AtomicBool,
 }
@@ -44,12 +38,6 @@ impl DesktopState {
         if self.shutdown_started.swap(true, Ordering::AcqRel) {
             return;
         }
-        if let Ok(observer) = self.native_input.lock()
-            && let Some(observer) = observer.as_ref()
-        {
-            observer.shutdown();
-        }
-        self.renderer_health.shutdown();
         if let Ok(restorer) = self.main_webview_focus.lock()
             && let Some(restorer) = restorer.as_ref()
         {
@@ -118,7 +106,6 @@ pub fn run() {
                 SqliteStateStore::open(&data_dir.join("data.db"))
                     .map_err(|error| error.to_string())?,
             );
-            let renderer_health = RendererHealthMonitor::new(Arc::clone(&store));
             let pty = Arc::new(
                 PortablePtyBackend::new(shim_root.clone(), executable.clone())
                     .map_err(|error| error.to_string())?
@@ -163,9 +150,7 @@ pub fn run() {
                 default_root,
                 home_dir,
                 hook_endpoint,
-                renderer_health: Arc::clone(&renderer_health),
                 main_webview_focus: Mutex::new(None),
-                native_input: Mutex::new(None),
                 shim_root,
                 shutdown_started: AtomicBool::new(false),
             });
@@ -187,7 +172,6 @@ pub fn run() {
                 app.webview_windows().keys().collect::<Vec<_>>()
             );
             if let Some(main_window) = app.get_webview_window("main") {
-                renderer_health.start(app.handle().clone(), main_window.clone());
                 if let Some(main_webview) = app.get_webview("main") {
                     match MainWebviewFocusRestorer::start(&main_window, &main_webview) {
                         Ok(restorer) => {
@@ -201,21 +185,6 @@ pub fn run() {
                             eprintln!("CCSM main WebView focus restorer unavailable: {error}")
                         }
                     }
-                }
-                match NativeInputObserver::start(&main_window, Arc::clone(&renderer_health)) {
-                    Ok(observer) => {
-                        renderer_health.set_native_input_observer_active(true);
-                        if let Ok(mut slot) = app.state::<DesktopState>().native_input.lock() {
-                            *slot = Some(observer);
-                        }
-                        if let Some(main_webview) = app.get_webview("main")
-                            && let Err(error) =
-                                NativeInputObserver::bind_main_webview(&main_webview)
-                        {
-                            eprintln!("CCSM main WebView process binding failed: {error}");
-                        }
-                    }
-                    Err(error) => eprintln!("CCSM native input observer unavailable: {error}"),
                 }
             } else {
                 return Err("CCSM main WebView is unavailable after setup".into());
@@ -269,10 +238,6 @@ pub fn run() {
             commands::navigate_browser,
             commands::reload_browser,
             commands::close_browser,
-            commands::renderer_input_ack,
-            commands::renderer_ready,
-            commands::debug_renderer_simulate_click,
-            commands::debug_renderer_health_snapshot,
         ])
         .build(context)
         .expect("failed to build CCSM desktop application");
