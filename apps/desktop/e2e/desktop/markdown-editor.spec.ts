@@ -1,7 +1,5 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { Key } from "webdriverio";
-
 import { ScenarioEvidence } from "./support/evidence";
 
 const artifactDirectory = requiredEnvironment("CCSM_E2E_ARTIFACT_DIR");
@@ -75,8 +73,8 @@ describe("Markdown file editor", () => {
       await editor.waitForDisplayed();
       await editor.click();
       await editor.addValue("## Saved from E2E");
-      await browser.keys(Key.Enter);
-      await browser.keys(Key.Enter);
+      await browser.keys("Enter");
+      await browser.keys("Enter");
       await browser.waitUntil(
         async () =>
           (await panel.getAttribute("data-state")) === "dirty" &&
@@ -93,7 +91,7 @@ describe("Markdown file editor", () => {
 
       currentStep = "save-markdown";
       await preview.click();
-      await browser.keys([Key.Ctrl, "s"]);
+      await browser.keys(["Control", "s"]);
       await browser.waitUntil(
         async () =>
           (await panel.getAttribute("data-state")) === "clean" &&
