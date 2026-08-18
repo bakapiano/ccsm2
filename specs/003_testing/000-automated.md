@@ -157,7 +157,7 @@ contract 对每家 provider 执行：
 2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 
-Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 WebView 的控制；对应测试仍创建生产默认 Browser Tab 数据。native Browser child 的 bounds、visibility 与 lifecycle 验收列入后续独立平台套件。
+Desktop E2E使用DOM Browser placeholder，保持embedded driver对主WebView的控制；Markdown场景显式创建Browser Tab并验证右侧Dock落位。native Browser child的bounds、visibility与lifecycle由独立平台套件验收。
 
 ## 自动断言
 
@@ -165,10 +165,11 @@ Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 We
 
 1. executable 成功启动且主 WebView ready。
 2. 用户通过可见目录选择、CLI 按钮与真实 WebDriver keyboard action 创建 Space 和三种 CLI。
-3. 每种 CLI 收到按 prompt 动态配置的固定 model response。
-4. Stop 后再次 Start 使用同一 native session，第二轮 prompt 正常返回。
-5. 三家固定版本真实 CLI 接受当前 resume 接口与生产 wrapper 参数。
-6. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
+3. 新Space呈现左侧Shell、右侧Files与Changes，应用外壳内容延伸到窗口底部；新建Browser与File Editor进入右侧Dock。
+4. 每种 CLI 收到按 prompt 动态配置的固定 model response。
+5. Stop 后再次 Start 使用同一 native session，第二轮 prompt 正常返回。
+6. 三家固定版本真实 CLI 接受当前 resume 接口与生产 wrapper 参数。
+7. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
 
 场景从用户可观察结果断言。内部诊断状态补充失败原因。
 
@@ -212,7 +213,7 @@ GIF 由场景中的有名称验收 checkpoint 生成，按操作顺序展示启�
 - GIF 使用固定尺寸和低帧率，画面标记平台、场景名称及 checkpoint。
 - 失败场景保留失败前后的可用画面，并在最后一帧标记失败步骤；GIF 生成错误写入独立诊断文件并保留原始测试错误。
 
-GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据，E2E status bar 使用 `<E2E_SPACE_ROOT>` 标签。上传前对 JSON、JSONL、XML、TXT 与日志去除 NUL，规范化 workspace/temp 路径并清理 token；credential scan 命中会使 gate 失败并写入 `credential-scan.json`。`logs/wdio.log` 是跨平台人工诊断的规范化入口。
+GIF 用于人工观察，WDIO assertion 决定测试结果。截图或 GIF 中使用合成测试数据；上传前对 JSON、JSONL、XML、TXT 与日志去除 NUL，规范化 workspace/temp 路径并清理 token；credential scan 命中会使 gate 失败并写入 `credential-scan.json`。`logs/wdio.log` 是跨平台人工诊断的规范化入口。
 
 ## Artifact 上传
 

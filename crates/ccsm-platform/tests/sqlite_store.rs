@@ -14,7 +14,7 @@ use ccsm_platform::SqliteStateStore;
 use serde_json::json;
 
 #[test]
-fn bootstrap_persists_one_default_space() {
+fn bootstrap_persists_default_shell_files_and_changes() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("data.db");
     let store = Arc::new(SqliteStateStore::open(&database).unwrap());
@@ -24,7 +24,28 @@ fn bootstrap_persists_one_default_space() {
 
     assert_eq!(first.spaces.len(), 1);
     assert_eq!(first.active_space_id, second.active_space_id);
-    assert_eq!(first.active_snapshot.tabs.len(), 4);
+    assert_eq!(first.active_snapshot.tabs.len(), 3);
+    assert!(
+        first
+            .active_snapshot
+            .tabs
+            .iter()
+            .any(|tab| tab.kind == ccsm_core::dto::TabKind::CliSession)
+    );
+    assert!(
+        first
+            .active_snapshot
+            .tabs
+            .iter()
+            .any(|tab| tab.kind == ccsm_core::dto::TabKind::FileExplorer)
+    );
+    assert!(
+        first
+            .active_snapshot
+            .tabs
+            .iter()
+            .any(|tab| tab.kind == ccsm_core::dto::TabKind::Git)
+    );
     assert_eq!(first.active_snapshot.cli_sessions.len(), 1);
 }
 

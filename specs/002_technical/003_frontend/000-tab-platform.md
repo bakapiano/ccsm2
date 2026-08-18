@@ -58,6 +58,8 @@ interface TabView {
 - Dockview使用right header action渲染每个group的New Tab加号。`noPanelsOverlay=emptyGroup`保留最后一个空group，使零Tab状态仍有创建入口。
 - Provider定义resource cardinality和Duplicate语义。
 - Space layout snapshot 与 TabRecord 分开持久化，恢复时先加载 records，再重建 Dockview。
+- 新 Space创建Shell、Files、Changes三个默认Tab；Dockview把Shell放入左组，把Files与Changes放入同一个右组并激活Shell。
+- File Editor与Browser的新Panel以来源组为锚点解析右侧目标：最近的右侧上沿对齐组优先，来源组已有左邻组时复用来源组，单组布局使用`direction='right'`创建新组。
 - Dockview持久snapshot在恢复前将全部Panel renderer归一化为`onlyWhenVisible`。Panel先创建轻量`DeferredContentRenderer`，其`onShow`将真实Provider renderer加入frame scheduler；scheduler每个animation frame最多实例化两个renderer，WebView暂停animation frame时使用100ms watchdog slice且每个slice仍最多执行两个。隐藏或销毁的待执行任务即时取消，active/focused Panel优先进入队列。
 - Tab header随Dockview结构同步恢复，使大量历史Tab立即可导航；Provider DOM、CodeMirror、ghostty-web和Git renderer在Panel首次可见时创建。
 
