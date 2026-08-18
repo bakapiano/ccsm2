@@ -75,15 +75,32 @@ pub struct BrowserTitleChangedRequest {
 pub struct BrowserSurfaceManager {
     profile_dir: PathBuf,
     labels: Mutex<HashMap<String, String>>,
+    #[cfg(target_os = "windows")]
+    environment: BrowserEnvironment,
 }
+
+#[cfg(target_os = "windows")]
+struct BrowserEnvironment(webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment);
+
+// SAFETY: the environment is created on Tauri's UI thread during setup. CCSM only clones the
+// interface into WebviewAttributes; Window::add_child then consumes those attributes on the UI
+// thread. This matches tauri-runtime's Send/Sync contract for WebviewAttributes.
+#[cfg(target_os = "windows")]
+unsafe impl Send for BrowserEnvironment {}
+#[cfg(target_os = "windows")]
+unsafe impl Sync for BrowserEnvironment {}
 
 impl BrowserSurfaceManager {
     pub fn new(profile_dir: PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(&profile_dir)
             .map_err(|error| format!("create browser profile directory failed: {error}"))?;
+        #[cfg(target_os = "windows")]
+        let environment = create_browser_environment(&profile_dir)?;
         Ok(Self {
             profile_dir,
             labels: Mutex::new(HashMap::new()),
+            #[cfg(target_os = "windows")]
+            environment,
         })
     }
 
@@ -148,10 +165,8 @@ impl BrowserSurfaceManager {
             .devtools(cfg!(debug_assertions))
             .data_directory(self.profile_dir.clone());
 
-        #[cfg(all(target_os = "windows", debug_assertions))]
-        let builder = builder.additional_browser_args(
-                "--remote-debugging-port=9227 --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
-            );
+        #[cfg(target_os = "windows")]
+        let builder = builder.with_environment(self.environment.0.clone());
 
         let _browser = window
             .add_child(
@@ -295,6 +310,65 @@ impl BrowserSurfaceManager {
         app.get_webview(&label)
             .ok_or_else(|| format!("browser surface {surface_id} has not been created"))
     }
+}
+
+#[cfg(target_os = "windows")]
+fn create_browser_environment(profile_dir: &std::path::Path) -> Result<BrowserEnvironment, String> {
+    use webview2_com::{
+        CoreWebView2EnvironmentOptions, CreateCoreWebView2EnvironmentCompletedHandler,
+        Microsoft::Web::WebView2::Win32::{
+            CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2EnvironmentOptions,
+        },
+    };
+    use windows::{
+        Win32::{
+            Foundation::E_POINTER,
+            System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx},
+        },
+        core::{HSTRING, PCWSTR},
+    };
+
+    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    let options = CoreWebView2EnvironmentOptions::default();
+    unsafe {
+        options.set_additional_browser_arguments(browser_additional_arguments().into());
+        options.set_allow_single_sign_on_using_os_primary_account(true);
+    }
+
+    let user_data_folder = HSTRING::from(profile_dir);
+    let (sender, receiver) = mpsc::channel();
+    let handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
+        move |error_code, environment| {
+            let result = (|| {
+                error_code?;
+                environment.ok_or_else(|| windows::core::Error::from(E_POINTER))
+            })();
+            let _ = sender.send(result);
+            Ok(())
+        },
+    ));
+    unsafe {
+        CreateCoreWebView2EnvironmentWithOptions(
+            PCWSTR::null(),
+            &user_data_folder,
+            &ICoreWebView2EnvironmentOptions::from(options),
+            &handler,
+        )
+    }
+    .map_err(|error| format!("start Browser WebView2 environment creation failed: {error}"))?;
+
+    webview2_com::wait_with_pump(receiver)
+        .map_err(|error| format!("wait for Browser WebView2 environment failed: {error}"))?
+        .map(BrowserEnvironment)
+        .map_err(|error| format!("create Browser WebView2 environment failed: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn browser_additional_arguments() -> &'static str {
+    #[cfg(debug_assertions)]
+    return "--remote-debugging-port=9227 --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+    #[cfg(not(debug_assertions))]
+    return "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 }
 
 type CaptureSender = mpsc::SyncSender<Result<Vec<u8>, String>>;

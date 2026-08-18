@@ -15,6 +15,12 @@ interface BrowserTabState {
 
 所有Browser surfaces从ccsm-desktop的`BrowserProfileManager`获取同一个全局持久website data store。
 
+## Windows identity
+
+Windows build由`BrowserSurfaceManager`创建专用的WebView2 Environment，将`AllowSingleSignOnUsingOSPrimaryAccount`设为`true`，再通过Tauri的`WebviewBuilder::with_environment`交给所有Browser child WebView使用。Entra ID页面能够使用连接到Windows的主账户、设备注册状态和PRT完成SSO及Conditional Access验证。
+
+该environment policy限定在Browser的global persistent profile。Browser中的外部页面可以触发系统账户SSO；账户选择、token签发和访问授权继续由WebView2、Entra ID及租户Conditional Access policy决定。Browser profile保存授权后产生的website session。
+
 ## Desktop host contract
 
 TypeScript Browser Provider通过`BrowserSurfaceClient`执行create、close、setBounds、setVisible、capture、focus、navigate和reload。`ccsm-desktop::browser::BrowserSurfaceManager`持有native handles并实现这些commands。
