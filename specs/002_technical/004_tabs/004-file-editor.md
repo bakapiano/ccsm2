@@ -1,6 +1,6 @@
 # File Editor Tab
 
-File Editor Tab 管理一个 Space-relative UTF-8 文本文件的内存编辑会话。产品行为见 [File Editor 用户行为规范](../../001_product/003_tabs/003-file-editor.md)。
+File Editor Tab 管理一个 Space-relative UTF-8 文本文件的内存会话。Markdown在同一个编辑文档上提供Edit与Preview模式。产品行为见 [File Editor 用户行为规范](../../001_product/003_tabs/003-file-editor.md)。
 
 ## Tab identity 与 state
 
@@ -11,6 +11,7 @@ interface FileEditorTabState {
   selectionHead: number;
   scrollTop: number;
   wordWrap: boolean;
+  markdownMode: "edit" | "preview";
 }
 ```
 
@@ -88,20 +89,17 @@ filesystem watcher只发送invalidation hint。Clean session重新调用`read_fi
 
 ## 编辑层
 
-File Editor根据规范化文件扩展名选择编辑引擎：`.md`与`.markdown`使用Vditor 3 IR，其他文本文件使用CodeMirror 6。每个File Editor Tab保留同一个Panel和引擎实例；Space切换产生的Dockview unmount只解绑session listener，切回时继续使用原state。
+File Editor根据规范化文件扩展名选择内容引擎：`.md`与`.markdown`使用Markdown双模式引擎，其他文本文件使用CodeMirror 6。两类引擎都以CodeMirror `EditorState.doc`作为当前文本的唯一来源。每个File Editor Tab保留同一个Panel；Space切换产生的Dockview unmount解绑session listener，重新挂载时订阅文件事件并校验磁盘revision。
 
-Vditor通过动态`import()`在首个Markdown Tab打开时加载。运行时依赖的Lute、highlight.js、KaTeX、Mermaid、Graphviz、图标、语言和主题资源由Vite复制到`vendor/vditor`，开发服务器从相同URL提供资源，桌面构建全程使用本地资源。Markdown启用sanitize，Mermaid固定使用strict security level。
+Markdown Preview使用固定版本`markdown-it@15.0.0`。渲染器启用`linkify`并关闭原始HTML；链接协议采用相对地址、`http`、`https`、`mailto`明确allowlist，生成的链接增加`target="_blank"`与`rel="noopener noreferrer"`。图片renderer输出可访问的替代文本，避免预览触发网络请求。渲染结果放入语义化`article`，样式完全使用应用CSS variables。
 
-Vditor配置包含：
+markdown-it默认规则覆盖：
 
-- `ir`即时渲染模式和Markdown格式工具栏。
-- GFM自动链接、任务列表、表格、脚注、mark和ToC。
-- highlight.js代码高亮与行号。
-- KaTeX数学公式、Mermaid图表和Graphviz DOT图表。
-- 跟随应用深浅模式的内容主题与代码主题。
-- `Mod-S`显式保存和Vditor内建undo/redo。
+- CommonMark块级和行内结构。
+- 围栏代码块、表格与删除线。
+- 自动链接。
 
-Vditor的`input`回调向session提交完整Markdown快照。初始化完成后，session以Vditor首次序列化结果建立Clean基线，确保IR格式规范化不产生虚假Dirty；未发生编辑时磁盘原文保持不变。撤销回初始序列化结果时恢复Clean。保存、关闭确认和Dirty统计会先从Vditor DOM同步读取最新Markdown，覆盖异步`input`回调尚未完成的连续输入。保存捕获内容与版本，保存期间继续发生的输入保留为Dirty。clean external reload调用`setValue`并重建Vditor内容与undo基线。
+Markdown Tab首次打开使用Preview模式，`markdownMode`与`previewScrollTop`随Tab state持久化。切换到Preview时读取当前`EditorState.doc`并生成预览DOM；渲染器按完整source字符串缓存已展示内容。Edit模式继续使用相同`EditorView`，因此selection、undo history、Dirty判断、保存和冲突处理与其他文本文件完全一致。Preview容器处理跨平台`Mod+S`保存快捷键。带行列位置的文件跳转会切换到Edit模式并定位CodeMirror selection。
 
 普通文本由CodeMirror的`EditorView`承载输入、selection、IME、绘制与滚动；`EditorState`提供history和语言扩展状态。
 
@@ -115,7 +113,7 @@ CodeMirror配置包含：
 
 磁盘首次加载和clean external reload使用新的`EditorState`，从而重置旧undo history；普通Tab切换与Space切换保留当前state。Provider不维护自制textarea镜像、高亮器、搜索器或undo stack。
 
-CodeMirror session保存最近磁盘文本和一个`ChangeSet`组合器。每次`docChanged`将transaction changes合并到累计changes，并通过changes长度判断Dirty；输入路径读取`EditorState.doc.length`，保持零次全文materialization。保存时执行一次`doc.toString()`生成写入内容，保存成功后用当前文本重置磁盘baseline与累计changes；undo回到baseline时通过组合后的changes恢复Clean。
+编辑session保存最近磁盘文本和一个`ChangeSet`组合器。每次`docChanged`将transaction changes合并到累计changes，并通过changes长度判断Dirty；输入路径读取`EditorState.doc.length`，保持零次全文materialization。保存或进入Markdown Preview时执行一次`doc.toString()`；保存成功后用当前文本重置磁盘baseline与累计changes；undo回到baseline时通过组合后的changes恢复Clean。
 
 ## Close 与退出
 
@@ -127,7 +125,7 @@ CodeMirror session保存最近磁盘文本和一个`ChangeSet`组合器。每次
 
 - platform tests覆盖BOM、CRLF、中文、revision冲突、binary和non-UTF-8分类。
 - SQLite contract覆盖同Space path去重与恢复state。
-- TypeScript unit tests覆盖标题消歧、语言识别、引擎选择、watch hint匹配、CodeMirror/Vditor依赖边界和Panel布局。
-- Desktop Markdown scenario覆盖Vditor IR挂载、编辑保存、代码高亮、KaTeX、Mermaid和Graphviz渲染。
+- TypeScript unit tests覆盖标题消歧、语言识别、引擎选择、watch hint匹配、markdown-it安全配置、基础Markdown结构和Panel布局。
+- Desktop Markdown scenario覆盖Preview初始状态、Edit键盘输入、Dirty状态、当前内容预览、Preview快捷键保存与磁盘结果，并保存截图证据。
 - Development Testing使用`playwright-cli`连接Windows WebView2，覆盖打开去重、编辑Dirty、保存、关闭Cancel和磁盘结果。
 - Terminal link scenario分别从Claude Code、Codex与GitHub Copilot的真实VT输出点击文件引用和HTTP URL，验证File Editor行列定位、Tab去重、内置Browser URL及Debug/Release构建。

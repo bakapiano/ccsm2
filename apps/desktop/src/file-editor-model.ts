@@ -6,8 +6,12 @@ export interface FileEditorTabState {
   selectionAnchor: number;
   selectionHead: number;
   scrollTop: number;
+  previewScrollTop: number;
   wordWrap: boolean;
+  markdownMode: MarkdownMode;
 }
+
+export type MarkdownMode = "edit" | "preview";
 
 export type EditorLanguage =
   | "css"
@@ -22,13 +26,13 @@ export type EditorLanguage =
   | "text"
   | "yaml";
 
-export type FileEditorEngine = "codemirror6" | "vditor-ir";
+export type FileEditorEngine = "codemirror6" | "markdown";
 
 export function editorEngineForPath(path: string): FileEditorEngine {
   const name = fileName(path).toLowerCase();
   const extension = name.includes(".") ? name.split(".").at(-1) : "";
   return extension === "md" || extension === "markdown"
-    ? "vditor-ir"
+    ? "markdown"
     : "codemirror6";
 }
 
@@ -46,7 +50,9 @@ export function parseFileEditorState(tab: TabDto): FileEditorTabState {
     selectionAnchor: finiteNonNegative(value.selectionAnchor),
     selectionHead: finiteNonNegative(value.selectionHead),
     scrollTop: finiteNonNegative(value.scrollTop),
+    previewScrollTop: finiteNonNegative(value.previewScrollTop),
     wordWrap: value.wordWrap === true,
+    markdownMode: value.markdownMode === "edit" ? "edit" : "preview",
   };
 }
 

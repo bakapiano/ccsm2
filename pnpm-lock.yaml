@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  vditor@3.11.2:
-    hash: 149be2f8840ac11b338782dd5ab6e6f7fc76495740f40e310128dddbc1e9b9d0
-    path: patches/vditor@3.11.2.patch
-
 importers:
 
   .: {}
@@ -45,9 +40,9 @@ importers:
       dockview:
         specifier: 7.0.4
         version: 7.0.4
-      vditor:
-        specifier: 3.11.2
-        version: 3.11.2(patch_hash=149be2f8840ac11b338782dd5ab6e6f7fc76495740f40e310128dddbc1e9b9d0)
+      markdown-it:
+        specifier: 15.0.0
+        version: 15.0.0
     devDependencies:
       '@ffmpeg-installer/ffmpeg':
         specifier: 1.1.0
@@ -1076,6 +1071,9 @@ packages:
   argparse@2.0.1:
     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
 
+  argparse@3.0.0:
+    resolution: {integrity: sha1-1D+30Jqpb4e8mlowBKwQTk743HA=}
+
   aria-query@5.3.2:
     resolution: {integrity: sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw==}
     engines: {node: '>= 0.4'}
@@ -1364,9 +1362,6 @@ packages:
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
 
-  diff-match-patch@1.0.5:
-    resolution: {integrity: sha1-q7WE1fEM0Rlt/FWqA3AVkq4/ezc=}
-
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
@@ -1414,6 +1409,9 @@ packages:
   entities@7.0.1:
     resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==, tarball: https://registry.npmjs.org/entities/-/entities-7.0.1.tgz}
     engines: {node: '>=0.12'}
+
+  entities@8.0.0:
+    resolution: {integrity: sha1-wd9f42AkKXR/ojPQ3SbxQvDOR0M=}
 
   error-ex@1.3.4:
     resolution: {integrity: sha512-sqQamAnR14VgCr1A618A3sGrygcpK+HEbenA/HiEAkkUwcZIIB/tgWqHFxWgOyDh4nB4JCRimh79dR5Ywc9MDQ==}
@@ -1880,6 +1878,9 @@ packages:
     resolution: {integrity: sha512-wM1+Z03eypVAVUCE7QdSqpVIvelbOakn1M0bPDoA4SGWPx3sNDVUiMo3L6To6WWGClB7VyXnhQ4Sn7gxiJbE6A==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
+  linkify-it@6.1.0:
+    resolution: {integrity: sha1-zXUNcP6SletxaeYy7mek/0Pn9i0=}
+
   locate-app@2.5.0:
     resolution: {integrity: sha512-xIqbzPMBYArJRmPGUZD9CzV9wOqmVtQnaAn3wrj3s6WYW0bQvPI7x+sPYUGmDTYMHefVK//zc6HEYZ1qnxIK+Q==}
 
@@ -1933,6 +1934,12 @@ packages:
   make-dir@3.1.0:
     resolution: {integrity: sha512-g3FeP20LNwhALb/6Cz6Dd4F2ngze0jz7tbzrD2wAV+o9FeNHe4rL+yK2md0J/fiSf1sa1ADhXqi5+oVwOM/eGw==, tarball: https://registry.npmjs.org/make-dir/-/make-dir-3.1.0.tgz}
     engines: {node: '>=8'}
+
+  markdown-it@15.0.0:
+    resolution: {integrity: sha1-3BmXcfdbAdeSMW5bUkhVs5c4aOI=}
+
+  mdurl@2.1.0:
+    resolution: {integrity: sha1-1xHT97zn8ixIfJG+eFRfNW+pZXM=}
 
   minimatch@3.1.5:
     resolution: {integrity: sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w==}
@@ -2131,6 +2138,9 @@ packages:
 
   pump@3.0.4:
     resolution: {integrity: sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA==}
+
+  punycode.js@2.3.1:
+    resolution: {integrity: sha1-a1PlatdViCNOefSv+pCXLH3Yzbc=}
 
   query-selector-shadow-dom@1.0.1:
     resolution: {integrity: sha512-lT5yCqEBgfoMYpf3F2xQRK7zEr1rhIIZuceDK6+xRkJQ4NMbHTwXqk4NkwDwQMNqXgG9r9fyHnzwNVs6zV5KRw==}
@@ -2403,6 +2413,9 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  uc.micro@3.0.0:
+    resolution: {integrity: sha1-ZNbLC/4qVYzg7HyMDciKAtiY9QY=}
+
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==, tarball: https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz}
 
@@ -2430,9 +2443,6 @@ packages:
 
   validate-npm-package-license@3.0.4:
     resolution: {integrity: sha512-DpKm2Ui/xN7/HQKCtpZxoRWBhZ9Z0kqtygG8XCgNQ8ZlDnxuQmWhj566j8fN4Cu3/JmbhsDo7fcAJq4s9h27Ew==}
-
-  vditor@3.11.2:
-    resolution: {integrity: sha1-YSpAXHS3Enik7qGI2zx9k8CITBE=}
 
   vite@8.2.0:
     resolution: {integrity: sha512-pn+CFpM0lwDeKwmOq1ZaBK/9sjorZcgqxki6MbY/jPEVd9vichIlmlD4HmQ5wdP5EgqQCFRaACBxMC7uEGc6lQ==, tarball: https://registry.npmjs.org/vite/-/vite-8.2.0.tgz}
@@ -3802,6 +3812,8 @@ snapshots:
 
   argparse@2.0.1: {}
 
+  argparse@3.0.0: {}
+
   aria-query@5.3.2: {}
 
   ast-types@0.13.4:
@@ -4092,8 +4104,6 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
-  diff-match-patch@1.0.5: {}
-
   dotenv@17.4.2: {}
 
   eastasianwidth@0.2.0: {}
@@ -4144,6 +4154,8 @@ snapshots:
   entities@6.0.1: {}
 
   entities@7.0.1: {}
+
+  entities@8.0.0: {}
 
   error-ex@1.3.4:
     dependencies:
@@ -4636,6 +4648,10 @@ snapshots:
 
   lines-and-columns@2.0.4: {}
 
+  linkify-it@6.1.0:
+    dependencies:
+      uc.micro: 3.0.0
+
   locate-app@2.5.0:
     dependencies:
       '@promptbook/utils': 0.69.5
@@ -4682,6 +4698,17 @@ snapshots:
   make-dir@3.1.0:
     dependencies:
       semver: 6.3.1
+
+  markdown-it@15.0.0:
+    dependencies:
+      argparse: 3.0.0
+      entities: 8.0.0
+      linkify-it: 6.1.0
+      mdurl: 2.1.0
+      punycode.js: 2.3.1
+      uc.micro: 3.0.0
+
+  mdurl@2.1.0: {}
 
   minimatch@3.1.5:
     dependencies:
@@ -4893,6 +4920,8 @@ snapshots:
     dependencies:
       end-of-stream: 1.4.5
       once: 1.4.0
+
+  punycode.js@2.3.1: {}
 
   query-selector-shadow-dom@1.0.1: {}
 
@@ -5187,6 +5216,8 @@ snapshots:
 
   typescript@5.9.3: {}
 
+  uc.micro@3.0.0: {}
+
   undici-types@6.21.0: {}
 
   undici@6.28.0: {}
@@ -5205,10 +5236,6 @@ snapshots:
     dependencies:
       spdx-correct: 3.2.0
       spdx-expression-parse: 3.0.1
-
-  vditor@3.11.2(patch_hash=149be2f8840ac11b338782dd5ab6e6f7fc76495740f40e310128dddbc1e9b9d0):
-    dependencies:
-      diff-match-patch: 1.0.5
 
   vite@8.2.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0):
     dependencies:

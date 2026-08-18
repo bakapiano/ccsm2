@@ -6,7 +6,9 @@ import {
   fileChangeAffectsPath,
   languageForPath,
   normalizeRelativePath,
+  parseFileEditorState,
 } from "./file-editor-model";
+import type { TabDto } from "./generated/TabDto";
 
 describe("file editor model", () => {
   test("uses the shortest parent suffix that disambiguates duplicate names", () => {
@@ -27,11 +29,33 @@ describe("file editor model", () => {
     expect(languageForPath("Dockerfile")).toBe("text");
   });
 
-  test("uses Vditor IR for Markdown documents", () => {
-    expect(editorEngineForPath("README.md")).toBe("vditor-ir");
-    expect(editorEngineForPath("docs/guide.markdown")).toBe("vditor-ir");
+  test("uses the Markdown engine for Markdown documents", () => {
+    expect(editorEngineForPath("README.md")).toBe("markdown");
+    expect(editorEngineForPath("docs/guide.markdown")).toBe("markdown");
     expect(editorEngineForPath("component.mdx")).toBe("codemirror6");
     expect(editorEngineForPath("src/main.ts")).toBe("codemirror6");
+  });
+
+  test("restores a valid Markdown mode and defaults to preview", () => {
+    expect(parseFileEditorState(tabWithState({})).markdownMode).toBe("preview");
+    expect(
+      parseFileEditorState(tabWithState({ markdownMode: "edit" })).markdownMode,
+    ).toBe("edit");
+    expect(
+      parseFileEditorState(tabWithState({ markdownMode: "invalid" }))
+        .markdownMode,
+    ).toBe("preview");
+  });
+
+  test("restores an independent Markdown preview scroll position", () => {
+    expect(
+      parseFileEditorState(tabWithState({ previewScrollTop: 125.5 }))
+        .previewScrollTop,
+    ).toBe(125.5);
+    expect(
+      parseFileEditorState(tabWithState({ previewScrollTop: -1 }))
+        .previewScrollTop,
+    ).toBe(0);
   });
 
   test("normalizes paths and matches filesystem hints", () => {
@@ -46,3 +70,15 @@ describe("file editor model", () => {
     ).toBe(true);
   });
 });
+
+function tabWithState(state: unknown): TabDto {
+  return {
+    id: "tab",
+    spaceId: "space",
+    kind: "file-editor",
+    title: "README.md",
+    resourceId: "README.md",
+    stateVersion: 1,
+    state,
+  };
+}

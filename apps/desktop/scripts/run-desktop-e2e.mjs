@@ -33,6 +33,15 @@ const runMode = process.argv.includes("--ci")
     : process.argv.includes("--evidence")
       ? "evidence"
       : "local";
+const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
+const ownArguments = new Set(["--ci", "--debug", "--evidence"]);
+const wdioArguments = process.argv
+  .slice(2)
+  .filter((argument) => argument !== "--" && !ownArguments.has(argument));
+const plannedScenarioIds = expectedScenarioIds(selectedScenario, wdioArguments);
+const usesProviderHarness = plannedScenarioIds.some(
+  (scenarioId) => scenarioId !== "markdown-edit-preview",
+);
 const artifactDirectory = resolve(
   process.env.CCSM_E2E_ARTIFACT_DIR ??
     join(repositoryRoot, "test-results", "desktop", platform, runId),
@@ -71,7 +80,7 @@ mkdirSync(join(artifactDirectory, "logs"), { recursive: true });
 mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(spacesDirectory, { recursive: true });
 mkdirSync(providerHome, { recursive: true });
-for (const provider of ["claude", "codex", "copilot"]) {
+for (const provider of ["claude", "codex", "copilot", "markdown"]) {
   mkdirSync(join(spacesDirectory, provider), { recursive: true });
 }
 const baselineSourceProcessIds = new Set(
@@ -82,10 +91,6 @@ writeFileSync(
   `${JSON.stringify({ providers: {} }, null, 2)}\n`,
 );
 
-const ownArguments = new Set(["--ci", "--debug", "--evidence"]);
-const wdioArguments = process.argv
-  .slice(2)
-  .filter((argument) => argument !== "--" && !ownArguments.has(argument));
 if (process.argv.includes("--debug")) {
   wdioArguments.push("--logLevel", "debug");
 }
@@ -100,13 +105,16 @@ if (!existsSync(sourceAppBinary)) {
   console.error(runnerError);
 } else {
   try {
-    const providerCliEnvironment = ensurePinnedProviderClis();
-    modelStub = await startModelStub();
-    const modelBaseUrl = `http://127.0.0.1:${modelStub.port}`;
-    const providerEnvironment = prepareProviderEnvironment(
-      providerCliEnvironment,
-      modelBaseUrl,
-    );
+    let providerEnvironment = {};
+    if (usesProviderHarness) {
+      const providerCliEnvironment = ensurePinnedProviderClis();
+      modelStub = await startModelStub();
+      const modelBaseUrl = `http://127.0.0.1:${modelStub.port}`;
+      providerEnvironment = prepareProviderEnvironment(
+        providerCliEnvironment,
+        modelBaseUrl,
+      );
+    }
     const environment = {
       ...cleanEnvironment,
       ...providerEnvironment,
@@ -116,10 +124,10 @@ if (!existsSync(sourceAppBinary)) {
       CCSM_E2E_MODEL_STUB_FILE: modelStubConfigFile,
       CCSM_E2E_MODEL_STUB_LOG: modelStubLog,
       CCSM_E2E_PLATFORM: platform,
-      CCSM_E2E_REAL_PROVIDERS: "1",
+      CCSM_E2E_REAL_PROVIDERS: usesProviderHarness ? "1" : "0",
       CCSM_E2E_RUN_ID: runId,
       CCSM_E2E_RUN_MODE: runMode,
-      CCSM_E2E_SCENARIO: process.env.CCSM_E2E_SCENARIO ?? "all",
+      CCSM_E2E_SCENARIO: selectedScenario,
       CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
       CCSM_HOOK_REPORTER_STRICT: "1",
       CI: "1",
@@ -508,7 +516,7 @@ function ensureResultReflectsRunnerStatus() {
     runnerError ??= "WDIO produced no scenario results";
     exitCode = 1;
   }
-  const scenarioContract = expectedScenarioIds();
+  const scenarioContract = plannedScenarioIds;
   const observedScenarioIds = results
     .filter((row) => row.scenarioId !== "runner")
     .map((row) => row.scenarioId);
@@ -565,15 +573,48 @@ function ensureResultReflectsRunnerStatus() {
   writeFileSync(resultPath, `${JSON.stringify(results, null, 2)}\n`);
 }
 
-function expectedScenarioIds() {
-  const selected = process.env.CCSM_E2E_SCENARIO ?? "all";
+function expectedScenarioIds(selected, cliArguments) {
   const scenarios = {
-    all: ["claude-resume", "codex-resume", "ghcp-resume"],
+    all: [
+      "claude-resume",
+      "codex-resume",
+      "ghcp-resume",
+      "markdown-edit-preview",
+    ],
     claude: ["claude-resume"],
     codex: ["codex-resume"],
     ghcp: ["ghcp-resume"],
+    markdown: ["markdown-edit-preview"],
   };
-  return scenarios[selected] ?? scenarios.all;
+  const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
+  const requestedSpecs = [];
+  for (let index = 0; index < cliArguments.length; index += 1) {
+    const argument = cliArguments[index];
+    if (argument === "--spec" && cliArguments[index + 1]) {
+      requestedSpecs.push(cliArguments[index + 1]);
+      index += 1;
+    } else if (argument.startsWith("--spec=")) {
+      requestedSpecs.push(argument.slice("--spec=".length));
+    }
+  }
+  if (requestedSpecs.length === 0) return selectedScenarioIds;
+
+  const specScenarioIds = new Set();
+  for (const spec of requestedSpecs) {
+    const normalized = spec.replaceAll("\\", "/").toLowerCase();
+    if (normalized.includes("markdown-editor.spec")) {
+      specScenarioIds.add("markdown-edit-preview");
+    }
+    if (normalized.includes("provider-resume.spec")) {
+      specScenarioIds.add("claude-resume");
+      specScenarioIds.add("codex-resume");
+      specScenarioIds.add("ghcp-resume");
+    }
+  }
+  if (specScenarioIds.size === 0) return selectedScenarioIds;
+  return selectedScenarioIds.filter((scenarioId) =>
+    specScenarioIds.has(scenarioId),
+  );
 }
 
 function listProcesses(ownershipRoot) {

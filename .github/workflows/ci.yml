@@ -18,7 +18,7 @@ on:
           - windows
           - linux
       scenario:
-        description: Provider resume scenario to run
+        description: Desktop E2E scenario to run
         required: true
         default: all
         type: choice
@@ -27,6 +27,7 @@ on:
           - claude
           - codex
           - ghcp
+          - markdown
 
 permissions:
   contents: read

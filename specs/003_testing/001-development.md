@@ -133,7 +133,7 @@ Tauri composition root 在 `e2e` feature 下注册两个插件和对应 capabili
 pnpm test:desktop:build                 build current-platform E2E executable
 pnpm test:desktop                       run all current-platform Desktop Scenarios
 pnpm test:desktop -- --spec <file>      run one spec file
-CCSM_E2E_SCENARIO=<provider> pnpm test:desktop run claude/codex/ghcp scenario
+CCSM_E2E_SCENARIO=<scenario> pnpm test:desktop run claude/codex/ghcp/markdown scenario
 pnpm test:desktop:debug -- --spec <file> run one spec with debug logging
 pnpm test:desktop:evidence -- --spec <file> run one spec in evidence mode
 pnpm test:provider-cli-contract             download and verify pinned real CLIs
@@ -189,6 +189,7 @@ test-results/desktop/<run_id>/
 - 每个关键操作后等待明确的可观察状态。
 - 条件等待负责测试同步；证据动画节奏可以使用短暂延时。
 - fixture 使用合成 Space、provider home 和 credential 数据。
+- Markdown场景使用独立合成Space，覆盖Preview、键盘编辑、Dirty、显式保存和磁盘结果。
 - 平台差异放入 screenshot、process 和 display adapter，业务步骤保持共享。
 
 ## 本地验收证据
