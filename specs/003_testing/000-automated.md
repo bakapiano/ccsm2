@@ -151,11 +151,13 @@ contract 对每家 provider 执行：
 
 该 contract 提供真实发行版的参数兼容证据。下方三条 Desktop Scenarios 提供确定性的完整对话、Hook、session binding 与 resume 行为证据。受保护的手动或 nightly workflow 管理需要真实账户的 provider 对话。
 
-门禁包含三条独立场景：
+Provider门禁包含三条独立场景：
 
 1. 创建 Space、创建 Claude CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
+
+Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。
 
 Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 WebView 的控制；对应测试仍创建生产默认 Browser Tab 数据。native Browser child 的 bounds、visibility 与 lifecycle 验收列入后续独立平台套件。
 
@@ -169,6 +171,7 @@ Provider 场景使用 DOM Browser placeholder，保持 embedded driver 对主 We
 4. Stop 后再次 Start 使用同一 native session，第二轮 prompt 正常返回。
 5. 三家固定版本真实 CLI 接受当前 resume 接口与生产 wrapper 参数。
 6. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
+7. 用户通过侧栏右下按钮折叠侧栏，40px窄栏仅显示展开按钮；再次点击后恢复展开宽度与导航内容。
 
 场景从用户可观察结果断言。内部诊断状态补充失败原因。
 
@@ -244,7 +247,7 @@ PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短�
 https://<owner>.github.io/<repository>/e2e/pr/<number>/
 ```
 
-报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP和Markdown场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
+报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown和Sidebar场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
 
 `gh-pages`保存当前active PR报告集合，并通过串行concurrency group发布单一orphan snapshot commit。`pull_request_target: closed`从默认分支执行对应目录清理；每日prune以GitHub API返回的open PR集合刷新站点。报告发布job提供人工验收导航，四个原生required checks继续提供合并结论。
 
@@ -268,7 +271,7 @@ PR Pages评论与owner结论是人工验收记录；四个required status checks
 
 - Pull Request：运行两个必需平台 job。
 - `main` push：运行两个平台 job，验证合并结果。
-- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp/markdown` 指定诊断范围，结果保留相同证据格式。
+- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp/markdown/sidebar` 指定诊断范围，结果保留相同证据格式。
 - 同一 PR 的旧 commit 运行通过 concurrency group 取消。
 - job 和单场景设置明确 timeout。
 - artifact 使用 7 天 retention，为 PR 审查和跨时区验收提供完整窗口。

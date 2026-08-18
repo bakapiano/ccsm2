@@ -33,17 +33,19 @@ const scenarioIds = new Map([
   ["creates a Space and resumes Codex", "codex-resume"],
   ["creates a Space and resumes GHCP", "ghcp-resume"],
   ["edits and previews Markdown", "markdown-edit-preview"],
+  ["collapses and expands the sidebar", "sidebar-collapse"],
 ]);
 const scenarioTitles: Record<string, string> = {
   claude: "creates a Space and resumes Claude",
   codex: "creates a Space and resumes Codex",
   ghcp: "creates a Space and resumes GHCP",
   markdown: "edits and previews Markdown",
+  sidebar: "collapses and expands the sidebar",
 };
 const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
 if (selectedScenario !== "all" && !scenarioTitles[selectedScenario]) {
   throw new Error(
-    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown; received ${selectedScenario}`,
+    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar; received ${selectedScenario}`,
   );
 }
 

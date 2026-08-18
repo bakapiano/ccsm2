@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 import {
+  COLLAPSED_SIDEBAR_WIDTH,
   DEFAULT_AGENTS_HEIGHT,
   DEFAULT_SIDEBAR_WIDTH,
   maxAgentsHeight,
@@ -10,6 +11,7 @@ import {
   MIN_SIDEBAR_WIDTH,
   normalizeAgentsHeight,
   normalizeAgentsPreferredHeight,
+  normalizeSidebarCollapsed,
   normalizeSidebarWidth,
   resizeAgentsHeight,
   resizeSidebarWidth,
@@ -33,13 +35,20 @@ describe("resizable sidebar", () => {
     expect(resizeSidebarWidth(232, 500)).toBe(MAX_SIDEBAR_WIDTH);
   });
 
+  test("normalizes the persisted collapsed state", () => {
+    expect(normalizeSidebarCollapsed(null)).toBe(false);
+    expect(normalizeSidebarCollapsed("false")).toBe(false);
+    expect(normalizeSidebarCollapsed("true")).toBe(true);
+    expect(normalizeSidebarCollapsed(true)).toBe(true);
+  });
+
   test("resizes Agents while preserving a usable Space tree", () => {
-    expect(maxAgentsHeight(900)).toBe(767);
+    expect(maxAgentsHeight(900)).toBe(735);
     expect(normalizeAgentsHeight(null, 900)).toBe(DEFAULT_AGENTS_HEIGHT);
     expect(normalizeAgentsPreferredHeight("420")).toBe(420);
     expect(normalizeAgentsPreferredHeight(20)).toBe(MIN_AGENTS_HEIGHT);
     expect(normalizeAgentsHeight(20, 900)).toBe(MIN_AGENTS_HEIGHT);
-    expect(normalizeAgentsHeight(2_000, 900)).toBe(767);
+    expect(normalizeAgentsHeight(2_000, 900)).toBe(735);
     expect(resizeAgentsHeight(280, -40, 900)).toBe(320);
     expect(resizeAgentsHeight(280, 500, 900)).toBe(MIN_AGENTS_HEIGHT);
   });
@@ -57,7 +66,7 @@ describe("resizable sidebar", () => {
 
     height.value = 400;
     window.dispatchEvent(new Event("resize"));
-    expect(root.style.getPropertyValue("--agents-height")).toBe("267px");
+    expect(root.style.getPropertyValue("--agents-height")).toBe("235px");
 
     height.value = 900;
     window.dispatchEvent(new Event("resize"));
@@ -97,6 +106,57 @@ describe("resizable sidebar", () => {
     expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("330");
     window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 2 }));
   });
+
+  test("collapses to the compact rail and restores the expanded width", () => {
+    const storage = createMemoryStorage({
+      "ccsm.sidebar.width": "318",
+    });
+    const height = { value: 900 };
+    const { root, sidebarResizer, agentsResizer, toggle } = createController(
+      storage,
+      height,
+    );
+
+    expect(root.style.getPropertyValue("--sidebar-width")).toBe("318px");
+    expect(toggle.getAttribute("aria-label")).toBe("Collapse sidebar");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    toggle.click();
+
+    expect(root.dataset.sidebarCollapsed).toBe("true");
+    expect(root.style.getPropertyValue("--sidebar-width")).toBe(
+      `${COLLAPSED_SIDEBAR_WIDTH}px`,
+    );
+    expect(storage.values.get("ccsm.sidebar.collapsed")).toBe("true");
+    expect(storage.values.get("ccsm.sidebar.width")).toBe("318");
+    expect(toggle.getAttribute("aria-label")).toBe("Expand sidebar");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(sidebarResizer.tabIndex).toBe(-1);
+    expect(sidebarResizer.getAttribute("aria-disabled")).toBe("true");
+    expect(agentsResizer.tabIndex).toBe(-1);
+
+    toggle.click();
+
+    expect(root.dataset.sidebarCollapsed).toBe("false");
+    expect(root.style.getPropertyValue("--sidebar-width")).toBe("318px");
+    expect(storage.values.get("ccsm.sidebar.collapsed")).toBe("false");
+    expect(toggle.getAttribute("aria-label")).toBe("Collapse sidebar");
+    expect(sidebarResizer.tabIndex).toBe(0);
+  });
+
+  test("restores a collapsed sidebar from storage", () => {
+    const storage = createMemoryStorage({
+      "ccsm.sidebar.width": "360",
+      "ccsm.sidebar.collapsed": "true",
+    });
+    const { root, toggle } = createController(storage, { value: 900 });
+
+    expect(root.dataset.sidebarCollapsed).toBe("true");
+    expect(root.style.getPropertyValue("--sidebar-width")).toBe(
+      `${COLLAPSED_SIDEBAR_WIDTH}px`,
+    );
+    expect(toggle.getAttribute("aria-label")).toBe("Expand sidebar");
+  });
 });
 
 function createMemoryStorage(initial: Record<string, string> = {}) {
@@ -116,6 +176,7 @@ function createController(
   root.innerHTML = `
     <div id="agents-resizer"></div>
     <div id="sidebar-resizer"></div>
+    <button id="sidebar-toggle" type="button"></button>
   `;
   Object.defineProperty(root, "getBoundingClientRect", {
     value: () => ({
@@ -132,8 +193,9 @@ function createController(
   });
   const sidebarResizer = root.querySelector<HTMLElement>("#sidebar-resizer")!;
   const agentsResizer = root.querySelector<HTMLElement>("#agents-resizer")!;
+  const toggle = root.querySelector<HTMLButtonElement>("#sidebar-toggle")!;
   sidebarResizer.setPointerCapture = () => {};
   agentsResizer.setPointerCapture = () => {};
   new SidebarLayoutController(root, storage);
-  return { root, sidebarResizer, agentsResizer };
+  return { root, sidebarResizer, agentsResizer, toggle };
 }

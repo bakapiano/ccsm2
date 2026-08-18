@@ -39,8 +39,13 @@ const wdioArguments = process.argv
   .slice(2)
   .filter((argument) => argument !== "--" && !ownArguments.has(argument));
 const plannedScenarioIds = expectedScenarioIds(selectedScenario, wdioArguments);
-const usesProviderHarness = plannedScenarioIds.some(
-  (scenarioId) => scenarioId !== "markdown-edit-preview",
+const providerScenarioIds = new Set([
+  "claude-resume",
+  "codex-resume",
+  "ghcp-resume",
+]);
+const usesProviderHarness = plannedScenarioIds.some((scenarioId) =>
+  providerScenarioIds.has(scenarioId),
 );
 const artifactDirectory = resolve(
   process.env.CCSM_E2E_ARTIFACT_DIR ??
@@ -580,11 +585,13 @@ function expectedScenarioIds(selected, cliArguments) {
       "codex-resume",
       "ghcp-resume",
       "markdown-edit-preview",
+      "sidebar-collapse",
     ],
     claude: ["claude-resume"],
     codex: ["codex-resume"],
     ghcp: ["ghcp-resume"],
     markdown: ["markdown-edit-preview"],
+    sidebar: ["sidebar-collapse"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
   const requestedSpecs = [];
@@ -609,6 +616,9 @@ function expectedScenarioIds(selected, cliArguments) {
       specScenarioIds.add("claude-resume");
       specScenarioIds.add("codex-resume");
       specScenarioIds.add("ghcp-resume");
+    }
+    if (normalized.includes("sidebar-collapse.spec")) {
+      specScenarioIds.add("sidebar-collapse");
     }
   }
   if (specScenarioIds.size === 0) return selectedScenarioIds;
