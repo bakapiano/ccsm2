@@ -324,7 +324,9 @@ function normalizedPath(path: string): string {
 
 async function activeSpaceName(): Promise<string> {
   return browser.execute(
-    () => document.querySelector("#active-space-name")?.textContent ?? "",
+    () =>
+      document.querySelector('.space-row[aria-selected="true"] .space-name')
+        ?.textContent ?? "",
   );
 }
 

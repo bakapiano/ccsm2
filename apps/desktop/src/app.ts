@@ -26,10 +26,10 @@ import {
   parseFileEditorState,
 } from "./file-editor-model";
 import {
-  BROWSER_POPUP_DOCK_DIRECTION,
+  createDefaultSpaceDockLayout,
   DOCKVIEW_DND_STRATEGY,
   findDockPanelById,
-  findNearestRightAlignedDockGroup,
+  findPreferredRightDockGroup,
   findRestoredActivePanel,
   findSourceBrowserTab,
   findVisibleDockPanelIds,
@@ -154,9 +154,14 @@ export class CcsmApp {
         this.#surfaceOcclusion.set("file-editor-dialog", visible),
     });
     this.#registry.register(
-      new FileExplorerTabProvider(desktopClient, (spaceId, relativePath) => {
-        void this.#openFileEditor(spaceId, relativePath);
-      }),
+      new FileExplorerTabProvider(
+        desktopClient,
+        (spaceId, relativePath, sourceTabId) => {
+          void this.#openFileEditor(spaceId, relativePath, {
+            sourceGroupId: this.#dockGroupIdForPanel(sourceTabId),
+          });
+        },
+      ),
     );
     this.#registry.register(this.#fileEditorProvider);
     this.#registry.register(new GitTabProvider(desktopClient));
@@ -669,7 +674,7 @@ export class CcsmApp {
         spaceId: snapshot.space.id,
         url: "https://example.com/",
       });
-      this.#addCreatedTab(tab, undefined, targetGroupId);
+      this.#addCreatedTabToRight(tab, targetGroupId);
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus("error", describeError(error));
@@ -726,7 +731,7 @@ export class CcsmApp {
       );
       if (alreadyLoaded) this.#focusTab(alreadyLoaded);
       else {
-        this.#addCreatedTab(tab, undefined, options.targetGroupId ?? null);
+        this.#addCreatedTabToRight(tab, options.sourceGroupId ?? null);
       }
       if (options.position) {
         this.#fileEditorProvider.revealPosition(tab.id, options.position);
@@ -774,7 +779,7 @@ export class CcsmApp {
         path: reference.path,
       });
       await this.#openFileEditor(request.spaceId, resolved.relativePath, {
-        targetGroupId: this.#terminalLinkTargetGroupId(request.sourceTabId),
+        sourceGroupId: this.#dockGroupIdForPanel(request.sourceTabId),
         position:
           reference.line === null
             ? undefined
@@ -802,10 +807,9 @@ export class CcsmApp {
         spaceId: request.spaceId,
         url: request.target.url,
       });
-      this.#addCreatedTab(
+      this.#addCreatedTabToRight(
         tab,
-        undefined,
-        this.#terminalLinkTargetGroupId(request.sourceTabId),
+        this.#dockGroupIdForPanel(request.sourceTabId),
       );
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
@@ -816,13 +820,8 @@ export class CcsmApp {
     }
   }
 
-  #terminalLinkTargetGroupId(sourceTabId: string): string | null {
-    const sourcePanel = findDockPanelById(this.#dockview.panels, sourceTabId);
-    if (!sourcePanel) return null;
-    return (
-      findNearestRightAlignedDockGroup(sourcePanel.group, this.#dockview.groups)
-        ?.id ?? sourcePanel.group.id
-    );
+  #dockGroupIdForPanel(tabId: string): string | null {
+    return findDockPanelById(this.#dockview.panels, tabId)?.group.id ?? null;
   }
 
   #focusTab(tab: TabDto): void {
@@ -853,41 +852,72 @@ export class CcsmApp {
     tab: TabDto,
     reference: IDockviewPanel | undefined = undefined,
     targetGroupId: string | null = null,
+    splitRightOfGroupId: string | null = null,
   ): void {
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
     snapshot.tabs.push(tab);
     this.#tabs.set(tab.id, tab);
-    const targetGroupExists =
-      targetGroupId !== null &&
-      this.#dockview.groups.some((group) => group.id === targetGroupId);
-    const resolvedReference = targetGroupExists
-      ? undefined
-      : (reference ?? this.#dockview.activePanel);
+    const targetGroup = this.#dockview.groups.find(
+      (group) => group.id === targetGroupId,
+    );
+    const splitGroup = this.#dockview.groups.find(
+      (group) => group.id === splitRightOfGroupId,
+    );
+    const resolvedReference =
+      targetGroup || splitGroup
+        ? undefined
+        : (reference ?? this.#dockview.activePanel);
     const panel = this.#dockview.addPanel({
       id: tab.id,
       component: tab.kind,
       title: tab.title,
       renderer: "onlyWhenVisible",
-      ...(targetGroupExists
+      ...(targetGroup
         ? {
             position: {
-              referenceGroup: targetGroupId!,
+              referenceGroup: targetGroup.id,
               direction: "within" as const,
             },
           }
-        : resolvedReference
+        : splitGroup
           ? {
               position: {
-                referencePanel: resolvedReference.id,
-                direction: BROWSER_POPUP_DOCK_DIRECTION,
+                referenceGroup: splitGroup.id,
+                direction: "right" as const,
               },
             }
-          : {}),
+          : resolvedReference
+            ? {
+                position: {
+                  referencePanel: resolvedReference.id,
+                  direction: "within" as const,
+                },
+              }
+            : {}),
     });
     this.#dockview.setActivePanel(panel);
     this.#refreshFileEditorTitles();
     this.#scheduleLayoutSave();
+  }
+
+  #addCreatedTabToRight(
+    tab: TabDto,
+    sourceGroupId: string | null = null,
+  ): void {
+    const sourceGroup =
+      this.#dockview.groups.find((group) => group.id === sourceGroupId) ??
+      this.#dockview.activePanel?.group ??
+      this.#dockview.groups[0];
+    const targetGroup = sourceGroup
+      ? findPreferredRightDockGroup(sourceGroup, this.#dockview.groups)
+      : undefined;
+    this.#addCreatedTab(
+      tab,
+      undefined,
+      targetGroup?.id ?? null,
+      targetGroup ? null : (sourceGroup?.id ?? null),
+    );
   }
 
   async flushLayout(): Promise<void> {
@@ -954,7 +984,7 @@ export class CcsmApp {
       if (serialized) {
         this.#dockview.fromJSON(deferredDockviewSnapshot(serialized));
       } else {
-        this.#createDefaultLayout(snapshot.tabs);
+        createDefaultSpaceDockLayout(this.#dockview, snapshot.tabs);
       }
       this.#addMissingPanels(snapshot.tabs);
       if (this.#dockview.groups.length === 0) this.#dockview.addGroup();
@@ -968,44 +998,11 @@ export class CcsmApp {
       );
       if (restoredActivePanel)
         this.#dockview.setActivePanel(restoredActivePanel);
-      this.#renderActiveSpace(snapshot);
     } finally {
       this.#restoring = false;
     }
     this.#syncAgentForeground();
     this.#scheduleLayoutSave();
-  }
-
-  #createDefaultLayout(tabs: TabDto[]): void {
-    const terminal = tabs.find((tab) => tab.kind === "cli-session");
-    const browser = tabs.find((tab) => tab.kind === "browser");
-    const terminalPanel = terminal
-      ? this.#dockview.addPanel({
-          id: terminal.id,
-          component: terminal.kind,
-          title: terminal.title,
-          renderer: "onlyWhenVisible",
-          initialWidth: 720,
-        })
-      : null;
-    if (browser) {
-      this.#dockview.addPanel({
-        id: browser.id,
-        component: browser.kind,
-        title: browser.title,
-        renderer: "onlyWhenVisible",
-        initialWidth: 540,
-        ...(terminalPanel
-          ? {
-              position: {
-                referencePanel: terminalPanel,
-                direction: "right" as const,
-              },
-            }
-          : {}),
-      });
-    }
-    if (terminalPanel) this.#dockview.setActivePanel(terminalPanel);
   }
 
   #addMissingPanels(tabs: TabDto[]): void {
@@ -1196,18 +1193,8 @@ export class CcsmApp {
       await this.#activateSnapshot(state.activeSnapshot);
     } else {
       this.#activeSnapshot = state.activeSnapshot;
-      this.#renderActiveSpace(state.activeSnapshot);
     }
     this.#spaceTree.render(state);
-  }
-
-  #renderActiveSpace(snapshot: SpaceSnapshotDto): void {
-    requiredElement(this.root, "#active-space-name").textContent =
-      snapshot.space.name;
-    requiredElement(this.root, "#active-space-root").textContent =
-      import.meta.env.MODE === "e2e"
-        ? "<E2E_SPACE_ROOT>"
-        : snapshot.space.rootPath;
   }
 
   async #refreshAgents(): Promise<void> {
@@ -1318,9 +1305,7 @@ export class CcsmApp {
         spaceId: snapshot.space.id,
         url,
       });
-      const reference =
-        sourcePanel ?? this.#dockview.activePanel ?? this.#dockview.panels[0];
-      this.#addCreatedTab(tab, reference);
+      this.#addCreatedTabToRight(tab, sourcePanel?.group.id ?? null);
       this.#setGlobalStatus("running", "ready");
     } catch (error) {
       this.#setGlobalStatus(
@@ -1364,7 +1349,7 @@ function requiredElement<T extends Element = HTMLElement>(
 }
 
 interface OpenFileEditorOptions {
-  targetGroupId?: string | null;
+  sourceGroupId?: string | null;
   position?: { line: number; column: number };
 }
 

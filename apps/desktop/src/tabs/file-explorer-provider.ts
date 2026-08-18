@@ -32,7 +32,11 @@ export class FileExplorerTabProvider implements TabProvider {
 
   constructor(
     private readonly client: CcsmDesktopClient,
-    private readonly openFile: (spaceId: string, relativePath: string) => void,
+    private readonly openFile: (
+      spaceId: string,
+      relativePath: string,
+      sourceTabId: string,
+    ) => void,
   ) {}
 
   createRenderer(tab: TabDto): IContentRenderer {
@@ -44,7 +48,11 @@ class FileExplorerPanel implements IContentRenderer {
   readonly element = document.createElement("section");
   readonly #tab: TabDto;
   readonly #client: CcsmDesktopClient;
-  readonly #openFile: (spaceId: string, relativePath: string) => void;
+  readonly #openFile: (
+    spaceId: string,
+    relativePath: string,
+    sourceTabId: string,
+  ) => void;
   readonly #entries = new Map<string, FileEntryDto[]>();
   readonly #nextOffsets = new Map<string, number>();
   #state: FileExplorerState;
@@ -68,7 +76,11 @@ class FileExplorerPanel implements IContentRenderer {
   constructor(
     tab: TabDto,
     client: CcsmDesktopClient,
-    openFile: (spaceId: string, relativePath: string) => void,
+    openFile: (
+      spaceId: string,
+      relativePath: string,
+      sourceTabId: string,
+    ) => void,
   ) {
     this.#tab = tab;
     this.#client = client;
@@ -406,7 +418,7 @@ class FileExplorerPanel implements IContentRenderer {
     row.addEventListener("click", (event) => {
       this.#selectPath(entry.relativePath, true);
       if (entry.kind === "file") {
-        this.#openFile(this.#tab.spaceId, entry.relativePath);
+        this.#openFile(this.#tab.spaceId, entry.relativePath, this.#tab.id);
       } else if (isDirectory && event.detail === 1) {
         void this.#toggleDirectory(entry.relativePath, expanded);
       }
@@ -475,7 +487,7 @@ class FileExplorerPanel implements IContentRenderer {
     if (!row) return;
     if (result.action === "open") {
       this.#selectPath(result.path, true);
-      this.#openFile(this.#tab.spaceId, result.path);
+      this.#openFile(this.#tab.spaceId, result.path, this.#tab.id);
       return;
     }
     this.#selectPath(result.path, true);
