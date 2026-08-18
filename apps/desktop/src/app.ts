@@ -64,8 +64,6 @@ import { type ThemeController, updateThemeButton } from "./theme";
 import { describeError, desktopClient } from "./transport/desktop-client";
 import { uiIcon, type UiIconName } from "./ui-icons";
 import { bindWindowChrome } from "./window-chrome";
-import type { RendererHealthAppSnapshot } from "./renderer-health";
-import type { RendererReadyResponse } from "./generated/RendererReadyResponse";
 
 const DOCKVIEW_POPOVER_SELECTOR =
   ".dv-context-menu, .dv-tabs-overflow-container";
@@ -932,48 +930,12 @@ export class CcsmApp {
     };
   }
 
-  rendererHealthSnapshot(): RendererHealthAppSnapshot {
-    const modalKind = this.root.querySelector(".app-dialog")
-      ? "app"
-      : this.root.querySelector(".directory-dialog")
-        ? "directory"
-        : null;
-    return {
-      dockDragging: this.#dockDragActive,
-      sidebarResizing: this.root.dataset.sidebarResizing === "true",
-      agentsResizing: this.root.dataset.agentsResizing === "true",
-      modalKind,
-      dirtyEditorCount: this.#fileEditorProvider.dirtyCount(),
-      liveCliRuntimeCount: this.#terminalProvider.liveRuntimeCount(),
-    };
-  }
-
   async debugOpenFileEditors(relativePaths: readonly string[]): Promise<void> {
     const spaceId = this.#activeSnapshot?.space.id;
     if (!spaceId) throw new Error("active Space is unavailable");
     for (const relativePath of relativePaths) {
       await this.#openFileEditor(spaceId, normalizeRelativePath(relativePath));
     }
-  }
-
-  showRendererRecoveryNotice(response: RendererReadyResponse): void {
-    this.root.querySelector(".renderer-recovery-notice")?.remove();
-    const notice = document.createElement("aside");
-    notice.className = "renderer-recovery-notice";
-    notice.dataset.testid = "renderer-recovery-notice";
-    const title = document.createElement("strong");
-    title.textContent = "UI recovered";
-    const detail = document.createElement("span");
-    detail.textContent = response.incidentId
-      ? `Input path restored · incident ${response.incidentId.slice(0, 8)}`
-      : "Input path restored";
-    const dismiss = document.createElement("button");
-    dismiss.type = "button";
-    dismiss.setAttribute("aria-label", "Dismiss recovery notice");
-    dismiss.textContent = "×";
-    dismiss.addEventListener("click", () => notice.remove());
-    notice.append(title, detail, dismiss);
-    this.root.append(notice);
   }
 
   async #activateSnapshot(snapshot: SpaceSnapshotDto): Promise<void> {

@@ -1066,45 +1066,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-.renderer-recovery-notice {
-  position: fixed;
-  z-index: 1200;
-  top: 48px;
-  right: 16px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 3px 14px;
-  min-width: 300px;
-  max-width: min(440px, calc(100vw - 32px));
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--green) 52%, var(--ui-border));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 92%, var(--green));
-  box-shadow: 0 10px 30px rgb(0 0 0 / 22%);
-  color: var(--ink);
-}
-
-.renderer-recovery-notice strong,
-.renderer-recovery-notice span {
-  grid-column: 1;
-}
-
-.renderer-recovery-notice span {
-  color: var(--ink-muted);
-  font-size: 12px;
-}
-
-.renderer-recovery-notice button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: start;
-  border: 0;
-  background: transparent;
-  color: var(--ink-muted);
-  cursor: pointer;
-  font-size: 18px;
-}
-
 .theme-toggle {
   width: 28px;
   height: 26px;
