@@ -1,14 +1,16 @@
 export const DEFAULT_SIDEBAR_WIDTH = 232;
+export const COLLAPSED_SIDEBAR_WIDTH = 40;
 export const MIN_SIDEBAR_WIDTH = 176;
 export const MAX_SIDEBAR_WIDTH = 480;
 export const DEFAULT_AGENTS_HEIGHT = 280;
 export const MIN_AGENTS_HEIGHT = 112;
 export const MIN_SPACE_TREE_HEIGHT = 96;
 
-const SIDEBAR_FIXED_HEIGHT = 32 + 5;
+const SIDEBAR_FIXED_HEIGHT = 32 + 5 + 32;
 
 const WIDTH_KEY = "ccsm.sidebar.width";
 const AGENTS_HEIGHT_KEY = "ccsm.sidebar.agentsHeight";
+const COLLAPSED_KEY = "ccsm.sidebar.collapsed";
 
 type SidebarStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -24,6 +26,10 @@ export function normalizeSidebarWidth(value: unknown): number {
 
 export function resizeSidebarWidth(startWidth: number, deltaX: number): number {
   return normalizeSidebarWidth(startWidth + deltaX);
+}
+
+export function normalizeSidebarCollapsed(value: unknown): boolean {
+  return value === true || value === "true";
 }
 
 export function maxAgentsHeight(sidebarHeight: number): number {
@@ -65,9 +71,11 @@ export function resizeAgentsHeight(
 export class SidebarLayoutController {
   readonly #resizer: HTMLElement;
   readonly #agentsResizer: HTMLElement;
+  readonly #toggle: HTMLButtonElement;
   #width: number;
   #agentsHeight: number;
   #agentsPreferredHeight: number;
+  #collapsed: boolean;
 
   constructor(
     private readonly root: HTMLElement,
@@ -75,7 +83,9 @@ export class SidebarLayoutController {
   ) {
     this.#resizer = required(root, "#sidebar-resizer");
     this.#agentsResizer = required(root, "#agents-resizer");
+    this.#toggle = required(root, "#sidebar-toggle");
     this.#width = normalizeSidebarWidth(storage.getItem(WIDTH_KEY));
+    this.#collapsed = normalizeSidebarCollapsed(storage.getItem(COLLAPSED_KEY));
     this.#agentsPreferredHeight = normalizeAgentsPreferredHeight(
       storage.getItem(AGENTS_HEIGHT_KEY),
     );
@@ -89,6 +99,9 @@ export class SidebarLayoutController {
     this.#agentsResizer.addEventListener("pointerdown", (event) =>
       this.#beginAgentsResize(event),
     );
+    this.#toggle.addEventListener("click", () => {
+      this.#setCollapsed(!this.#collapsed, true);
+    });
     this.#resizer.addEventListener("dblclick", () => {
       this.#setWidth(DEFAULT_SIDEBAR_WIDTH, true);
     });
@@ -129,7 +142,7 @@ export class SidebarLayoutController {
   }
 
   #beginResize(event: PointerEvent): void {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || this.#collapsed) return;
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = this.#width;
@@ -159,8 +172,14 @@ export class SidebarLayoutController {
     this.#apply();
   }
 
+  #setCollapsed(collapsed: boolean, persist: boolean): void {
+    this.#collapsed = collapsed;
+    if (persist) this.storage.setItem(COLLAPSED_KEY, String(collapsed));
+    this.#apply();
+  }
+
   #beginAgentsResize(event: PointerEvent): void {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || this.#collapsed) return;
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = this.#agentsHeight;
@@ -210,15 +229,23 @@ export class SidebarLayoutController {
   }
 
   #apply(): void {
-    this.root.style.setProperty("--sidebar-width", `${this.#width}px`);
+    this.root.style.setProperty(
+      "--sidebar-width",
+      `${this.#collapsed ? COLLAPSED_SIDEBAR_WIDTH : this.#width}px`,
+    );
     this.root.style.setProperty("--agents-height", `${this.#agentsHeight}px`);
-    this.#resizer.tabIndex = 0;
-    this.#resizer.setAttribute("aria-disabled", "false");
+    this.root.dataset.sidebarCollapsed = String(this.#collapsed);
+    this.#toggle.setAttribute("aria-expanded", String(!this.#collapsed));
+    const toggleLabel = this.#collapsed ? "Expand sidebar" : "Collapse sidebar";
+    this.#toggle.setAttribute("aria-label", toggleLabel);
+    this.#toggle.title = toggleLabel;
+    this.#resizer.tabIndex = this.#collapsed ? -1 : 0;
+    this.#resizer.setAttribute("aria-disabled", String(this.#collapsed));
     this.#resizer.setAttribute("aria-valuemin", String(MIN_SIDEBAR_WIDTH));
     this.#resizer.setAttribute("aria-valuemax", String(MAX_SIDEBAR_WIDTH));
     this.#resizer.setAttribute("aria-valuenow", String(this.#width));
-    this.#agentsResizer.tabIndex = 0;
-    this.#agentsResizer.setAttribute("aria-disabled", "false");
+    this.#agentsResizer.tabIndex = this.#collapsed ? -1 : 0;
+    this.#agentsResizer.setAttribute("aria-disabled", String(this.#collapsed));
     this.#agentsResizer.setAttribute(
       "aria-valuemin",
       String(MIN_AGENTS_HEIGHT),

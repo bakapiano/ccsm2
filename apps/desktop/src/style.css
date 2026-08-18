@@ -403,16 +403,27 @@ button:disabled {
 .sidebar {
   display: grid;
   grid-area: sidebar;
-  grid-template-rows: 32px minmax(96px, 1fr) 5px minmax(
-      112px,
-      var(--agents-height)
-    );
+  grid-template-rows:
+    32px minmax(96px, 1fr) 5px minmax(112px, var(--agents-height))
+    32px;
   min-width: 0;
   overflow: hidden;
   border-right: 1px solid var(--ui-border);
   background: var(--sidebar-bg);
   user-select: none;
   transition: opacity 0.12s ease;
+}
+
+.app-shell[data-sidebar-collapsed="true"] .sidebar {
+  grid-template-rows: minmax(0, 1fr) 32px;
+}
+
+.app-shell[data-sidebar-collapsed="true"] .sidebar > :not(.sidebar-toggle) {
+  display: none;
+}
+
+.app-shell[data-sidebar-collapsed="true"] > .sidebar-resizer {
+  display: none;
 }
 
 .app-shell[data-sidebar-resizing="true"] {
@@ -547,6 +558,39 @@ button:disabled {
   display: block;
   font-size: 18px;
   line-height: 20px;
+}
+
+.sidebar-toggle {
+  grid-row: 5;
+  align-self: center;
+  justify-self: end;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--ink-mid);
+  background: transparent;
+  box-shadow: none;
+}
+
+.sidebar-toggle:hover {
+  color: var(--ink);
+  background: var(--sidebar-hover);
+}
+
+.sidebar-toggle-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.15;
+}
+
+.app-shell[data-sidebar-collapsed="true"] .sidebar-toggle {
+  grid-row: 2;
 }
 
 .sidebar-tree-scroll {

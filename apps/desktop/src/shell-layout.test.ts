@@ -29,6 +29,25 @@ describe("application shell layout", () => {
     expect(cssRule(".agents-header")).toContain("padding: 0 8px");
   });
 
+  test("keeps the sidebar toggle in the lower-right compact rail", () => {
+    expect(html).toContain('data-testid="sidebar-toggle"');
+    expect(html.match(/class="sidebar-toggle-icon"/g)).toHaveLength(1);
+    expect(html).toContain('<path d="M6 2.5v11" />');
+    expect(html).not.toContain("sidebar-toggle-collapse-icon");
+    expect(html).not.toContain("sidebar-toggle-expand-icon");
+    expect(cssRule(".sidebar-toggle")).toContain("grid-row: 5");
+    expect(cssRule(".sidebar-toggle")).toContain("justify-self: end");
+    expect(cssRule(".sidebar-toggle")).toContain("margin-right: 8px");
+    expect(
+      cssRule('.app-shell[data-sidebar-collapsed="true"] .sidebar'),
+    ).toContain("grid-template-rows: minmax(0, 1fr) 32px");
+    expect(
+      cssRule(
+        '.app-shell[data-sidebar-collapsed="true"] .sidebar > :not(.sidebar-toggle)',
+      ),
+    ).toContain("display: none");
+  });
+
   test("keeps a native resize hit target above the frameless titlebar", () => {
     expect(html).toContain('id="window-resize-north"');
     expect(cssRule(".window-resize-handle")).toContain("z-index: 10000");
@@ -49,8 +68,12 @@ describe("application shell layout", () => {
 });
 
 function cssRule(selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
+  const escaped = selector
+    .trim()
+    .split(/\s+/)
+    .map((segment) => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s+");
+  const match = css.match(new RegExp(`(?:^|})\\s*${escaped}\\s*\\{([^}]+)\\}`));
   if (!match?.[1]) throw new Error(`missing CSS rule: ${selector}`);
   return match[1].replace(/\s+/g, " ").trim();
 }

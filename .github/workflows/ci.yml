@@ -28,6 +28,7 @@ on:
           - codex
           - ghcp
           - markdown
+          - sidebar
 
 permissions:
   contents: read
