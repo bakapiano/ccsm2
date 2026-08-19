@@ -76,6 +76,8 @@ initialize failure evidence
 
 job 开始时创建最小 `workflow-state.json`。测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。finalizer 将 workflow 状态、display cleanup 和 runner 结果汇总为一个最终结论；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
 
+Ubuntu job 将 runner APT mirror list 固定为 Ubuntu 官方 HTTPS archive。依赖准备依次执行带超时与重试的索引更新、仅下载 deb archive、本地 dpkg 安装；网络 attempt、选定镜像和退出码进入 Actions 日志，单个依赖准备 step 最长运行 10 分钟。`pnpm test` 覆盖镜像选择、阶段拆分、瞬时失败重试与重试耗尽。
+
 ## Desktop 驱动方式
 
 所有 Desktop Scenarios 使用 Tauri 官方推荐的 embedded provider：
