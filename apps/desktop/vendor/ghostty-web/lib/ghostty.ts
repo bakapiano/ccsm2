@@ -439,9 +439,10 @@ export class GhosttyTerminal {
     if (!this.handle) throw new Error('Failed to create terminal');
 
     // The WASM allocator can reuse storage from a recently freed terminal.
-    // Reset the fresh handle before any viewport read so released screen cells
-    // can never appear in a new renderer's first frame.
+    // Reset and synchronize the fresh handle before any viewport read so
+    // released screen cells can never appear in a new renderer's first frame.
     this.write('\x1bc');
+    this.update();
     this.initCellPool();
   }
 
