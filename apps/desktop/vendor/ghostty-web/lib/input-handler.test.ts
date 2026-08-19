@@ -86,6 +86,14 @@ interface MockCompositionEvent {
   stopPropagation: () => void;
 }
 
+interface MockInputEvent {
+  type: 'input';
+  data: string | null;
+  inputType: string;
+  isComposing: boolean;
+  target: { value: string };
+}
+
 // Helper to create mock composition event
 function createCompositionEvent(
   type: 'compositionstart' | 'compositionupdate' | 'compositionend',
@@ -96,6 +104,20 @@ function createCompositionEvent(
     data,
     preventDefault: mock(() => {}),
     stopPropagation: mock(() => {}),
+  };
+}
+
+function createInputEvent(
+  data: string | null,
+  target: { value: string },
+  isComposing = false
+): MockInputEvent {
+  return {
+    type: 'input',
+    data,
+    inputType: 'insertText',
+    isComposing,
+    target,
   };
 }
 // Helper to create mock container
@@ -301,9 +323,126 @@ describe('InputHandler', () => {
       simulateKey(container, createKeyEvent('Space', ' '));
       expect(dataReceived).toEqual([' ']);
     });
+
+    test('deduplicates the input event emitted after a printable keydown', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const inputTarget = { value: 'a' };
+
+      simulateKey(container, createKeyEvent('KeyA', 'a'));
+      container.dispatchEvent(createInputEvent('a', inputTarget));
+
+      expect(dataReceived).toEqual(['a']);
+      expect(inputTarget.value).toBe('');
+      handler.dispose();
+    });
   });
 
   describe('IME Composition', () => {
+    test('forwards Sogou insertText input without composition events', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const inputTarget = { value: '你好' };
+
+      container.dispatchEvent(createInputEvent('你好', inputTarget));
+
+      expect(dataReceived).toEqual(['你好']);
+      expect(inputTarget.value).toBe('');
+      handler.dispose();
+    });
+
+    test('ignores input events while composition is active', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const inputTarget = { value: "ni'hao" };
+
+      container.dispatchEvent(createCompositionEvent('compositionstart', ''));
+      container.dispatchEvent(createInputEvent("ni'hao", inputTarget, true));
+
+      expect(dataReceived).toEqual([]);
+      expect(inputTarget.value).toBe("ni'hao");
+      container.dispatchEvent(createCompositionEvent('compositionend', '你好'));
+      expect(dataReceived).toEqual(['你好']);
+      handler.dispose();
+    });
+
+    test('deduplicates compositionend followed by input', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const inputTarget = { value: '你好' };
+
+      container.dispatchEvent(createCompositionEvent('compositionstart', ''));
+      container.dispatchEvent(createCompositionEvent('compositionend', '你好'));
+      container.dispatchEvent(createInputEvent('你好', inputTarget));
+
+      expect(dataReceived).toEqual(['你好']);
+      expect(inputTarget.value).toBe('');
+      handler.dispose();
+    });
+
+    test('deduplicates input followed by compositionend', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const inputTarget = { value: '你好' };
+
+      container.dispatchEvent(createCompositionEvent('compositionstart', ''));
+      container.dispatchEvent(createInputEvent('你好', inputTarget));
+      container.dispatchEvent(createCompositionEvent('compositionend', '你好'));
+
+      expect(dataReceived).toEqual(['你好']);
+      handler.dispose();
+    });
+
+    test('uses the input proxy value when compositionend data is empty', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const endEvent = createCompositionEvent('compositionend', '');
+      Object.defineProperty(endEvent, 'target', {
+        value: { value: '你好' },
+      });
+
+      container.dispatchEvent(endEvent);
+
+      expect(dataReceived).toEqual(['你好']);
+      handler.dispose();
+    });
+
     test('handles composition sequence', () => {
       const handler = new InputHandler(
         ghostty,

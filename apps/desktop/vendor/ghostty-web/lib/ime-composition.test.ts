@@ -70,6 +70,19 @@ function compositionEvent(type: string, data: string): CompositionEvent {
   return event;
 }
 
+function committedInputEvent(data: string): InputEvent {
+  const event = new InputEvent("input", {
+    bubbles: true,
+    data,
+    inputType: "insertText",
+  });
+  Object.defineProperty(event, "isComposing", {
+    configurable: true,
+    value: false,
+  });
+  return event;
+}
+
 beforeEach(() => {
   document.body.replaceChildren();
   canvasViewportRect = domRect(10, 64, 800, 456);
@@ -259,6 +272,29 @@ describe("IME composition overlay", () => {
     terminal.reset();
     expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("");
 
+    terminal.dispose();
+  });
+
+  test("commits Sogou insertText input without composition events", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = new Terminal({ ghostty, cols: 80, rows: 24 });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const submitted: string[] = [];
+    terminal.onData((data) => submitted.push(data));
+    terminal.open(host);
+    terminal.focus();
+
+    terminal.textarea!.value = "你好";
+    terminal.textarea!.dispatchEvent(committedInputEvent("你好"));
+    await Promise.resolve();
+
+    expect(submitted).toEqual(["你好"]);
+    expect(terminal.textarea!.value).toBe("");
+    expect(
+      host.querySelector<HTMLElement>("[data-ghostty-composition]")!.style
+        .display,
+    ).toBe("none");
     terminal.dispose();
   });
 

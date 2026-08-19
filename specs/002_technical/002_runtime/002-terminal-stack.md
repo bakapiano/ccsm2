@@ -34,7 +34,7 @@ portable-pty platform backend
 - 使用 vendored ghostty-web fork，保留 CJK spacer、单字符 selection、行边界 hysteresis、IME anchor 和 box drawing 修复。
 - Box-drawing的整格水平线与垂直线使用单个连续Canvas shape，cell中心和边界不产生重复alpha接缝。
 - scrollback 使用 64 MiB byte budget。
-- IME preedit 覆盖显示在 Canvas cursor 上；`compositionend` 将最终文本提交给 VT/PTY。
+- IME preedit 覆盖显示在 Canvas cursor 上；textarea 的非 composing `input` 与 `compositionend` 最终文本归一化为一次 VT/PTY 输入，覆盖 Windows WebView2 中搜狗的 `insertText` 提交序列。
 - IME input proxy和preedit overlay使用Terminal host内的Canvas布局坐标；Dockview transform不能重复叠加Panel viewport偏移。
 - 新GhosttyTerminal handle在首次viewport读取和render前执行RIS；WASM allocator复用的已释放screen cells不能出现在新Tab首帧。
 - ghostty-web跟踪应用通过CSI协商的Kitty keyboard flags栈与xterm modifyOtherKeys状态，并在每次按键编码前同步DECCKM、DECNKM、NumLock、Alt ESC prefix和增强键盘状态；修饰后的Enter与文本键保持独立序列，不能退化为无修饰键输入。
@@ -43,7 +43,7 @@ portable-pty platform backend
 
 - 一个 writable runtime 同时只有一个 resize/input owner。
 - inactive Tab 保留 ghostty-web 实例和 scroll position；follow-output 仅在 viewport 原本位于底部时生效。
-- Claude/Codex的`onKey`、paste和`compositionend`用户输入在写入PTY前调用`scrollToBottom`，显式恢复follow-output；终端生成的query reply和普通PTY output不改变用户控制的历史viewport。
+- Claude/Codex的`onKey`、paste和IME最终提交在写入PTY前调用`scrollToBottom`，显式恢复follow-output；终端生成的query reply和普通PTY output不改变用户控制的历史viewport。
 - Dockview layout/resize使用trailing debounce合并连续几何变化；pointer resize手势期间保留并裁剪最后一个完整Canvas帧，手势结束后复制该帧为只读覆盖层，在背后只按最终rows/cols完成live Canvas fit、PTY resize与Claude原子repaint，全部提交后一次性移除覆盖层；首次显示和Space切换立即fit。
 - 原生窗口最小化产生的WebView临时小viewport不参与terminal fit或PTY resize；恢复到可渲染viewport后强制完整Canvas redraw，并仅在稳定几何变化时执行一次最终fit/repaint。
 - 前端同一runtime同时只有一个resize command在途；resize burst只保留最新rows/cols。

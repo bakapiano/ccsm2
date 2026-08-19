@@ -101,13 +101,19 @@ export function installCliInputFollow(
       followInput();
     }
   });
+  const followCommittedInput = (event: Event): void => {
+    if ((event as InputEvent).isComposing) return;
+    followInput();
+  };
   host.addEventListener("paste", followInput, true);
   host.addEventListener("compositionend", followInput, true);
+  host.addEventListener("input", followCommittedInput, true);
 
   return () => {
     keySubscription.dispose();
     host.removeEventListener("paste", followInput, true);
     host.removeEventListener("compositionend", followInput, true);
+    host.removeEventListener("input", followCommittedInput, true);
   };
 }
 

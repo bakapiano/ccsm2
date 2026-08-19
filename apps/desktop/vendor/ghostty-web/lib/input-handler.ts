@@ -6,11 +6,8 @@
  * - Mapping KeyboardEvent.code to USB HID Key codes
  * - Extracting modifier keys (Ctrl, Alt, Shift, Meta)
  * - Encoding keys using Ghostty's KeyEncoder
+ * - Normalizing IME composition and input commits
  * - Emitting data for Terminal to send to PTY
- *
- * Limitations:
- * - Does not handle IME/composition events (CJK input) - to be added later
- * - Captures all keyboard input (preventDefault on everything)
  */
 
 import type { Ghostty } from './ghostty';
@@ -200,10 +197,17 @@ export class InputHandler {
   private keydownListener: ((e: KeyboardEvent) => void) | null = null;
   private keypressListener: ((e: KeyboardEvent) => void) | null = null;
   private pasteListener: ((e: ClipboardEvent) => void) | null = null;
+  private inputListener: ((e: Event) => void) | null = null;
   private compositionStartListener: ((e: CompositionEvent) => void) | null = null;
   private compositionUpdateListener: ((e: CompositionEvent) => void) | null = null;
   private compositionEndListener: ((e: CompositionEvent) => void) | null = null;
   private isComposing = false;
+  private compositionSessionActive = false;
+  private compositionCommittedByInput: string | null = null;
+  private pendingPrintableInput: string | null = null;
+  private pendingPrintableInputTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingCompositionInput: string | null = null;
+  private pendingCompositionInputTimer: ReturnType<typeof setTimeout> | null = null;
   private isDisposed = false;
 
   /**
@@ -271,6 +275,12 @@ export class InputHandler {
 
     this.pasteListener = this.handlePaste.bind(this);
     this.container.addEventListener('paste', this.pasteListener);
+
+    // Windows IMEs such as Sogou can commit through insertText input without
+    // emitting compositionend. Listen on the container so the hidden textarea
+    // remains the browser's native IME target.
+    this.inputListener = this.handleInput.bind(this);
+    this.container.addEventListener('input', this.inputListener);
 
     this.compositionStartListener = this.handleCompositionStart.bind(this);
     this.container.addEventListener('compositionstart', this.compositionStartListener);
@@ -370,6 +380,7 @@ export class InputHandler {
     // This handles: a-z, A-Z (with shift), 0-9, punctuation, etc.
     if (this.isPrintableCharacter(event)) {
       event.preventDefault();
+      this.rememberPrintableInput(event.key);
       this.onDataCallback(event.key);
       return;
     }
@@ -570,12 +581,106 @@ export class InputHandler {
     this.onDataCallback(text);
   }
 
+  private committedText(event: InputEvent | CompositionEvent): string {
+    if (typeof event.data === 'string' && event.data.length > 0) {
+      return event.data;
+    }
+
+    const target = event.target as { value?: unknown } | null;
+    return typeof target?.value === 'string' ? target.value : '';
+  }
+
+  private clearInputTarget(event: Event): void {
+    const target = event.target as { value?: unknown } | null;
+    if (typeof target?.value === 'string') {
+      target.value = '';
+    }
+  }
+
+  private clearPendingCompositionInput(): void {
+    if (this.pendingCompositionInputTimer !== null) {
+      clearTimeout(this.pendingCompositionInputTimer);
+      this.pendingCompositionInputTimer = null;
+    }
+    this.pendingCompositionInput = null;
+  }
+
+  private clearPendingPrintableInput(): void {
+    if (this.pendingPrintableInputTimer !== null) {
+      clearTimeout(this.pendingPrintableInputTimer);
+      this.pendingPrintableInputTimer = null;
+    }
+    this.pendingPrintableInput = null;
+  }
+
+  private rememberPrintableInput(data: string): void {
+    this.clearPendingPrintableInput();
+    this.pendingPrintableInput = data;
+    this.pendingPrintableInputTimer = setTimeout(() => {
+      this.pendingPrintableInput = null;
+      this.pendingPrintableInputTimer = null;
+    }, 0);
+  }
+
+  private rememberCompositionInput(data: string): void {
+    this.clearPendingCompositionInput();
+    this.pendingCompositionInput = data;
+    this.pendingCompositionInputTimer = setTimeout(() => {
+      this.pendingCompositionInput = null;
+      this.pendingCompositionInputTimer = null;
+    }, 0);
+  }
+
+  /**
+   * Handle committed text from IMEs that finish with an input event.
+   */
+  private handleInput(event: Event): void {
+    const inputEvent = event as InputEvent;
+    if (this.isDisposed || inputEvent.isComposing) return;
+
+    const data = this.committedText(inputEvent);
+    if (!data) {
+      this.clearInputTarget(event);
+      return;
+    }
+
+    // Older Chromium/WebDriver builds can emit an input event even though the
+    // printable keydown was prevented and already forwarded to the PTY.
+    if (this.pendingPrintableInput === data) {
+      this.clearPendingPrintableInput();
+      this.clearInputTarget(event);
+      return;
+    }
+
+    this.clearPendingPrintableInput();
+
+    // Chromium commonly follows compositionend with a matching input event.
+    // The composition payload has already been sent in that sequence.
+    if (this.pendingCompositionInput === data) {
+      this.clearPendingCompositionInput();
+      this.clearInputTarget(event);
+      return;
+    }
+
+    this.clearPendingCompositionInput();
+    this.isComposing = false;
+    if (this.compositionSessionActive) {
+      this.compositionCommittedByInput = data;
+    }
+    this.onDataCallback(data);
+    this.clearInputTarget(event);
+  }
+
   /**
    * Handle compositionstart event
    */
   private handleCompositionStart(_event: CompositionEvent): void {
     if (this.isDisposed) return;
+    this.clearPendingPrintableInput();
+    this.clearPendingCompositionInput();
     this.isComposing = true;
+    this.compositionSessionActive = true;
+    this.compositionCommittedByInput = null;
   }
 
   /**
@@ -595,10 +700,13 @@ export class InputHandler {
     if (this.isDisposed) return;
     this.isComposing = false;
 
-    const data = event.data;
-    if (data && data.length > 0) {
+    const data = this.committedText(event);
+    if (!this.compositionCommittedByInput && data) {
       this.onDataCallback(data);
+      this.rememberCompositionInput(data);
     }
+    this.compositionSessionActive = false;
+    this.compositionCommittedByInput = null;
 
     // Cleanup text nodes in container (fix for duplicate text display)
     // When the container is contenteditable, the browser might insert text nodes
@@ -635,6 +743,11 @@ export class InputHandler {
       this.pasteListener = null;
     }
 
+    if (this.inputListener) {
+      this.container.removeEventListener('input', this.inputListener);
+      this.inputListener = null;
+    }
+
     if (this.compositionStartListener) {
       this.container.removeEventListener('compositionstart', this.compositionStartListener);
       this.compositionStartListener = null;
@@ -650,6 +763,8 @@ export class InputHandler {
       this.compositionEndListener = null;
     }
 
+    this.clearPendingCompositionInput();
+    this.clearPendingPrintableInput();
     this.isDisposed = true;
   }
 

@@ -130,11 +130,17 @@ describe("installCliInputFollow", () => {
     provider = "claude";
     host.dispatchEvent(new Event("compositionend"));
     expect(scrollCount).toBe(3);
+    host.dispatchEvent(new Event("input"));
+    expect(scrollCount).toBe(4);
+    const composingInput = new Event("input");
+    Object.defineProperty(composingInput, "isComposing", { value: true });
+    host.dispatchEvent(composingInput);
+    expect(scrollCount).toBe(4);
 
     dispose();
     host.dispatchEvent(new Event("paste"));
     expect(keyListener).toBeNull();
-    expect(scrollCount).toBe(3);
+    expect(scrollCount).toBe(4);
   });
 });
 
