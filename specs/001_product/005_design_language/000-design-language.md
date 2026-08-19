@@ -131,7 +131,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - Terminal Canvas复用原版CCSM xterm字形：`Cascadia Mono, Geist Mono, JetBrains Mono, Consolas, monospace`，桌面字号为`13px`；Windows Cascadia Mono cell geometry为`7×18px`。
 - 浅色背景为 `#ffffff`，深色背景为 `#1e1e1e`。
 - 工具条和 Terminal scrollbar 跟随当前模式。
-- Terminal画布占据上方剩余空间；首字母大写的运行状态、当前CLI Session ID、进程信息和Stop操作在panel最底部保持一行。底部状态行与 Browser toolbar 同为 36px，Stop 使用 28px control 高度。
+- Terminal画布占据上方剩余空间；首字母大写的运行状态、当前CLI Session ID、进程信息和Stop操作在panel最底部保持一行。底部状态行与 Browser toolbar 同为 36px。
 - 滚动条贴齐终端 host 的右边界。
 
 ### Browser

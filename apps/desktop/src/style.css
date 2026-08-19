@@ -2097,8 +2097,8 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 }
 
 .terminal-panel-toolbar button {
-  height: var(--control-height);
-  padding: 0 9px;
+  height: 20px;
+  padding: 0 7px;
   border-color: var(--term-control-border);
   border-radius: 4px;
   color: var(--term-on);
