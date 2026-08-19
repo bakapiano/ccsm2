@@ -542,9 +542,25 @@ export class Terminal implements ITerminalCore {
       this.renderer.resize(this.cols, this.rows);
       this.syncInputPosition(true);
 
+      const finishComposition = (): void => {
+        this.compositionActive = false;
+        this.compositionText = "";
+        if (this.compositionView) {
+          this.compositionView.style.display = "none";
+          this.compositionView.textContent = "";
+        }
+      };
+      const clearInputProxy = (): void => {
+        queueMicrotask(() => {
+          textarea.value = "";
+          this.syncInputPosition(true);
+        });
+      };
+
       // Windows locks the IME candidate anchor when composition starts, so
       // force a synchronous position refresh before the event bubbles to the
-      // InputHandler. Clear committed proxy text after composition finishes.
+      // InputHandler. Clear committed proxy text after either browser commit
+      // sequence finishes.
       textarea.addEventListener("compositionstart", () => {
         this.compositionActive = true;
         this.compositionText = "";
@@ -558,16 +574,13 @@ export class Terminal implements ITerminalCore {
         },
       );
       textarea.addEventListener("compositionend", () => {
-        this.compositionActive = false;
-        this.compositionText = "";
-        if (this.compositionView) {
-          this.compositionView.style.display = "none";
-          this.compositionView.textContent = "";
-        }
-        queueMicrotask(() => {
-          textarea.value = "";
-          this.syncInputPosition(true);
-        });
+        finishComposition();
+        clearInputProxy();
+      });
+      textarea.addEventListener("input", (event) => {
+        if ((event as InputEvent).isComposing) return;
+        finishComposition();
+        clearInputProxy();
       });
 
       // Create input handler

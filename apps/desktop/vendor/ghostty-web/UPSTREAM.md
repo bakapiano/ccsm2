@@ -14,8 +14,9 @@ Local changes:
 - stabilize drag endpoints between rows with centre-line hysteresis.
 - focus and position the hidden input textarea at the rendered cursor so
   Windows IME preedit and candidate UI use the terminal cursor as their anchor.
-- render uncommitted IME preedit text as a cursor-aligned overlay and only send
-  the committed `compositionend` payload to the PTY.
+- render uncommitted IME preedit text as a cursor-aligned overlay and normalize
+  committed `compositionend` or `input` text into one PTY write, including the
+  `insertText`-only sequence emitted by Sogou on Windows WebView2.
 - reset the existing WASM terminal with VT RIS instead of freeing/reallocating
   it, preventing uninitialized cells and stale SelectionManager references
   after Dockview-driven dimension changes.
