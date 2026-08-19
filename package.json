@@ -7,7 +7,7 @@
     "dev": "pnpm desktop:dev",
     "build": "pnpm --filter @ccsm/desktop build",
     "check": "pnpm verify:tauri-runtime && pnpm --filter @ccsm/desktop check && cargo check --workspace --locked",
-    "test": "cargo test --workspace --locked && pnpm --filter @ccsm/desktop test",
+    "test": "node --test .github/scripts/*.test.mjs && cargo test --workspace --locked && pnpm --filter @ccsm/desktop test",
     "format": "cargo fmt --all && pnpm --filter @ccsm/desktop format",
     "format:check": "cargo fmt --all -- --check && pnpm --filter @ccsm/desktop format:check",
     "verify:version": "node scripts/check-release-version.mjs",

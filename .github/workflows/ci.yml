@@ -56,9 +56,10 @@ jobs:
 
       - name: Install Ubuntu build dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          bash -n .github/scripts/install-ubuntu-dependencies.sh
+          sudo bash .github/scripts/install-ubuntu-dependencies.sh \
             build-essential \
             file \
             libayatana-appindicator3-dev \
@@ -236,9 +237,10 @@ jobs:
           clean: false
 
       - name: Install Ubuntu desktop dependencies
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          bash -n .github/scripts/install-ubuntu-dependencies.sh
+          sudo bash .github/scripts/install-ubuntu-dependencies.sh \
             build-essential \
             file \
             libayatana-appindicator3-dev \
