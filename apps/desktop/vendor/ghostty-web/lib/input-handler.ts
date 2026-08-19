@@ -204,6 +204,8 @@ export class InputHandler {
   private isComposing = false;
   private compositionSessionActive = false;
   private compositionCommittedByInput: string | null = null;
+  private pendingPrintableInput: string | null = null;
+  private pendingPrintableInputTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingCompositionInput: string | null = null;
   private pendingCompositionInputTimer: ReturnType<typeof setTimeout> | null = null;
   private isDisposed = false;
@@ -378,6 +380,7 @@ export class InputHandler {
     // This handles: a-z, A-Z (with shift), 0-9, punctuation, etc.
     if (this.isPrintableCharacter(event)) {
       event.preventDefault();
+      this.rememberPrintableInput(event.key);
       this.onDataCallback(event.key);
       return;
     }
@@ -602,6 +605,23 @@ export class InputHandler {
     this.pendingCompositionInput = null;
   }
 
+  private clearPendingPrintableInput(): void {
+    if (this.pendingPrintableInputTimer !== null) {
+      clearTimeout(this.pendingPrintableInputTimer);
+      this.pendingPrintableInputTimer = null;
+    }
+    this.pendingPrintableInput = null;
+  }
+
+  private rememberPrintableInput(data: string): void {
+    this.clearPendingPrintableInput();
+    this.pendingPrintableInput = data;
+    this.pendingPrintableInputTimer = setTimeout(() => {
+      this.pendingPrintableInput = null;
+      this.pendingPrintableInputTimer = null;
+    }, 0);
+  }
+
   private rememberCompositionInput(data: string): void {
     this.clearPendingCompositionInput();
     this.pendingCompositionInput = data;
@@ -623,6 +643,16 @@ export class InputHandler {
       this.clearInputTarget(event);
       return;
     }
+
+    // Older Chromium/WebDriver builds can emit an input event even though the
+    // printable keydown was prevented and already forwarded to the PTY.
+    if (this.pendingPrintableInput === data) {
+      this.clearPendingPrintableInput();
+      this.clearInputTarget(event);
+      return;
+    }
+
+    this.clearPendingPrintableInput();
 
     // Chromium commonly follows compositionend with a matching input event.
     // The composition payload has already been sent in that sequence.
@@ -646,6 +676,7 @@ export class InputHandler {
    */
   private handleCompositionStart(_event: CompositionEvent): void {
     if (this.isDisposed) return;
+    this.clearPendingPrintableInput();
     this.clearPendingCompositionInput();
     this.isComposing = true;
     this.compositionSessionActive = true;
@@ -733,6 +764,7 @@ export class InputHandler {
     }
 
     this.clearPendingCompositionInput();
+    this.clearPendingPrintableInput();
     this.isDisposed = true;
   }
 

@@ -323,6 +323,25 @@ describe('InputHandler', () => {
       simulateKey(container, createKeyEvent('Space', ' '));
       expect(dataReceived).toEqual([' ']);
     });
+
+    test('deduplicates the input event emitted after a printable keydown', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+      const inputTarget = { value: 'a' };
+
+      simulateKey(container, createKeyEvent('KeyA', 'a'));
+      container.dispatchEvent(createInputEvent('a', inputTarget));
+
+      expect(dataReceived).toEqual(['a']);
+      expect(inputTarget.value).toBe('');
+      handler.dispose();
+    });
   });
 
   describe('IME Composition', () => {
