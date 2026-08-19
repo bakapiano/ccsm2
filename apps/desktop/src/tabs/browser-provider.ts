@@ -92,7 +92,6 @@ class BrowserPanel implements IContentRenderer {
   #anchor: HTMLElement | null = null;
   #address: HTMLInputElement | null = null;
   #snapshot: HTMLImageElement | null = null;
-  #status: HTMLElement | null = null;
   #resizeObserver: ResizeObserver | null = null;
   #visibilitySubscription: { dispose(): void } | null = null;
   #panelApi: GroupPanelPartInitParameters["api"] | null = null;
@@ -142,7 +141,6 @@ class BrowserPanel implements IContentRenderer {
             ${uiIcon("arrow-right")}
           </button>
         </div>
-        <span class="browser-state panel-status" data-state="starting">starting</span>
       </form>
       <div class="browser-anchor" data-snapshot-visible="false" aria-label="Native browser viewport">
         <img class="browser-snapshot" alt="" aria-hidden="true" hidden />
@@ -155,14 +153,13 @@ class BrowserPanel implements IContentRenderer {
     this.#anchor = this.element.querySelector(".browser-anchor");
     this.#address = this.element.querySelector(".browser-address");
     this.#snapshot = this.element.querySelector(".browser-snapshot");
-    this.#status = this.element.querySelector(".browser-state");
     if (!this.#anchor || !this.#address)
       throw new Error("browser panel DOM is incomplete");
     this.#address.value = this.#currentUrl;
+    this.#setStatus("starting", "starting");
     if (!this.nativeSurfacesEnabled) {
       this.#address.disabled = true;
-      this.#status!.dataset.state = "ready";
-      this.#status!.textContent = "E2E Browser placeholder";
+      this.#setStatus("running", "E2E Browser placeholder");
       this.#anchor.textContent = "Native Browser disabled for provider E2E";
       return;
     }
@@ -455,10 +452,8 @@ class BrowserPanel implements IContentRenderer {
   }
 
   #setStatus(state: string, text: string): void {
-    if (!this.#status) return;
-    this.#status.dataset.state = state;
-    this.#status.textContent = text;
-    this.#status.title = text;
+    this.element.dataset.browserState = state;
+    this.element.dataset.browserStatus = text;
   }
 
   #persistState(): Promise<void> {

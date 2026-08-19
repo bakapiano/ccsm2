@@ -112,7 +112,9 @@ describe("native Browser snapshot placeholder", () => {
 
     renderer.init({ api: {} } as never);
 
-    expect(renderer.element.querySelector(".browser-state")?.textContent).toBe(
+    expect(renderer.element.querySelector(".browser-state")).toBeNull();
+    expect(renderer.element.dataset.browserState).toBe("running");
+    expect(renderer.element.dataset.browserStatus).toBe(
       "E2E Browser placeholder",
     );
     expect(renderer.element.textContent).toContain(

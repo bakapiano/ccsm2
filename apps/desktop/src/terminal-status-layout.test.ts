@@ -23,6 +23,9 @@ describe("Terminal status layout", () => {
     expect(cssRule(".terminal-panel-toolbar")).toContain(
       "border-top: 1px solid var(--term-rule)",
     );
+    expect(cssRule(".terminal-panel-toolbar button")).toContain(
+      "height: var(--control-height)",
+    );
     expect(provider).toContain("parts.push(`session ${sessionId}`)");
     expect(provider).toContain(
       'this.#setStatus("running", `Running${binding}`)',
