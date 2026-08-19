@@ -148,6 +148,7 @@ class TerminalPanel implements IContentRenderer {
   #action: HTMLButtonElement | null = null;
   #session: CliSessionDto | null = null;
   #runtimeId: string | null = null;
+  #runtimeMeta: string | null = null;
   #starting = false;
   #manualStopBlocked = false;
   #initialized = false;
@@ -235,6 +236,7 @@ class TerminalPanel implements IContentRenderer {
     this.#status = this.element.querySelector(".terminal-status");
     this.#meta = this.element.querySelector(".terminal-meta");
     this.#action = this.element.querySelector(".terminal-action");
+    this.#renderMeta();
     this.#syncInputState();
     this.#installResizeGestureGuard();
     this.#observeSize();
@@ -496,6 +498,8 @@ class TerminalPanel implements IContentRenderer {
     const sessionId = this.#session?.id ?? this.#tab.resourceId;
     if (!sessionId) throw new Error("CLI Tab is missing resourceId");
     this.#starting = true;
+    this.#runtimeMeta = null;
+    this.#renderMeta();
     this.#syncAction();
     this.#setStatus("starting", `starting ${this.#tab.title}`);
     try {
@@ -534,7 +538,7 @@ class TerminalPanel implements IContentRenderer {
         this.#session.desiredState = "running";
         this.#session.nativeBindingState = started.nativeBindingState;
       }
-      this.#meta!.textContent = `${started.shell} · pid ${started.pid ?? "—"}`;
+      this.#runtimeMeta = `${started.shell} · pid ${started.pid ?? "—"}`;
       this.#renderRuntimeStatus();
       if (this.#panelApi) {
         focusWhenPanelActive(this.#panelApi, () => this.#terminal?.focus());
@@ -1062,6 +1066,7 @@ class TerminalPanel implements IContentRenderer {
 
   #renderRuntimeStatus(): void {
     const session = this.#session;
+    this.#renderMeta();
     if (this.#runtimeId) {
       const binding =
         session?.nativeBindingState === "pending"
@@ -1069,13 +1074,24 @@ class TerminalPanel implements IContentRenderer {
           : session?.nativeBindingState === "bound"
             ? " · resume ready"
             : "";
-      this.#setStatus("running", `running${binding}`);
+      this.#setStatus("running", `Running${binding}`);
     } else if (session?.nativeBindingState === "unavailable") {
       this.#setStatus("error", "resume unavailable");
     } else {
       this.#setStatus("stopped", "stopped");
     }
     this.#syncAction();
+  }
+
+  #renderMeta(): void {
+    if (!this.#meta) return;
+    const sessionId = this.#session?.id ?? this.#tab.resourceId;
+    const parts: string[] = [];
+    if (sessionId) parts.push(`session ${sessionId}`);
+    if (this.#runtimeMeta) parts.push(this.#runtimeMeta);
+    const text = parts.join(" · ") || "—";
+    this.#meta.textContent = text;
+    this.#meta.title = text;
   }
 
   #syncAction(): void {

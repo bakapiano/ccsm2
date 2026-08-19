@@ -6,15 +6,26 @@ const provider = await Bun.file(
 const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
 
 describe("Terminal status layout", () => {
-  test("renders the terminal host above a fixed bottom status bar", () => {
+  test("aligns panel status rows with the Browser toolbar", () => {
     expect(provider.indexOf('class="terminal-host"')).toBeLessThan(
       provider.indexOf('class="terminal-panel-toolbar"'),
+    );
+    expect(cssRule(":root")).toContain(
+      "--statusbar-height: var(--toolbar-height)",
+    );
+    expect(cssRule(".browser-panel")).toContain(
+      "grid-template-rows: var(--toolbar-height) minmax(0, 1fr)",
     );
     expect(cssRule(".terminal-panel")).toContain(
       "grid-template-rows: minmax(0, 1fr) var(--statusbar-height)",
     );
+    expect(cssRule(".file-editor-panel")).toContain("var(--statusbar-height)");
     expect(cssRule(".terminal-panel-toolbar")).toContain(
       "border-top: 1px solid var(--term-rule)",
+    );
+    expect(provider).toContain("parts.push(`session ${sessionId}`)");
+    expect(provider).toContain(
+      'this.#setStatus("running", `Running${binding}`)',
     );
     expect(cssRule(".terminal-host")).toContain(
       "--terminal-fit-scrollbar-width: 0px",
@@ -68,5 +79,8 @@ function cssRule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`));
   if (!match?.[1]) throw new Error(`missing CSS rule: ${selector}`);
-  return match[1].replace(/\s+/g, " ").trim();
+  return match[1]
+    .replace(/\s+/g, " ")
+    .replace(/var\(\s+(--[^ )]+)\s+\)/g, "var($1)")
+    .trim();
 }

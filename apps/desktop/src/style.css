@@ -82,7 +82,7 @@
   --terminal-scrollbar-thumb: rgb(0 0 0 / 22%);
   --terminal-scrollbar-thumb-active: rgb(0 0 0 / 38%);
   --toolbar-height: 36px;
-  --statusbar-height: 24px;
+  --statusbar-height: var(--toolbar-height);
   --control-height: 28px;
   --control-radius: 5px;
   --control-gap: 6px;

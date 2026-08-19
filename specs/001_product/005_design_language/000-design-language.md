@@ -84,7 +84,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 展开侧栏默认宽度为232px，可在176–480px之间拖动resize；折叠侧栏宽度为40px。
 - 侧栏树行高度为22px，与File Explorer行高一致。
 - Dockview 标签带高度为 30px。
-- 内容工具栏高度为 30–38px。
+- Browser、Files 与 Git 的内容工具栏，以及 Terminal 与 File Editor 的底部状态栏高度统一为 36px。
 - 普通圆角为 4px，弹窗最大圆角为 6px。
 - 控件内边距优先使用 4、8、12、16px。
 
@@ -131,7 +131,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - Terminal Canvas复用原版CCSM xterm字形：`Cascadia Mono, Geist Mono, JetBrains Mono, Consolas, monospace`，桌面字号为`13px`；Windows Cascadia Mono cell geometry为`7×18px`。
 - 浅色背景为 `#ffffff`，深色背景为 `#1e1e1e`。
 - 工具条和 Terminal scrollbar 跟随当前模式。
-- Terminal画布占据上方剩余空间；运行状态、进程信息和Stop操作在panel最底部保持一行。
+- Terminal画布占据上方剩余空间；首字母大写的运行状态、当前CLI Session ID、进程信息和Stop操作在panel最底部保持一行。
 - 滚动条贴齐终端 host 的右边界。
 
 ### Browser
