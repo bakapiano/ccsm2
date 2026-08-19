@@ -81,7 +81,7 @@
   --terminal-scrollbar-track: rgb(0 0 0 / 5%);
   --terminal-scrollbar-thumb: rgb(0 0 0 / 22%);
   --terminal-scrollbar-thumb-active: rgb(0 0 0 / 38%);
-  --toolbar-height: 36px;
+  --toolbar-height: 32px;
   --statusbar-height: var(--toolbar-height);
   --control-height: 28px;
   --control-radius: 5px;
@@ -1492,7 +1492,7 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   justify-content: flex-start;
   gap: var(--control-gap);
   min-width: 0;
-  padding: 4px 7px;
+  padding: 2px 7px;
   overflow: visible;
 }
 
@@ -2225,7 +2225,7 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   align-items: center;
   gap: var(--control-gap);
   min-width: 0;
-  padding: 4px 7px;
+  padding: 2px 7px;
 }
 
 .browser-address-group {
@@ -2343,7 +2343,7 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   display: grid;
   align-items: center;
   gap: var(--control-gap);
-  padding: 4px 7px 4px 10px;
+  padding: 2px 7px 2px 10px;
   font-size: 11px;
 }
 

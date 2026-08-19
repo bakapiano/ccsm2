@@ -10,6 +10,7 @@ describe("Terminal status layout", () => {
     expect(provider.indexOf('class="terminal-host"')).toBeLessThan(
       provider.indexOf('class="terminal-panel-toolbar"'),
     );
+    expect(cssRule(":root")).toContain("--toolbar-height: 32px");
     expect(cssRule(":root")).toContain(
       "--statusbar-height: var(--toolbar-height)",
     );
