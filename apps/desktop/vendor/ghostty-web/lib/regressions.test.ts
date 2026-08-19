@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { resolveScrollbarWidth } from "./addons/fit";
+import { Ghostty } from "./ghostty";
 import { calculateInputAnchor } from "./input-anchor";
 import {
   applyFontCellOverrides,
@@ -38,6 +39,26 @@ function selectionManagerForLine(
 }
 
 describe("local ghostty-web regressions", () => {
+  test("a fresh terminal synchronizes cleared cells before its first viewport read", async () => {
+    const ghostty = await Ghostty.load();
+    const first = ghostty.createTerminal(80, 24);
+    first.write("STALE_TERMINAL_CONTENT");
+    first.update();
+    expect(first.getViewport().some((cell) => cell.codepoint !== 0)).toBe(true);
+    first.free();
+
+    const second = ghostty.createTerminal(80, 24);
+    try {
+      expect(
+        second
+          .getViewport()
+          .some((cell) => cell.codepoint !== 0 && cell.codepoint !== 32),
+      ).toBe(false);
+    } finally {
+      second.free();
+    }
+  });
+
   test("link underline stays visibly inside a fixed-height cell", () => {
     expect(calculateLinkUnderlineY(18, { height: 18, baseline: 18 })).toBe(34);
     expect(calculateLinkUnderlineY(0, { height: 18, baseline: 14 })).toBe(15);
