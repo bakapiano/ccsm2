@@ -111,29 +111,69 @@ fn collect_hook_report() -> BackendResult<HookReport> {
     }
     let payload: Value = serde_json::from_slice(&input)
         .map_err(|error| BackendError::Invalid(format!("parse Hook payload: {error}")))?;
-    let (native_session_id, hook_event_name) = hook_payload_identity(&payload)?;
+    let identity = hook_payload_identity(&payload)?;
     Ok(HookReport {
         provider: parse_provider(&required_env("CCSM_PROVIDER")?)?,
         cli_session_id: required_env("CCSM_SESSION_ID")?,
         runtime_id: required_env("CCSM_RUNTIME_ID")?,
         token: required_env("CCSM_HOOK_TOKEN")?,
-        native_session_id,
-        hook_event_name,
+        native_session_id: identity.native_session_id,
+        hook_event_name: identity.hook_event_name,
+        transcript_path: identity.transcript_path,
+        source: identity.source,
+        parent_native_session_id: identity.parent_native_session_id,
+        ephemeral: identity.ephemeral,
     })
 }
 
-fn hook_payload_identity(payload: &Value) -> BackendResult<(String, String)> {
-    let native_session_id = payload
-        .get("session_id")
-        .or_else(|| payload.get("sessionId"))
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
+#[derive(Debug, PartialEq, Eq)]
+struct HookPayloadIdentity {
+    native_session_id: String,
+    hook_event_name: String,
+    transcript_path: Option<String>,
+    source: Option<String>,
+    parent_native_session_id: Option<String>,
+    ephemeral: bool,
+}
+
+fn hook_payload_identity(payload: &Value) -> BackendResult<HookPayloadIdentity> {
+    let native_session_id = payload_string(payload, &["session_id", "sessionId"])
         .ok_or_else(|| BackendError::Invalid("Hook payload has no session_id".into()))?;
-    let hook_event_name = payload
-        .get("hook_event_name")
-        .and_then(Value::as_str)
-        .unwrap_or("SessionStart");
-    Ok((native_session_id.to_string(), hook_event_name.to_string()))
+    let hook_event_name = payload_string(payload, &["hook_event_name", "hookEventName"])
+        .unwrap_or_else(|| "SessionStart".into());
+    Ok(HookPayloadIdentity {
+        native_session_id,
+        hook_event_name,
+        transcript_path: payload_string(payload, &["transcript_path", "transcriptPath"]),
+        source: payload_string(payload, &["source"]),
+        parent_native_session_id: payload_string(
+            payload,
+            &[
+                "forked_from_id",
+                "forkedFromId",
+                "parent_session_id",
+                "parentSessionId",
+            ],
+        ),
+        ephemeral: payload_bool(payload, &["ephemeral", "is_sidechain", "isSidechain"])
+            .unwrap_or(false),
+    })
+}
+
+fn payload_string(payload: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        payload
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    })
+}
+
+fn payload_bool(payload: &Value, keys: &[&str]) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| payload.get(*key).and_then(Value::as_bool))
 }
 
 fn required_env(name: &str) -> BackendResult<String> {
@@ -369,14 +409,70 @@ mod tests {
 
     #[test]
     fn hook_payload_accepts_copilot_camel_case_session_identity() {
-        let (session_id, event) = hook_payload_identity(&serde_json::json!({
+        let identity = hook_payload_identity(&serde_json::json!({
             "sessionId": "copilot-session",
             "hook_event_name": "Notification",
             "notification_type": "permission_prompt"
         }))
         .unwrap();
-        assert_eq!(session_id, "copilot-session");
-        assert_eq!(event, "Notification");
+        assert_eq!(identity.native_session_id, "copilot-session");
+        assert_eq!(identity.hook_event_name, "Notification");
+    }
+
+    #[test]
+    fn hook_payload_normalizes_provider_ephemeral_child_metadata() {
+        for (payload, expected_parent) in [
+            (
+                serde_json::json!({
+                    "session_id": "codex-side",
+                    "hook_event_name": "SessionStart",
+                    "forked_from_id": "codex-parent",
+                    "ephemeral": true
+                }),
+                "codex-parent",
+            ),
+            (
+                serde_json::json!({
+                    "session_id": "claude-side",
+                    "hook_event_name": "SessionStart",
+                    "parent_session_id": "claude-parent",
+                    "is_sidechain": true
+                }),
+                "claude-parent",
+            ),
+            (
+                serde_json::json!({
+                    "sessionId": "copilot-side",
+                    "hookEventName": "SessionStart",
+                    "parentSessionId": "copilot-parent",
+                    "ephemeral": true
+                }),
+                "copilot-parent",
+            ),
+        ] {
+            let identity = hook_payload_identity(&payload).unwrap();
+            assert_eq!(
+                identity.parent_native_session_id.as_deref(),
+                Some(expected_parent)
+            );
+            assert!(identity.ephemeral);
+        }
+    }
+
+    #[test]
+    fn hook_payload_preserves_session_start_context() {
+        let identity = hook_payload_identity(&serde_json::json!({
+            "session_id": "codex-session",
+            "hook_event_name": "SessionStart",
+            "transcript_path": "C:/runtime/rollout.jsonl",
+            "source": "clear"
+        }))
+        .unwrap();
+        assert_eq!(identity.source.as_deref(), Some("clear"));
+        assert_eq!(
+            identity.transcript_path.as_deref(),
+            Some("C:/runtime/rollout.jsonl")
+        );
     }
 
     #[test]
@@ -400,6 +496,10 @@ mod tests {
             token: "secret".into(),
             native_session_id: "native-1".into(),
             hook_event_name: "SessionStart".into(),
+            transcript_path: Some("rollout.jsonl".into()),
+            source: Some("startup".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
         };
         write_endpoint(
             endpoint.address(),
@@ -455,6 +555,10 @@ mod tests {
             token: "secret".into(),
             native_session_id: "native-before-connect".into(),
             hook_event_name: "SessionStart".into(),
+            transcript_path: Some("rollout-before-connect.jsonl".into()),
+            source: Some("startup".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
         };
         let payload = serde_json::to_vec(&report).expect("serialize report");
         let client_address = address.clone();

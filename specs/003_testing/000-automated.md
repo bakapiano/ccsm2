@@ -148,6 +148,8 @@ contract 对每家 provider 执行：
 5. Claude 真实 CLI 通过本地 Anthropic stub 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
 6. Codex 真实 CLI 通过本地 Responses API stub 完成 cold prompt、native session resume、第二轮 prompt 与 `source=resume` Hook delivery。
 7. GitHub Copilot 真实 CLI 通过 BYOK/offline 本地 Responses API 完成 cold prompt、固定 native session resume、第二轮 prompt 与真实 Hook delivery。
+8. Desktop Codex场景执行真实`/btw`、`/fork`与`/clear`：父native Session ID贯穿side response、返回主线程与cold resume，持久fork和clear分别绑定新native Session ID。
+9. Hook payload单测覆盖Claude、Codex、Copilot的snake_case/camelCase ephemeral父子字段，core绑定单测覆盖三家provider的父绑定保持行为与Codex `clear/resume/fork`持久转换。
 
 执行环境使用显式 OS/display allowlist、隔离 HOME 与合成 API key。loopback stub 校验每个模型请求携带合成认证；三家的 model base URL 指向 runner loopback stub，辅助 HTTP 客户端收到 closed-loopback proxy 设置。package lockfile、平台原生版本字符串与 executable SHA-256 共同固定测试字节。真实 CLI executable 位于独立安装目录，工作目录位于 Git repository 外的 sibling runtime，job 生命周期负责清理；artifact 保存 `provider-cli-contract.json` 与 model-stub JSONL，其中包含固定版本、实际版本、二进制 SHA-256、模型请求与逐项结果。
 

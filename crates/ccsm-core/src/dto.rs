@@ -671,6 +671,14 @@ pub struct HookReport {
     pub token: String,
     pub native_session_id: String,
     pub hook_event_name: String,
+    #[serde(default)]
+    pub transcript_path: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub parent_native_session_id: Option<String>,
+    #[serde(default)]
+    pub ephemeral: bool,
 }
 
 export_ts! {
