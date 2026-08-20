@@ -259,7 +259,12 @@ describe("real provider CLI with stubbed model API", () => {
           if (provider === "codex") {
             currentStep = "persistent-fork";
             setModelResponse(provider, forkPrompt, forkResponse);
-            await sendTerminalSlashCommand(provider, "/fork");
+            await sendTerminalSlashCommand(
+              provider,
+              "/fork",
+              undefined,
+              (snapshot) => snapshot.text.includes("Thread forked from"),
+            );
             await waitForStablePrompt(provider, resumed.runtimeId!);
             await sendTerminalLine(provider, forkPrompt);
             const forked = await waitForProvider(
@@ -279,7 +284,14 @@ describe("real provider CLI with stubbed model API", () => {
 
             currentStep = "clear-session";
             setModelResponse(provider, clearPrompt, clearResponse);
-            await sendTerminalSlashCommand(provider, "/clear");
+            await sendTerminalSlashCommand(
+              provider,
+              "/clear",
+              undefined,
+              (snapshot) =>
+                !snapshot.text.includes(forkResponseMarker) &&
+                terminalPromptReady(provider, snapshot.text),
+            );
             await waitForStablePrompt(provider, resumed.runtimeId!);
             await sendTerminalLine(provider, clearPrompt);
             const cleared = await waitForProvider(
@@ -725,6 +737,7 @@ async function terminalSnapshot(
 async function waitForProvider(
   provider: Provider,
   predicate: (snapshot: TerminalSnapshot) => boolean,
+  timeout = 90_000,
 ): Promise<TerminalSnapshot> {
   let latest: TerminalSnapshot | null = null;
   await browser.waitUntil(
@@ -739,7 +752,7 @@ async function waitForProvider(
       return Boolean(latest && predicate(latest));
     },
     {
-      timeout: 90_000,
+      timeout,
       interval: 250,
       timeoutMsg: `${provider} did not reach the expected terminal state`,
     },
@@ -776,6 +789,7 @@ async function sendTerminalSlashCommand(
   provider: Provider,
   command: string,
   modelPrompt?: string,
+  confirmation?: (snapshot: TerminalSnapshot) => boolean,
 ): Promise<void> {
   await waitForProvider(
     provider,
@@ -786,17 +800,20 @@ async function sendTerminalSlashCommand(
           snapshot.lastOutputRuntimeId === snapshot.runtimeId,
       ),
   );
-  const panel = await terminalPanel(provider);
-  const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
-  await terminalInput.waitForExist({ timeout: 20_000 });
-  await terminalInput.click();
-  for (const character of command) await browser.keys(character);
+  await dispatchTerminalInput(provider, [command]);
   await browser.keys("Enter");
   if (
     modelPrompt &&
     !(await waitForModelRequest(provider, modelPrompt, 8_000))
   ) {
     await browser.keys("Enter");
+  } else if (confirmation) {
+    try {
+      await waitForProvider(provider, confirmation, 3_000);
+    } catch {
+      await browser.keys("Enter");
+      await waitForProvider(provider, confirmation);
+    }
   }
 }
 
