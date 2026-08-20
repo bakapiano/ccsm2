@@ -1,7 +1,7 @@
 {
   "name": "ccsm2",
   "private": true,
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "dev": "pnpm desktop:dev",
@@ -14,7 +14,7 @@
     "verify:tauri-runtime": "node scripts/check-tauri-runtime-dependencies.mjs",
     "desktop:dev": "pnpm --filter @ccsm/desktop dev:desktop",
     "desktop:build:debug": "pnpm --filter @ccsm/desktop build:desktop:debug",
-    "desktop:build:release": "pnpm --filter @ccsm/desktop tauri build --no-bundle --config src-tauri/tauri.release.conf.json -- --locked",
+    "desktop:build:release": "pnpm --filter @ccsm/desktop tauri build --config src-tauri/tauri.release.conf.json -- --locked",
     "test:desktop:build": "pnpm --filter @ccsm/desktop build:desktop:e2e",
     "test:desktop": "pnpm --filter @ccsm/desktop test:desktop",
     "test:desktop:ci": "pnpm --filter @ccsm/desktop test:desktop:ci",

@@ -1,6 +1,6 @@
 # Resource Cleanup
 
-Tauri Rust主进程提供一个幂等`shutdown()`，在Close Main Window、Quit、installer请求退出和OS shutdown signal时执行。首版不包含应用内updater。
+Tauri Rust主进程提供一个幂等`shutdown()`，在Close Main Window、Quit、应用内updater安装、installer请求退出和OS shutdown signal时执行。
 
 ## Ownership
 

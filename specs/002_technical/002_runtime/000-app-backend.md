@@ -78,6 +78,6 @@ Tauri command adapter将bootstrap、Space create/switch/delete、layout/Tab持�
 
 ## Lifecycle
 
-Tauri setup构造AppBackend。主窗口退出、installer请求退出或OS shutdown signal触发统一`shutdown()`：冻结新命令、释放native surfaces、停止process trees、取消tasks、提交状态并关闭数据库。首版不包含应用内updater service。
+Tauri setup构造AppBackend。主窗口退出、应用内updater安装、installer请求退出或OS shutdown signal触发统一`shutdown()`：冻结新命令、释放native surfaces、停止process trees、取消tasks、提交状态并关闭数据库。DesktopUpdateManager位于ccsm-desktop managed state，并在installer handoff时调用同一shutdown gate。
 
 整个Rust进程异常退出时，Windows Job Object kill-on-close或Unix launch wrapper control-pipe EOF触发process-group cleanup。下一次启动从空RuntimeManager开始，并根据持久Session state协调恢复。

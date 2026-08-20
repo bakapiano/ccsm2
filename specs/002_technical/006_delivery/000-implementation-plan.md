@@ -42,8 +42,9 @@ CCSM v2 使用独立代码路径和新数据目录。开发采用纵向切片，
 
 ## Phase 4：平台与发布
 
-- Windows 完整实现和安装包首先通过验收。
+- Windows 完整实现、NSIS安装包和应用内升级首先通过验收。
 - macOS/Linux adapters 接入 Unix PTY/socket/process-group 和原生 WebView。
+- Linux交付`.deb`与AppImage，并接入与Windows共享的检查、签名验证和升级界面。
 - 三个平台共享领域 API、数据库 schema 和 protocol types。
 
-完成条件：对应平台通过真实 PTY、Hook、Browser、IME、Space recovery 和 packaging smoke 后标记 supported。
+完成条件：对应平台通过真实 PTY、Hook、Browser、IME、Space recovery、packaging smoke 和候选安装包升级smoke后标记 supported。

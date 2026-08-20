@@ -34,4 +34,23 @@ describe("application theme", () => {
     expect(apply).toHaveBeenLastCalledWith("dark");
     expect(listener).toHaveBeenCalledWith("dark");
   });
+
+  test("sets an explicit mode once", () => {
+    const values = new Map<string, string>();
+    const apply = mock((_theme: "light" | "dark") => {});
+    const controller = new ThemeController(
+      {
+        getItem: (key) => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value),
+      },
+      apply,
+    );
+    const listener = mock((_theme: "light" | "dark") => {});
+    controller.subscribe(listener);
+
+    expect(controller.set("dark")).toBe("dark");
+    expect(controller.set("dark")).toBe("dark");
+    expect(values.get(THEME_STORAGE_KEY)).toBe("dark");
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });

@@ -16,7 +16,7 @@ FileWatchAdapter       Space folder/Git filesystem events
 
 Native browser平台实现位于ccsm-desktop：Windows模块封装WebView2，macOS模块封装WKWebView，Linux模块封装WebKitGTK。共享的`BrowserSurfaceManager`和TypeScript contract位于desktop边界。
 
-Installer、package format、signing和notarization由Tauri bundle config与GitHub Actions platform workflows定义。首版runtime不包含应用内updater。
+Installer、package format、signing和notarization由Tauri bundle config与GitHub Actions platform workflows定义。Windows/Linux 的应用内检查、下载、安装与重启遵循[桌面安装与应用内升级](../006_delivery/001-desktop-installation-updates.md)。
 
 ## 能力矩阵
 
@@ -33,7 +33,7 @@ Installer、package format、signing和notarization由Tauri bundle config与GitH
 | 数据目录        | LocalAppData                             | Application Support                      | XDG data/state                                        |
 | 路径            | drive、UNC、默认大小写不敏感             | POSIX、通常大小写不敏感但不可假设        | POSIX、通常大小写敏感                                 |
 | GUI 自动化      | `@wdio/tauri-service` embedded WebDriver | `@wdio/tauri-service` embedded WebDriver | `@wdio/tauri-service` embedded WebDriver              |
-| 发布包          | `.exe` + Windows installer               | signed/notarized `.app`/DMG              | AppImage/deb/rpm 之一或多种                           |
+| 发布包          | NSIS `.exe`                              | signed/notarized `.app`/DMG              | `.deb` + AppImage                                    |
 
 ## Windows-specific modules
 

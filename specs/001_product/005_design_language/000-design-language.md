@@ -27,7 +27,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 ### 一致的明暗模式
 
 - 默认模式使用浅色纸面。
-- 顶栏主题按钮在 Light 与 Dark 之间切换并保存选择。
+- 顶栏设置按钮打开 Settings Modal；Appearance 区域在 Light 与 Dark 之间切换并保存选择。
 - 应用外壳、Dockview、Terminal、滚动条、菜单和弹窗共享当前模式。
 - Terminal 浅色模式使用 VS Code Light+，深色模式使用 VS Code Dark+。
 - 主题切换保留 PTY、VT、当前屏幕、scrollback、选择与滚动位置。
@@ -96,7 +96,8 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - 左侧 232px 区域显示 20px CCSM terminal mark 与品牌名。
 - 主区域显示当前 Space 名称和单行 root path。
-- 主顶栏保留当前Space、主题和窗口控制；New Tab进入Dockview group header。
+- 主顶栏保留当前Space、Settings入口和窗口控制；New Tab进入Dockview group header。
+- Settings Modal 的 Appearance 区域配置 Light/Dark，Updates 区域显示当前版本、检查结果、下载进度和“升级并重启”。
 - 窗口控制按钮占满 40px 顶栏高度。
 - 关闭按钮 hover 使用系统可识别的红色表面。
 - 侧栏与主工作区从顶栏下沿延伸到窗口底部，全局运行反馈通过可访问状态播报承载。
@@ -175,7 +176,8 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 应用启动后不显示操作系统原生标题栏。
 - 顶栏空白区域可拖动窗口，双击可切换最大化；frameless窗口顶边保留独立的native resize命中区。
 - 最小化、最大化和关闭按钮可以通过键盘与指针操作。
-- 右上角主题按钮可往返切换 Light/Dark，重启后恢复上次选择。
+- 右上角Settings按钮打开Modal；Light/Dark可往返切换，关闭Modal及重启后恢复上次选择。
+- Settings中的“检查更新”显示当前版本与检查结果；存在候选版本时提供“升级并重启”。
 - Terminal、Dockview Tab strip、Tab overflow scrollbar 与 Terminal scrollbar 同步切换。
 - Terminal Canvas的computed font family与原版CCSM保持一致，桌面字号为`13px`；Windows实测cell geometry为`7×18px`。
 - 切换主题前后的终端文字、scrollback 长度、滚动位置和输入能力保持一致。

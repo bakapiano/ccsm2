@@ -1,4 +1,7 @@
 {
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
   "app": {
     "windows": [
       {

@@ -2,6 +2,7 @@ mod browser;
 mod commands;
 mod directory_browser;
 mod runtime_channel;
+mod updates;
 mod webview_focus;
 
 use std::{
@@ -82,7 +83,15 @@ pub fn run() {
             .expect("CCSM main window is missing from the Tauri configuration");
         windows.remove(main_window_index)
     });
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "e2e")]
     let builder = builder
         .plugin(tauri_plugin_wdio::init())
@@ -90,6 +99,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
     let app = builder
         .setup(move |app| {
+            app.manage(updates::UpdateState::from_app(app)?);
             let data_dir = data_dir_override.map(Ok).unwrap_or_else(|| {
                 app.path()
                     .app_local_data_dir()
@@ -240,6 +250,9 @@ pub fn run() {
             commands::navigate_browser,
             commands::reload_browser,
             commands::close_browser,
+            updates::check_update,
+            updates::download_update,
+            updates::install_update,
         ])
         .build(context)
         .expect("failed to build CCSM desktop application");

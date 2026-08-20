@@ -29,6 +29,8 @@ on:
           - ghcp
           - markdown
           - sidebar
+          - settings
+          - terminal
 
 permissions:
   contents: read
@@ -196,12 +198,73 @@ jobs:
         timeout-minutes: 70
         run: pnpm test:desktop:ci
 
+      - name: Build Windows A/B updater E2E packages
+        id: package_build
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $env:RUNNER_TEMP "ccsm-installed-update-e2e"
+          $candidateRoot = Join-Path $runtime "candidate"
+          $keyPath = Join-Path $runtime "updater.key"
+          New-Item -ItemType Directory -Path $candidateRoot -Force | Out-Null
+          $updateSigningPassword = node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"
+          Write-Output "::add-mask::$updateSigningPassword"
+          pnpm --filter @ccsm/desktop tauri signer generate --ci --password $updateSigningPassword --write-keys $keyPath
+          node apps/desktop/scripts/prepare-installed-update-e2e.mjs `
+            --output-dir $runtime `
+            --public-key-file "$keyPath.pub" `
+            --endpoint-port 43821
+          $metadata = Get-Content (Join-Path $runtime "metadata.json") -Raw | ConvertFrom-Json
+          $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $keyPath -Raw
+          $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $updateSigningPassword
+          $env:VITE_CCSM_VERSION = $metadata.candidateVersion
+          pnpm --filter @ccsm/desktop tauri build `
+            --debug `
+            --config src-tauri/tauri.e2e.conf.json `
+            --config $metadata.updaterConfigPath `
+            --config $metadata.candidateConfigPath `
+            --features e2e `
+            --bundles nsis `
+            --ignore-version-mismatches `
+            -- --locked
+          $candidate = "target/debug/bundle/nsis/CCSM_$($metadata.candidateVersion)_x64-setup.exe"
+          Copy-Item $candidate (Join-Path $candidateRoot "CCSM-$($metadata.candidateVersion)-windows-x64-setup.exe")
+          Copy-Item "$candidate.sig" (Join-Path $candidateRoot "CCSM-$($metadata.candidateVersion)-windows-x64-setup.exe.sig")
+          $env:VITE_CCSM_VERSION = $metadata.baseVersion
+          pnpm --filter @ccsm/desktop tauri build `
+            --debug `
+            --config src-tauri/tauri.e2e.conf.json `
+            --config $metadata.updaterConfigPath `
+            --features e2e `
+            --bundles nsis `
+            -- --locked
+
+      - name: Install and update Windows E2E package
+        id: package_smoke
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installers = @(Get-ChildItem target/debug/bundle/nsis -File -Filter "*_$($version)_x64-setup.exe")
+          if ($installers.Count -ne 1) { throw "Expected one E2E NSIS installer, found $($installers.Count)" }
+          $runtime = Join-Path $env:RUNNER_TEMP "ccsm-installed-update-e2e"
+          $metadata = Get-Content (Join-Path $runtime "metadata.json") -Raw | ConvertFrom-Json
+          $candidate = Join-Path $runtime "candidate/CCSM-$($metadata.candidateVersion)-windows-x64-setup.exe"
+          ./scripts/test-windows-package.ps1 `
+            -InstallerPath $installers[0].FullName `
+            -DataDirectory (Join-Path $env:RUNNER_TEMP "ccsm-package-smoke-data") `
+            -UpdateArtifactPath $candidate `
+            -UpdateSignaturePath "$candidate.sig" `
+            -BaseVersion $metadata.baseVersion `
+            -CandidateVersion $metadata.candidateVersion `
+            -EndpointPort $metadata.endpointPort `
+            -DriverPort 43822 `
+            -ArtifactDirectory (Join-Path $env:CCSM_E2E_ARTIFACT_DIR "package-smoke/installed-update")
+
       - name: Finalize Windows Desktop E2E evidence
         if: always()
         env:
           CCSM_E2E_JOB_STATUS: ${{ job.status }}
           CCSM_E2E_STEP_OUTCOMES: >-
-            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}"}
+            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}","package_build":"${{ steps.package_build.outcome }}","package_smoke":"${{ steps.package_smoke.outcome }}"}
         run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
 
       - name: Upload Windows Desktop E2E evidence
@@ -244,6 +307,7 @@ jobs:
             build-essential \
             file \
             libayatana-appindicator3-dev \
+            libfuse2t64 \
             libgtk-3-dev \
             librsvg2-dev \
             libssl-dev \
@@ -305,12 +369,89 @@ jobs:
         timeout-minutes: 70
         run: xvfb-run -a --server-args="-screen 0 1440x900x24" pnpm test:desktop:ci
 
+      - name: Build Linux A/B updater E2E packages
+        id: package_build
+        shell: bash
+        run: |
+          runtime="${RUNNER_TEMP}/ccsm-installed-update-e2e"
+          candidate_root="${runtime}/candidate"
+          key_path="${runtime}/updater.key"
+          mkdir -p "${candidate_root}"
+          update_signing_password="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+          echo "::add-mask::${update_signing_password}"
+          pnpm --filter @ccsm/desktop tauri signer generate \
+            --ci --password "${update_signing_password}" --write-keys "${key_path}"
+          node apps/desktop/scripts/prepare-installed-update-e2e.mjs \
+            --output-dir "${runtime}" \
+            --public-key-file "${key_path}.pub" \
+            --endpoint-port 43831
+          metadata="${runtime}/metadata.json"
+          base_version="$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).baseVersion)" "${metadata}")"
+          candidate_version="$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).candidateVersion)" "${metadata}")"
+          updater_config="$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).updaterConfigPath)" "${metadata}")"
+          candidate_config="$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).candidateConfigPath)" "${metadata}")"
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "${key_path}")"
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${update_signing_password}"
+          export VITE_CCSM_VERSION="${candidate_version}"
+          pnpm --filter @ccsm/desktop tauri build \
+            --debug \
+            --config src-tauri/tauri.e2e.conf.json \
+            --config "${updater_config}" \
+            --config "${candidate_config}" \
+            --features e2e \
+            --bundles deb appimage \
+            --ignore-version-mismatches \
+            -- --locked
+          cp "target/debug/bundle/deb/CCSM_${candidate_version}_amd64.deb" \
+            "${candidate_root}/CCSM-${candidate_version}-linux-x86_64.deb"
+          cp "target/debug/bundle/deb/CCSM_${candidate_version}_amd64.deb.sig" \
+            "${candidate_root}/CCSM-${candidate_version}-linux-x86_64.deb.sig"
+          cp "target/debug/bundle/appimage/CCSM_${candidate_version}_amd64.AppImage" \
+            "${candidate_root}/CCSM-${candidate_version}-linux-x86_64.AppImage"
+          cp "target/debug/bundle/appimage/CCSM_${candidate_version}_amd64.AppImage.sig" \
+            "${candidate_root}/CCSM-${candidate_version}-linux-x86_64.AppImage.sig"
+          export VITE_CCSM_VERSION="${base_version}"
+          pnpm --filter @ccsm/desktop tauri build \
+            --debug \
+            --config src-tauri/tauri.e2e.conf.json \
+            --config "${updater_config}" \
+            --features e2e \
+            --bundles deb appimage \
+            -- --locked
+
+      - name: Install and update Linux E2E packages
+        id: package_smoke
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          package_root="${RUNNER_TEMP}/ccsm-e2e-packages"
+          runtime="${RUNNER_TEMP}/ccsm-installed-update-e2e"
+          metadata="${runtime}/metadata.json"
+          candidate_version="$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).candidateVersion)" "${metadata}")"
+          endpoint_port="$(node -e "const fs=require('fs');process.stdout.write(String(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).endpointPort))" "${metadata}")"
+          mkdir -p "${package_root}"
+          cp "target/debug/bundle/deb/CCSM_${version}_amd64.deb" \
+            "${package_root}/CCSM-${version}-linux-x86_64.deb"
+          cp "target/debug/bundle/appimage/CCSM_${version}_amd64.AppImage" \
+            "${package_root}/CCSM-${version}-linux-x86_64.AppImage"
+          mkdir -p "${CCSM_E2E_ARTIFACT_DIR}/package-smoke"
+          sudo env \
+            PATH="${PATH}" \
+            CCSM_PACKAGE_SMOKE_DATA_DIR="${RUNNER_TEMP}/ccsm-package-smoke-data" \
+            CCSM_PACKAGE_SMOKE_LOG_DIR="${CCSM_E2E_ARTIFACT_DIR}/package-smoke" \
+            CCSM_UPDATE_E2E_CANDIDATE_VERSION="${candidate_version}" \
+            CCSM_UPDATE_E2E_CANDIDATE_ROOT="${runtime}/candidate" \
+            CCSM_UPDATE_E2E_ENDPOINT_PORT="${endpoint_port}" \
+            CCSM_UPDATE_E2E_DRIVER_PORT_BASE="43832" \
+            bash scripts/test-linux-packages.sh "${version}" "${package_root}"
+          sudo chown -R "$(id -u):$(id -g)" "${CCSM_E2E_ARTIFACT_DIR}/package-smoke"
+
       - name: Finalize Linux Desktop E2E evidence
         if: always()
         env:
           CCSM_E2E_JOB_STATUS: ${{ job.status }}
           CCSM_E2E_STEP_OUTCOMES: >-
-            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}"}
+            {"checkout":"${{ steps.checkout.outcome }}","dependencies":"${{ steps.dependencies.outcome }}","backend":"${{ steps.backend.outcome }}","build":"${{ steps.build.outcome }}","provider_contract":"${{ steps.provider_contract.outcome }}","desktop_e2e":"${{ steps.desktop_e2e.outcome }}","package_build":"${{ steps.package_build.outcome }}","package_smoke":"${{ steps.package_smoke.outcome }}"}
         run: node apps/desktop/scripts/finalize-workflow-evidence.mjs
 
       - name: Upload Linux Desktop E2E evidence
