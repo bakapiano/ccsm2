@@ -10,13 +10,16 @@ use ccsm_core::{
         GitSnapshotDto, ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, ReadFileRequest,
         ReadGitDiffRequest, RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest,
         ReplaceCliSessionRequest, ResolveFileReferenceRequest, ResolvedFileReferenceDto,
-        RuntimeEvent, RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest,
-        SpaceLayoutDto, SpaceSnapshotDto, StartRuntimeRequest, TabDto, UpdateTabStateRequest,
-        WriteFileRequest, WriteFileResultDto,
+        RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
+        SpaceSnapshotDto, StartRuntimeRequest, TabDto, UpdateTabStateRequest, WriteFileRequest,
+        WriteFileResultDto,
     },
     error::{ApiErrorDto, BackendError},
 };
-use tauri::{AppHandle, State, Window, ipc::Channel};
+use tauri::{
+    AppHandle, State, Window,
+    ipc::{Channel, InvokeResponseBody},
+};
 
 use crate::{
     DesktopState,
@@ -25,6 +28,7 @@ use crate::{
         BrowseHostDirectoryRequest, CreateHostDirectoryRequest, HostDirectoryEntryDto,
         HostDirectoryListingDto, workspace_root,
     },
+    runtime_channel::encode_runtime_event,
 };
 
 type CommandResult<T> = Result<T, ApiErrorDto>;
@@ -410,11 +414,11 @@ pub async fn read_git_diff(
 #[tauri::command]
 pub async fn start_runtime(
     request: StartRuntimeRequest,
-    on_event: Channel<RuntimeEvent>,
+    on_event: Channel<InvokeResponseBody>,
     state: State<'_, DesktopState>,
 ) -> CommandResult<RuntimeStartedDto> {
     let sink: RuntimeEventSink = Arc::new(move |event| {
-        let _ = on_event.send(event);
+        let _ = on_event.send(InvokeResponseBody::Raw(encode_runtime_event(event)));
     });
     let backend = Arc::clone(&state.backend);
     on_blocking_worker(move || {

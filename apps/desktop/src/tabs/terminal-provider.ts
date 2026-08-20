@@ -1,7 +1,6 @@
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
 import type { CliSessionDto } from "../generated/CliSessionDto";
-import type { RuntimeEvent } from "../generated/RuntimeEvent";
 import type { TabDto } from "../generated/TabDto";
 import { FrameTaskScheduler } from "../frame-task-scheduler";
 import { focusWhenPanelActive } from "../panel-visibility";
@@ -47,6 +46,7 @@ import {
   type TerminalFileReference,
   type TerminalLinkTarget,
 } from "../terminal-links";
+import type { RuntimeStreamEvent } from "../runtime-channel";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
 import { uiIcon } from "../ui-icons";
@@ -551,7 +551,7 @@ class TerminalPanel implements IContentRenderer {
     }
   }
 
-  #onRuntimeEvent(event: RuntimeEvent): void {
+  #onRuntimeEvent(event: RuntimeStreamEvent): void {
     if (this.#destroyed) return;
     if (event.type === "output") {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
@@ -562,7 +562,7 @@ class TerminalPanel implements IContentRenderer {
         this.#terminal?.reset();
       }
       this.#runtimeId ??= event.runtimeId;
-      const rawOutput = new Uint8Array(event.data);
+      const rawOutput = event.data;
       this.#resizeOutputSettler?.push(event.runtimeId, rawOutput);
       if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) {
         this.#queueOutputAck(event.runtimeId, rawOutput.byteLength);

@@ -28,6 +28,9 @@ interface TerminalSnapshot {
 const artifactDirectory = requiredEnvironment("CCSM_E2E_ARTIFACT_DIR");
 const spaceRootBase = requiredEnvironment("CCSM_E2E_TARGET_ROOT_BASE");
 const runId = requiredEnvironment("CCSM_E2E_RUN_ID");
+const terminalStressBytes = optionalNonNegativeInteger(
+  "CCSM_E2E_TERMINAL_STRESS_BYTES",
+);
 const providerCases: ProviderCase[] = [
   { provider: "claude", label: "Claude", scenarioId: "claude-resume" },
   { provider: "codex", label: "Codex", scenarioId: "codex-resume" },
@@ -50,9 +53,16 @@ describe("real provider CLI with stubbed model API", () => {
       const spaceName = `E2E ${label} ${runId}`;
       const spaceRoot = join(spaceRootBase, provider);
       const firstPrompt = `${provider}-prompt-one`;
-      const firstResponse = `STUB_${provider.toUpperCase()}_RESPONSE_ONE`;
+      const firstResponseMarker = `STUB_${provider.toUpperCase()}_RESPONSE_ONE`;
+      const firstResponse = terminalResponse(firstResponseMarker);
       const secondPrompt = `${provider}-prompt-two`;
-      const secondResponse = `STUB_${provider.toUpperCase()}_RESPONSE_TWO`;
+      const secondResponseMarker = `STUB_${provider.toUpperCase()}_RESPONSE_TWO`;
+      const secondResponse = terminalResponse(secondResponseMarker);
+      const turnTimings: Array<{
+        phase: "first" | "follow-up";
+        responseBytes: number;
+        elapsedMs: number;
+      }> = [];
       setModelResponse(provider, firstPrompt, firstResponse);
 
       let primaryError: unknown;
@@ -80,75 +90,118 @@ describe("real provider CLI with stubbed model API", () => {
         await evidence.checkpoint("cli-started");
 
         currentStep = "first-prompt";
+        const firstTurnStartedAt = performance.now();
         await sendTerminalLine(provider, firstPrompt);
         const firstTurn = await waitForProvider(
           provider,
           (snapshot) =>
-            snapshot.text.includes(firstResponse) &&
+            snapshot.text.includes(firstResponseMarker) &&
             snapshot.bindingState === "bound" &&
             Boolean(snapshot.nativeSessionId) &&
             terminalPromptReady(provider, snapshot.text),
         );
+        turnTimings.push({
+          phase: "first",
+          responseBytes: firstResponse.length,
+          elapsedMs: performance.now() - firstTurnStartedAt,
+        });
         const nativeSessionId = firstTurn.nativeSessionId!;
         await waitForAgentActivity(firstTurn.cliSessionId!, "idle");
         await evidence.checkpoint("first-model-response");
 
-        currentStep = "close-cli";
-        await clickRuntimeAction(provider);
-        await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
-        await evidence.checkpoint("cli-closed");
-
-        currentStep = "resume-cli";
-        await clickRuntimeAction(provider);
-        await acknowledgeProviderStartup(provider);
-        const resumed = await waitForProvider(provider, (snapshot) =>
-          Boolean(
-            snapshot.runtimeId &&
-              snapshot.runtimeId !== firstRuntimeId &&
-              snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
-              snapshot.inputEnabled &&
+        if (terminalStressBytes > 0) {
+          currentStep = "follow-up-prompt";
+          setModelResponse(provider, secondPrompt, secondResponse);
+          const followUpTurnStartedAt = performance.now();
+          await sendTerminalLine(provider, secondPrompt);
+          const followUpTurn = await waitForProvider(
+            provider,
+            (snapshot) =>
+              snapshot.text.includes(secondResponseMarker) &&
               snapshot.nativeSessionId === nativeSessionId &&
-              snapshot.text.includes(firstPrompt) &&
-              snapshot.text.includes(firstResponse) &&
               terminalPromptReady(provider, snapshot.text),
-          ),
-        );
-        expect(resumed.runtimeId).not.toBe(firstRuntimeId);
-        expect(resumed.nativeSessionId).toBe(nativeSessionId);
-        expect(resumed.text).toContain(firstPrompt);
-        expect(resumed.text).toContain(firstResponse);
-        await waitForStablePrompt(provider, resumed.runtimeId!);
-        await waitForAgentActivity(resumed.cliSessionId!, "idle");
-        await evidence.checkpoint("cli-resumed");
+          );
+          turnTimings.push({
+            phase: "follow-up",
+            responseBytes: secondResponse.length,
+            elapsedMs: performance.now() - followUpTurnStartedAt,
+          });
+          expect(followUpTurn.runtimeId).toBe(firstRuntimeId);
+          await waitForAgentActivity(followUpTurn.cliSessionId!, "idle");
+          assertModelResponses(provider, [
+            [firstPrompt, firstResponse],
+            [secondPrompt, secondResponse],
+          ]);
+          await evidence.checkpoint("follow-up-model-response");
 
-        currentStep = "resumed-prompt";
-        setModelResponse(provider, secondPrompt, secondResponse);
-        await sendTerminalLine(provider, secondPrompt);
-        const secondTurn = await waitForProvider(
-          provider,
-          (snapshot) =>
-            snapshot.text.includes(secondResponse) &&
-            snapshot.nativeSessionId === nativeSessionId &&
-            terminalPromptReady(provider, snapshot.text),
-        );
-        expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
-        await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
-        assertModelResponses(provider, [
-          [firstPrompt, firstResponse],
-          [secondPrompt, secondResponse],
-        ]);
-        assertResumedModelContext(
-          provider,
-          firstPrompt,
-          firstResponse,
-          secondPrompt,
-        );
-        await evidence.checkpoint("resumed-model-response");
+          currentStep = "final-stop";
+          await clickRuntimeAction(provider);
+          await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+          await evidence.checkpoint("cli-stopped");
+        } else {
+          currentStep = "close-cli";
+          await clickRuntimeAction(provider);
+          await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+          await evidence.checkpoint("cli-closed");
 
-        currentStep = "final-stop";
-        await clickRuntimeAction(provider);
-        await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
-        await evidence.checkpoint("cli-stopped");
+          currentStep = "resume-cli";
+          await clickRuntimeAction(provider);
+          await acknowledgeProviderStartup(provider);
+          const resumed = await waitForProvider(provider, (snapshot) =>
+            Boolean(
+              snapshot.runtimeId &&
+                snapshot.runtimeId !== firstRuntimeId &&
+                snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
+                snapshot.inputEnabled &&
+                snapshot.nativeSessionId === nativeSessionId &&
+                snapshot.text.includes(firstPrompt) &&
+                snapshot.text.includes(firstResponseMarker) &&
+                terminalPromptReady(provider, snapshot.text),
+            ),
+          );
+          expect(resumed.runtimeId).not.toBe(firstRuntimeId);
+          expect(resumed.nativeSessionId).toBe(nativeSessionId);
+          expect(resumed.text).toContain(firstPrompt);
+          expect(resumed.text).toContain(firstResponseMarker);
+          await waitForStablePrompt(provider, resumed.runtimeId!);
+          await waitForAgentActivity(resumed.cliSessionId!, "idle");
+          await evidence.checkpoint("cli-resumed");
+
+          currentStep = "resumed-prompt";
+          setModelResponse(provider, secondPrompt, secondResponse);
+          const resumedTurnStartedAt = performance.now();
+          await sendTerminalLine(provider, secondPrompt);
+          const secondTurn = await waitForProvider(
+            provider,
+            (snapshot) =>
+              snapshot.text.includes(secondResponseMarker) &&
+              snapshot.nativeSessionId === nativeSessionId &&
+              terminalPromptReady(provider, snapshot.text),
+          );
+          turnTimings.push({
+            phase: "follow-up",
+            responseBytes: secondResponse.length,
+            elapsedMs: performance.now() - resumedTurnStartedAt,
+          });
+          expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
+          await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
+          assertModelResponses(provider, [
+            [firstPrompt, firstResponse],
+            [secondPrompt, secondResponse],
+          ]);
+          assertResumedModelContext(
+            provider,
+            firstPrompt,
+            firstResponse,
+            secondPrompt,
+          );
+          await evidence.checkpoint("resumed-model-response");
+
+          currentStep = "final-stop";
+          await clickRuntimeAction(provider);
+          await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+          await evidence.checkpoint("cli-stopped");
+        }
       } catch (error) {
         primaryError = error;
         writeFileSync(
@@ -192,6 +245,20 @@ describe("real provider CLI with stubbed model API", () => {
           supplementalErrors.push(error);
           writeDiagnostic(scenarioId, "gif-finalize", error);
         }
+        if (terminalStressBytes > 0) {
+          writeFileSync(
+            join(artifactDirectory, `${scenarioId}-terminal-performance.json`),
+            `${JSON.stringify(
+              {
+                provider,
+                configuredResponseBytes: terminalStressBytes,
+                turns: turnTimings,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        }
         if (!primaryError && supplementalErrors.length > 0) {
           [primaryError] = supplementalErrors;
         }
@@ -200,6 +267,26 @@ describe("real provider CLI with stubbed model API", () => {
     });
   }
 });
+
+function terminalResponse(marker: string): string {
+  if (terminalStressBytes === 0) return marker;
+  const payloadLength = Math.max(0, terminalStressBytes - marker.length - 1);
+  const pattern = "0123456789abcdef";
+  const payload = pattern
+    .repeat(Math.ceil(payloadLength / pattern.length))
+    .slice(0, payloadLength);
+  return `${payload}\n${marker}`;
+}
+
+function optionalNonNegativeInteger(name: string): number {
+  const value = process.env[name] ?? "0";
+  if (!/^\d+$/u.test(value)) {
+    throw new Error(
+      `${name} must be a non-negative integer; received ${value}`,
+    );
+  }
+  return Number(value);
+}
 
 async function ensureDesktopViewport(): Promise<void> {
   await browser.maximizeWindow();

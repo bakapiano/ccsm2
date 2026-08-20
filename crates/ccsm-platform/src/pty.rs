@@ -24,6 +24,7 @@ use crate::containment::ProcessContainment;
 const RUNTIME_SHIM_ROOT_PREFIX: &str = "ccsm-runtime-shims-";
 const PTY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const PTY_JOIN_POLL_INTERVAL: Duration = Duration::from_millis(5);
+const PTY_READ_BUFFER_BYTES: usize = 8 * 1024;
 const PROVIDER_RUNTIME_ENVIRONMENT: [&str; 9] = [
     "CCSM_WRAPPER_ACTIVE",
     "CCSM_PROVIDER",
@@ -415,7 +416,7 @@ impl PtyBackend for PortablePtyBackend {
         let reader_thread = thread::Builder::new()
             .name("ccsm-pty-reader".into())
             .spawn(move || {
-                let mut buffer = vec![0_u8; 16 * 1024];
+                let mut buffer = vec![0_u8; PTY_READ_BUFFER_BYTES];
                 loop {
                     match reader.read(&mut buffer) {
                         Ok(0) => break,

@@ -1,9 +1,11 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Condvar, Mutex, Weak, mpsc},
+    sync::{Arc, Condvar, Mutex, Weak},
     thread,
+    time::Duration,
 };
 
+use crossbeam_channel::{Receiver, RecvTimeoutError};
 use uuid::Uuid;
 
 use crate::{
@@ -19,6 +21,8 @@ pub type RuntimeEventSink = Arc<dyn Fn(RuntimeEvent) + Send + Sync + 'static>;
 
 const RUNTIME_EVENT_QUEUE_CAPACITY: usize = 64;
 const RUNTIME_OUTPUT_CREDIT_BYTES: usize = 512 * 1024;
+const RUNTIME_OUTPUT_BATCH_BYTES: usize = 8 * 1024;
+const RUNTIME_OUTPUT_COALESCE_WAIT: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Default)]
 struct OutputFlowState {
@@ -94,6 +98,88 @@ impl OutputFlow {
             .lock()
             .map(|state| state.in_flight_bytes)
             .unwrap_or_default()
+    }
+}
+
+fn run_runtime_events(
+    receiver: Receiver<PtyEvent>,
+    output_flow: Arc<OutputFlow>,
+    manager: Weak<RuntimeManager>,
+    cli_session_id: String,
+    runtime_id: String,
+    sink: Arc<Mutex<RuntimeEventSink>>,
+) {
+    let mut pending = None;
+    let mut disconnected = false;
+    loop {
+        let event = match pending.take() {
+            Some(event) => event,
+            None => match receiver.recv() {
+                Ok(event) => event,
+                Err(_) => break,
+            },
+        };
+        let event = match event {
+            PtyEvent::Output(mut data) => {
+                while data.len() < RUNTIME_OUTPUT_BATCH_BYTES {
+                    match receiver.recv_timeout(RUNTIME_OUTPUT_COALESCE_WAIT) {
+                        Ok(PtyEvent::Output(next))
+                            if data.len().saturating_add(next.len())
+                                <= RUNTIME_OUTPUT_BATCH_BYTES =>
+                        {
+                            data.extend_from_slice(&next);
+                        }
+                        Ok(next) => {
+                            pending = Some(next);
+                            break;
+                        }
+                        Err(RecvTimeoutError::Timeout) => break,
+                        Err(RecvTimeoutError::Disconnected) => {
+                            disconnected = true;
+                            break;
+                        }
+                    }
+                }
+                PtyEvent::Output(data)
+            }
+            event => event,
+        };
+        let is_exit = matches!(event, PtyEvent::Exit(_));
+        let runtime_event = match event {
+            PtyEvent::Output(data) => {
+                if !output_flow.reserve(data.len()) {
+                    if disconnected && pending.is_none() {
+                        break;
+                    }
+                    continue;
+                }
+                RuntimeEvent::Output {
+                    runtime_id: runtime_id.clone(),
+                    data,
+                }
+            }
+            PtyEvent::Error(message) => RuntimeEvent::Error {
+                runtime_id: runtime_id.clone(),
+                message,
+            },
+            PtyEvent::Exit(code) => {
+                output_flow.close();
+                if let Some(manager) = Weak::upgrade(&manager) {
+                    manager.remove_if_current(&cli_session_id, &runtime_id);
+                }
+                RuntimeEvent::Exit {
+                    runtime_id: runtime_id.clone(),
+                    code,
+                }
+            }
+        };
+        let current_sink = sink.lock().ok().map(|sink| Arc::clone(&sink));
+        if let Some(current_sink) = current_sink {
+            current_sink(runtime_event);
+        }
+        if is_exit || (disconnected && pending.is_none()) {
+            break;
+        }
     }
 }
 
@@ -218,7 +304,7 @@ impl RuntimeManager {
 
         let sink = Arc::new(Mutex::new(sink));
         let output_flow = Arc::new(OutputFlow::new(RUNTIME_OUTPUT_CREDIT_BYTES));
-        let (pty_event_tx, pty_event_rx) = mpsc::sync_channel(RUNTIME_EVENT_QUEUE_CAPACITY);
+        let (pty_event_tx, pty_event_rx) = crossbeam_channel::bounded(RUNTIME_EVENT_QUEUE_CAPACITY);
         let queued_event_sink: PtyEventSink = Arc::new(move |event| {
             let _ = pty_event_tx.send(event);
         });
@@ -256,7 +342,6 @@ impl RuntimeManager {
             }
         }
 
-        let event_session_id = session.id.clone();
         let started = {
             let mut state = self.lock_state()?;
             state.entries.insert(
@@ -277,45 +362,19 @@ impl RuntimeManager {
         };
 
         let weak = Arc::downgrade(self);
+        let event_session_id = started.cli_session_id.clone();
         let event_runtime_id = runtime_id.clone();
         let dispatch_result = thread::Builder::new()
             .name("ccsm-runtime-events".into())
             .spawn(move || {
-                while let Ok(event) = pty_event_rx.recv() {
-                    let is_exit = matches!(event, PtyEvent::Exit(_));
-                    let runtime_event = match event {
-                        PtyEvent::Output(data) => {
-                            if !output_flow.reserve(data.len()) {
-                                continue;
-                            }
-                            RuntimeEvent::Output {
-                                runtime_id: event_runtime_id.clone(),
-                                data,
-                            }
-                        }
-                        PtyEvent::Error(message) => RuntimeEvent::Error {
-                            runtime_id: event_runtime_id.clone(),
-                            message,
-                        },
-                        PtyEvent::Exit(code) => {
-                            output_flow.close();
-                            if let Some(manager) = Weak::upgrade(&weak) {
-                                manager.remove_if_current(&event_session_id, &event_runtime_id);
-                            }
-                            RuntimeEvent::Exit {
-                                runtime_id: event_runtime_id.clone(),
-                                code,
-                            }
-                        }
-                    };
-                    let current_sink = sink.lock().ok().map(|sink| Arc::clone(&sink));
-                    if let Some(current_sink) = current_sink {
-                        current_sink(runtime_event);
-                    }
-                    if is_exit {
-                        break;
-                    }
-                }
+                run_runtime_events(
+                    pty_event_rx,
+                    output_flow,
+                    weak,
+                    event_session_id,
+                    event_runtime_id,
+                    sink,
+                )
             });
         if let Err(error) = dispatch_result {
             self.remove_if_current(&started.cli_session_id, &runtime_id);
@@ -562,7 +621,10 @@ mod tests {
         ports::{PtyEventSink, PtyProcess, PtySpawnSpec},
     };
     use std::{
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
         time::Duration,
     };
 
@@ -624,7 +686,8 @@ mod tests {
             _spec: PtySpawnSpec,
             event_sink: PtyEventSink,
         ) -> BackendResult<Arc<dyn PtyProcess>> {
-            event_sink(PtyEvent::Output(b"startup failed".to_vec()));
+            event_sink(PtyEvent::Output(b"startup ".to_vec()));
+            event_sink(PtyEvent::Output(b"failed".to_vec()));
             event_sink(PtyEvent::Exit(9));
             Ok(Arc::new(FakeProcess))
         }

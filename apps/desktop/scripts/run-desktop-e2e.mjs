@@ -133,6 +133,8 @@ if (!existsSync(sourceAppBinary)) {
       CCSM_E2E_RUN_ID: runId,
       CCSM_E2E_RUN_MODE: runMode,
       CCSM_E2E_SCENARIO: selectedScenario,
+      CCSM_E2E_TERMINAL_STRESS_BYTES:
+        process.env.CCSM_E2E_TERMINAL_STRESS_BYTES ?? "0",
       CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
       CCSM_HOOK_REPORTER_STRICT: "1",
       CI: "1",
