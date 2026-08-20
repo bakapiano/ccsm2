@@ -21,8 +21,21 @@ interface TerminalSnapshot {
   bindingState: string | null;
   nativeSessionId: string | null;
   inputEnabled: boolean;
+  inputEnqueuedEvents: number;
+  inputWriteBatches: number;
   lastOutputRuntimeId: string | null;
   text: string;
+}
+
+interface TerminalInputTiming {
+  mode: "single" | "burst";
+  round: number;
+  warmup: boolean;
+  inputEvents: number;
+  inputBytes: number;
+  writeBatches: number;
+  dispatchMs: number;
+  echoMs: number;
 }
 
 const artifactDirectory = requiredEnvironment("CCSM_E2E_ARTIFACT_DIR");
@@ -30,6 +43,13 @@ const spaceRootBase = requiredEnvironment("CCSM_E2E_TARGET_ROOT_BASE");
 const runId = requiredEnvironment("CCSM_E2E_RUN_ID");
 const terminalStressBytes = optionalNonNegativeInteger(
   "CCSM_E2E_TERMINAL_STRESS_BYTES",
+);
+const terminalInputStressEvents = optionalNonNegativeInteger(
+  "CCSM_E2E_TERMINAL_INPUT_EVENTS",
+);
+const terminalInputStressRounds = optionalNonNegativeInteger(
+  "CCSM_E2E_TERMINAL_INPUT_ROUNDS",
+  7,
 );
 const providerCases: ProviderCase[] = [
   { provider: "claude", label: "Claude", scenarioId: "claude-resume" },
@@ -63,6 +83,7 @@ describe("real provider CLI with stubbed model API", () => {
         responseBytes: number;
         elapsedMs: number;
       }> = [];
+      const inputTimings: TerminalInputTiming[] = [];
       setModelResponse(provider, firstPrompt, firstResponse);
 
       let primaryError: unknown;
@@ -88,6 +109,18 @@ describe("real provider CLI with stubbed model API", () => {
         const firstRuntimeId = started.runtimeId!;
         await waitForStablePrompt(provider, firstRuntimeId);
         await evidence.checkpoint("cli-started");
+
+        if (terminalInputStressEvents > 0) {
+          currentStep = "input-latency";
+          inputTimings.push(
+            ...(await measureTerminalInputLatency(
+              provider,
+              firstRuntimeId,
+              terminalInputStressEvents,
+              terminalInputStressRounds,
+            )),
+          );
+        }
 
         currentStep = "first-prompt";
         const firstTurnStartedAt = performance.now();
@@ -259,6 +292,21 @@ describe("real provider CLI with stubbed model API", () => {
             )}\n`,
           );
         }
+        if (terminalInputStressEvents > 0) {
+          writeFileSync(
+            join(artifactDirectory, `${scenarioId}-terminal-input.json`),
+            `${JSON.stringify(
+              {
+                provider,
+                configuredInputEvents: terminalInputStressEvents,
+                configuredRounds: terminalInputStressRounds,
+                samples: inputTimings,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        }
         if (!primaryError && supplementalErrors.length > 0) {
           [primaryError] = supplementalErrors;
         }
@@ -278,8 +326,155 @@ function terminalResponse(marker: string): string {
   return `${payload}\n${marker}`;
 }
 
-function optionalNonNegativeInteger(name: string): number {
-  const value = process.env[name] ?? "0";
+async function measureTerminalInputLatency(
+  provider: Provider,
+  runtimeId: string,
+  burstEvents: number,
+  rounds: number,
+): Promise<TerminalInputTiming[]> {
+  const samples: TerminalInputTiming[] = [];
+  for (let round = 0; round <= rounds; round += 1) {
+    for (const mode of ["single", "burst"] as const) {
+      const marker = `qv${mode === "single" ? "s" : "b"}${round
+        .toString(36)
+        .padStart(3, "0")}zq`;
+      const chunks =
+        mode === "single"
+          ? [marker]
+          : [...Array(Math.max(0, burstEvents - 1)).fill("x"), marker];
+      const dispatched = await dispatchTerminalInput(provider, chunks);
+      let observedAt = dispatched.dispatchedAt;
+      let observedWriteBatches = dispatched.writeBatchesBefore;
+      await browser.waitUntil(
+        async () => {
+          const observation = await observeTerminalMarker(provider, marker);
+          if (observation.visible) {
+            observedAt = observation.observedAt;
+            observedWriteBatches = observation.inputWriteBatches;
+          }
+          return observation.visible;
+        },
+        {
+          timeout: 30_000,
+          interval: 5,
+          timeoutMsg: `${provider} did not echo ${mode} input marker ${marker}`,
+        },
+      );
+      samples.push({
+        mode,
+        round,
+        warmup: round === 0,
+        inputEvents: chunks.length,
+        inputBytes: chunks.reduce((total, chunk) => total + chunk.length, 0),
+        writeBatches: observedWriteBatches - dispatched.writeBatchesBefore,
+        dispatchMs: dispatched.dispatchedAt - dispatched.startedAt,
+        echoMs: observedAt - dispatched.startedAt,
+      });
+      await dispatchTerminalInput(provider, ["\x03"]);
+      await waitForStablePrompt(provider, runtimeId);
+    }
+  }
+  return samples;
+}
+
+async function dispatchTerminalInput(
+  provider: Provider,
+  chunks: string[],
+): Promise<{
+  startedAt: number;
+  dispatchedAt: number;
+  writeBatchesBefore: number;
+}> {
+  return browser.execute(
+    (requestedProvider, inputChunks) => {
+      const panelAndSnapshot = [
+        ...document.querySelectorAll<HTMLElement>(".terminal-panel"),
+      ]
+        .map((element) => ({
+          element,
+          snapshot: (
+            element as HTMLElement & {
+              __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
+            }
+          ).__CCSM_TERMINAL_DEBUG__?.(),
+        }))
+        .find(
+          ({ snapshot }) =>
+            snapshot?.provider === requestedProvider && snapshot.inputEnabled,
+        );
+      if (!panelAndSnapshot)
+        throw new Error(`${requestedProvider} terminal panel is unavailable`);
+      const input = panelAndSnapshot.element.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Terminal input"]',
+      );
+      if (!input)
+        throw new Error(`${requestedProvider} terminal input is unavailable`);
+      input.focus();
+      const startedAt = performance.now();
+      for (const data of inputChunks) {
+        input.dispatchEvent(
+          new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            data,
+            inputType: "insertText",
+          }),
+        );
+      }
+      return {
+        startedAt,
+        dispatchedAt: performance.now(),
+        writeBatchesBefore: Number(
+          panelAndSnapshot.snapshot!.inputWriteBatches ?? 0,
+        ),
+      };
+    },
+    provider,
+    chunks,
+  );
+}
+
+async function observeTerminalMarker(
+  provider: Provider,
+  marker: string,
+): Promise<{
+  visible: boolean;
+  observedAt: number;
+  inputWriteBatches: number;
+}> {
+  return browser.execute(
+    (requestedProvider, expectedMarker) => {
+      for (const element of document.querySelectorAll<HTMLElement>(
+        ".terminal-panel",
+      )) {
+        const snapshot = (
+          element as HTMLElement & {
+            __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
+          }
+        ).__CCSM_TERMINAL_DEBUG__?.();
+        if (snapshot?.provider !== requestedProvider || !snapshot.inputEnabled)
+          continue;
+        return {
+          visible: snapshot.text
+            .replaceAll(/\s/gu, "")
+            .includes(expectedMarker),
+          observedAt: performance.now(),
+          inputWriteBatches: Number(snapshot.inputWriteBatches ?? 0),
+        };
+      }
+      return {
+        visible: false,
+        observedAt: performance.now(),
+        inputWriteBatches: 0,
+      };
+    },
+    provider,
+    marker,
+  );
+}
+
+function optionalNonNegativeInteger(name: string, fallback = 0): number {
+  const value = process.env[name] ?? String(fallback);
   if (!/^\d+$/u.test(value)) {
     throw new Error(
       `${name} must be a non-negative integer; received ${value}`,
@@ -452,6 +647,8 @@ async function terminalSnapshot(
         bindingState: snapshot.bindingState ?? null,
         nativeSessionId: snapshot.nativeSessionId ?? null,
         inputEnabled: Boolean(snapshot.inputEnabled),
+        inputEnqueuedEvents: Number(snapshot.inputEnqueuedEvents ?? 0),
+        inputWriteBatches: Number(snapshot.inputWriteBatches ?? 0),
         lastOutputRuntimeId: snapshot.lastOutputRuntimeId ?? null,
         text: String(snapshot.text ?? ""),
       };

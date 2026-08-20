@@ -135,6 +135,10 @@ if (!existsSync(sourceAppBinary)) {
       CCSM_E2E_SCENARIO: selectedScenario,
       CCSM_E2E_TERMINAL_STRESS_BYTES:
         process.env.CCSM_E2E_TERMINAL_STRESS_BYTES ?? "0",
+      CCSM_E2E_TERMINAL_INPUT_EVENTS:
+        process.env.CCSM_E2E_TERMINAL_INPUT_EVENTS ?? "0",
+      CCSM_E2E_TERMINAL_INPUT_ROUNDS:
+        process.env.CCSM_E2E_TERMINAL_INPUT_ROUNDS ?? "7",
       CCSM_E2E_TARGET_ROOT_BASE: spacesDirectory,
       CCSM_HOOK_REPORTER_STRICT: "1",
       CI: "1",
