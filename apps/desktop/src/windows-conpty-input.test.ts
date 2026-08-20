@@ -53,7 +53,7 @@ describe("WindowsConptyInputCompatibility", () => {
     ).toBeNull();
   });
 
-  test("reconciles a missing modifier keyup from the next DOM event", () => {
+  test("uses tracked modifier down state when WebDriver omits modifier flags", () => {
     const compatibility = activeCompatibility();
     compatibility.encodeKeyDown(
       keyEvent("ControlLeft", "Control", {
@@ -66,11 +66,28 @@ describe("WindowsConptyInputCompatibility", () => {
     );
 
     expect(
-      compatibility.encodeKeyDown(keyEvent("KeyA", "a", { keyCode: 0x41 })),
-    ).toBeNull();
-    expect(
       compatibility.encodeKeyDown(keyEvent("Enter", "Enter", { keyCode: 13 })),
-    ).toBe("\x1b[13;28;13;1;0;1_");
+    ).toBe("\x1b[13;28;13;1;8;1_");
+  });
+
+  test("maps Codex Ctrl+Enter to the Shift+Enter keymap record", () => {
+    const compatibility = activeCompatibility();
+    compatibility.encodeKeyDown(
+      keyEvent("ControlLeft", "Control", { keyCode: 0x11 }),
+    );
+
+    expect(
+      compatibility.encodeKeyDown(
+        keyEvent("Enter", "Enter", { keyCode: 0x0d }),
+        "codex",
+      ),
+    ).toBe("\x1b[13;28;13;1;16;1_");
+    expect(
+      compatibility.encodeKeyUp(
+        keyEvent("Enter", "Enter", { keyCode: 0x0d }),
+        "codex",
+      ),
+    ).toBe("\x1b[13;28;13;0;16;1_");
   });
 
   test("preserves Shift+Enter and right-control enhanced-key state", () => {

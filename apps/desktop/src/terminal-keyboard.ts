@@ -45,8 +45,8 @@ const MODIFIER_ONLY_KEYS = new Set([
 ]);
 
 /**
- * Provider fallback for host chords whose downstream VT conversion cannot
- * retain the modified-key record produced by Windows ConPTY Input Mode.
+ * Provider fallback used before Windows ConPTY Input Mode is negotiated and
+ * on hosts where that native keyboard protocol is unavailable.
  */
 export function cliShortcutInput(
   provider: ProviderKind | null,

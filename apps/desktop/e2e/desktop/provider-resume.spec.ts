@@ -25,6 +25,7 @@ interface TerminalSnapshot {
   inputWriteBatches: number;
   lastOutputRuntimeId: string | null;
   text: string;
+  win32InputMode: boolean;
 }
 
 interface TerminalInputTiming {
@@ -51,6 +52,11 @@ const terminalInputStressRounds = optionalNonNegativeInteger(
   "CCSM_E2E_TERMINAL_INPUT_ROUNDS",
   7,
 );
+const webdriverKey = {
+  Control: "\uE009",
+  Enter: "\uE007",
+  Shift: "\uE008",
+} as const;
 const providerCases: ProviderCase[] = [
   { provider: "claude", label: "Claude", scenarioId: "claude-resume" },
   { provider: "codex", label: "Codex", scenarioId: "codex-resume" },
@@ -109,6 +115,12 @@ describe("real provider CLI with stubbed model API", () => {
         const firstRuntimeId = started.runtimeId!;
         await waitForStablePrompt(provider, firstRuntimeId);
         await evidence.checkpoint("cli-started");
+
+        if (provider === "codex" && process.platform === "win32") {
+          currentStep = "win32-modified-enter";
+          await verifyWindowsCodexModifiedEnter(runId);
+          await evidence.checkpoint("win32-modified-enter");
+        }
 
         if (terminalInputStressEvents > 0) {
           currentStep = "input-latency";
@@ -651,6 +663,7 @@ async function terminalSnapshot(
         inputWriteBatches: Number(snapshot.inputWriteBatches ?? 0),
         lastOutputRuntimeId: snapshot.lastOutputRuntimeId ?? null,
         text: String(snapshot.text ?? ""),
+        win32InputMode: Boolean(snapshot.win32InputMode),
       };
     }
   }, provider);
@@ -705,6 +718,54 @@ async function sendTerminalLine(
   if (!(await waitForModelRequest(provider, input, 8_000))) {
     await browser.keys("Enter");
   }
+}
+
+async function verifyWindowsCodexModifiedEnter(runId: string): Promise<void> {
+  const safeRunId = runId.replaceAll(/[^a-z0-9]/giu, "_");
+  const lines = [
+    `codex-ctrl-enter-${safeRunId}`,
+    "continued-with-shift-enter",
+    "completed-on-third-line",
+  ];
+  const prompt = lines.join("\n");
+  const responseMarker = `STUB_CODEX_MODIFIED_ENTER_${safeRunId}`;
+  setModelResponse("codex", prompt, terminalResponse(responseMarker));
+
+  await waitForProvider(
+    "codex",
+    (snapshot) =>
+      snapshot.win32InputMode && terminalPromptReady("codex", snapshot.text),
+  );
+  const panel = await terminalPanel("codex");
+  const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
+  await terminalInput.waitForExist({ timeout: 20_000 });
+  await terminalInput.click();
+  for (const character of lines[0]) await browser.keys(character);
+  await pressModifiedEnter("Control");
+  for (const character of lines[1]) await browser.keys(character);
+  await pressModifiedEnter("Shift");
+  for (const character of lines[2]) await browser.keys(character);
+  await browser.keys("Enter");
+  expect(await waitForModelRequest("codex", prompt, 15_000)).toBe(true);
+
+  await waitForProvider(
+    "codex",
+    (snapshot) =>
+      snapshot.text.includes(responseMarker) &&
+      terminalPromptReady("codex", snapshot.text),
+  );
+}
+
+async function pressModifiedEnter(
+  modifier: "Control" | "Shift",
+): Promise<void> {
+  await browser
+    .action("key")
+    .down(webdriverKey[modifier])
+    .down(webdriverKey.Enter)
+    .up(webdriverKey.Enter)
+    .up(webdriverKey[modifier])
+    .perform();
 }
 
 async function waitForModelRequest(

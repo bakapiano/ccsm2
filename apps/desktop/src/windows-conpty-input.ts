@@ -19,6 +19,7 @@ interface Win32KeyDefinition {
 }
 
 type ParserState = "ground" | "escape" | "csi";
+export type WindowsConptyInputProfile = "default" | "codex";
 
 const WIN32_KEY_BY_CODE: Record<string, Win32KeyDefinition> = {
   Backspace: { virtualKey: 0x08, scanCode: 0x0e },
@@ -178,21 +179,26 @@ export class WindowsConptyInputCompatibility {
     this.#setWin32InputMode(false);
   }
 
-  encodeKeyDown(event: KeyboardEvent): string | null {
-    this.#reconcileModifiers(event);
+  encodeKeyDown(
+    event: KeyboardEvent,
+    profile: WindowsConptyInputProfile = "default",
+  ): string | null {
     if (MODIFIER_CODES.has(event.code)) {
       if (this.active) this.#pressedModifiers.add(event.code);
       return null;
     }
     if (usesTerminalEncoder(event)) return null;
-    const encoded = this.#encodeKeyEvent(event, true);
+    const encoded = this.#encodeKeyEvent(event, true, profile);
     if (encoded !== null && event.code && !MODIFIER_CODES.has(event.code)) {
       this.#encodedKeyups.add(event.code);
     }
     return encoded;
   }
 
-  encodeKeyUp(event: KeyboardEvent): string | null {
+  encodeKeyUp(
+    event: KeyboardEvent,
+    profile: WindowsConptyInputProfile = "default",
+  ): string | null {
     if (MODIFIER_CODES.has(event.code)) {
       this.#pressedModifiers.delete(event.code);
       return null;
@@ -200,36 +206,67 @@ export class WindowsConptyInputCompatibility {
     if (!this.#encodedKeyups.delete(event.code)) {
       return null;
     }
-    return this.#encodeKeyEvent(event, false);
+    return this.#encodeKeyEvent(event, false, profile);
   }
 
-  #encodeKeyEvent(event: KeyboardEvent, keyDown: boolean): string | null {
+  #encodeKeyEvent(
+    event: KeyboardEvent,
+    keyDown: boolean,
+    profile: WindowsConptyInputProfile,
+  ): string | null {
     if (!this.active || event.isComposing || event.keyCode === 229) return null;
 
     const definition = win32KeyDefinition(event);
     if (!definition) return null;
-    const unicodeChar = win32UnicodeChar(event, keyDown);
-    const controlKeyState = this.#controlKeyState(event, definition);
+    const codexCtrlEnter = this.#isCodexCtrlEnter(event, profile);
+    const unicodeChar = codexCtrlEnter
+      ? 0x0d
+      : win32UnicodeChar(event, keyDown);
+    const controlKeyState = codexCtrlEnter
+      ? this.#shiftEnterControlKeyState(event, definition)
+      : this.#controlKeyState(event, definition);
     return `${ESC}[${definition.virtualKey};${definition.scanCode};${unicodeChar};${keyDown ? 1 : 0};${controlKeyState};1_`;
   }
 
-  #reconcileModifiers(event: KeyboardEvent): void {
-    if (!event.ctrlKey) {
-      this.#pressedModifiers.delete("ControlLeft");
-      this.#pressedModifiers.delete("ControlRight");
-    }
-    if (!event.altKey) {
-      this.#pressedModifiers.delete("AltLeft");
-      this.#pressedModifiers.delete("AltRight");
-    }
-    if (!event.shiftKey) {
-      this.#pressedModifiers.delete("ShiftLeft");
-      this.#pressedModifiers.delete("ShiftRight");
-    }
-    if (!event.metaKey) {
-      this.#pressedModifiers.delete("MetaLeft");
-      this.#pressedModifiers.delete("MetaRight");
-    }
+  #isCodexCtrlEnter(
+    event: KeyboardEvent,
+    profile: WindowsConptyInputProfile,
+  ): boolean {
+    const control =
+      event.ctrlKey ||
+      this.#pressedModifiers.has("ControlLeft") ||
+      this.#pressedModifiers.has("ControlRight");
+    const shift =
+      event.shiftKey ||
+      this.#pressedModifiers.has("ShiftLeft") ||
+      this.#pressedModifiers.has("ShiftRight");
+    const alt =
+      event.altKey ||
+      this.#pressedModifiers.has("AltLeft") ||
+      this.#pressedModifiers.has("AltRight");
+    const meta =
+      event.metaKey ||
+      this.#pressedModifiers.has("MetaLeft") ||
+      this.#pressedModifiers.has("MetaRight");
+    return (
+      profile === "codex" &&
+      event.code === "Enter" &&
+      control &&
+      !shift &&
+      !alt &&
+      !meta
+    );
+  }
+
+  #shiftEnterControlKeyState(
+    event: KeyboardEvent,
+    definition: Win32KeyDefinition,
+  ): number {
+    let state = (definition.enhanced ? ENHANCED_KEY : 0) | SHIFT_PRESSED;
+    if (modifierState(event, "NumLock")) state |= NUMLOCK_ON;
+    if (modifierState(event, "ScrollLock")) state |= SCROLLLOCK_ON;
+    if (modifierState(event, "CapsLock")) state |= CAPSLOCK_ON;
+    return state;
   }
 
   #controlKeyState(

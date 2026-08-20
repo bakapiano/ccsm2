@@ -481,14 +481,19 @@ class TerminalPanel implements IContentRenderer {
           return true;
         }
         const data =
-          cliShortcutInput(provider, event) ??
-          this.#windowsInput.encodeKeyDown(event);
+          this.#windowsInput.encodeKeyDown(
+            event,
+            provider === "codex" ? "codex" : "default",
+          ) ?? cliShortcutInput(provider, event);
         if (data === null) return false;
         this.#terminal?.input(data, true);
         return true;
       });
       const handleWindowsKeyUp = (event: KeyboardEvent): void => {
-        const data = this.#windowsInput.encodeKeyUp(event);
+        const data = this.#windowsInput.encodeKeyUp(
+          event,
+          this.#session?.provider === "codex" ? "codex" : "default",
+        );
         if (data === null) return;
         event.preventDefault();
         event.stopPropagation();
