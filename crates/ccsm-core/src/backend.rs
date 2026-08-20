@@ -371,11 +371,15 @@ impl AppBackend {
         let validated = self.runtimes.apply_hook_report(&report)?;
         let binding = validated.binding;
         let previous = self.store.get_cli_session(&binding.cli_session_id)?;
-        let session = self.store.bind_native_session(
-            &binding.cli_session_id,
-            binding.provider,
-            &binding.native_session_id,
-        )?;
+        let session = if hook_updates_native_binding(&report, &previous) {
+            self.store.bind_native_session(
+                &binding.cli_session_id,
+                binding.provider,
+                &binding.native_session_id,
+            )?
+        } else {
+            previous.clone()
+        };
         if previous.native_session_id != session.native_session_id
             || previous.native_binding_state != session.native_binding_state
         {
@@ -411,6 +415,25 @@ impl AppBackend {
     }
 }
 
+fn hook_updates_native_binding(report: &HookReport, current: &CliSessionDto) -> bool {
+    if report.ephemeral && report.parent_native_session_id.is_some() {
+        return false;
+    }
+    if report.provider != crate::dto::ProviderKind::Codex {
+        return true;
+    }
+    let Some(current_native_session_id) = current.native_session_id.as_deref() else {
+        return true;
+    };
+    if current_native_session_id == report.native_session_id {
+        return true;
+    }
+    if matches!(report.source.as_deref(), Some("clear" | "resume" | "fork")) {
+        return true;
+    }
+    report.transcript_path.is_some()
+}
+
 fn activation_error_after_rollback(
     operation: &str,
     activation_error: BackendError,
@@ -437,4 +460,85 @@ fn binding_event(session: &CliSessionDto) -> AppEvent {
 
 fn activity_event(payload: AgentActivityChangedDto) -> AppEvent {
     AppEvent::AgentActivityChanged { payload }
+}
+
+#[cfg(test)]
+mod hook_binding_tests {
+    use super::*;
+    use crate::dto::{DesiredState, NativeBindingState, ProviderKind};
+
+    fn session(provider: ProviderKind, native_session_id: Option<&str>) -> CliSessionDto {
+        CliSessionDto {
+            id: "cli-session".into(),
+            space_id: "space".into(),
+            provider,
+            cwd: ".".into(),
+            native_session_id: native_session_id.map(str::to_owned),
+            native_binding_state: NativeBindingState::Bound,
+            desired_state: DesiredState::Running,
+            last_exit_summary: None,
+        }
+    }
+
+    fn report(provider: ProviderKind) -> HookReport {
+        HookReport {
+            provider,
+            cli_session_id: "cli-session".into(),
+            runtime_id: "runtime".into(),
+            token: "token".into(),
+            native_session_id: "child-session".into(),
+            hook_event_name: "SessionStart".into(),
+            transcript_path: None,
+            source: Some("startup".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
+        }
+    }
+
+    #[test]
+    fn explicit_ephemeral_children_preserve_all_provider_bindings() {
+        for provider in [
+            ProviderKind::Claude,
+            ProviderKind::Codex,
+            ProviderKind::Copilot,
+        ] {
+            let mut child = report(provider);
+            child.parent_native_session_id = Some("parent-session".into());
+            child.ephemeral = true;
+            assert!(!hook_updates_native_binding(
+                &child,
+                &session(provider, Some("parent-session"))
+            ));
+        }
+    }
+
+    #[test]
+    fn codex_transient_child_preserves_the_existing_binding() {
+        let child = report(ProviderKind::Codex);
+        assert!(!hook_updates_native_binding(
+            &child,
+            &session(ProviderKind::Codex, Some("parent-session"))
+        ));
+    }
+
+    #[test]
+    fn persistent_session_transitions_update_the_binding() {
+        let current = session(ProviderKind::Codex, Some("parent-session"));
+        for source in ["clear", "resume", "fork"] {
+            let mut transition = report(ProviderKind::Codex);
+            transition.source = Some(source.into());
+            assert!(hook_updates_native_binding(&transition, &current));
+        }
+        let mut persisted = report(ProviderKind::Codex);
+        persisted.transcript_path = Some("rollout.jsonl".into());
+        assert!(hook_updates_native_binding(&persisted, &current));
+    }
+
+    #[test]
+    fn first_native_identity_still_binds() {
+        assert!(hook_updates_native_binding(
+            &report(ProviderKind::Codex),
+            &session(ProviderKind::Codex, None)
+        ));
+    }
 }

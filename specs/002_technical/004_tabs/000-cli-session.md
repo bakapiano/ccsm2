@@ -96,6 +96,10 @@ CCSM_HOOK_TOKEN
 
 AppBackend校验token、provider、session、runtime ID和payload ID。Hook命令读取stdin、异步转发并立即返回。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
 
+Hook reporter同时归一化provider的会话谱系字段：Codex使用`forked_from_id/forkedFromId + ephemeral`，Claude使用`parent_session_id/parentSessionId + is_sidechain/isSidechain`，Copilot接受相同snake_case/camelCase组合。带父身份的ephemeral Hook更新runtime activity，并让`CliSession.native_session_id`保持当前可恢复父会话。
+
+Codex `/btw`的当前Hook payload通过新的`session_id`和空`transcript_path`表达内存side session。已有父绑定、新ID、空transcript且来源属于临时startup的报告使用相同ephemeral绑定规则。`source=clear|resume|fork`和带transcript的持久会话报告更新native binding，因此`/clear`、resume和持久fork继续成为可恢复目标。
+
 ## Agent activity
 
 RuntimeManager维护进程内状态：

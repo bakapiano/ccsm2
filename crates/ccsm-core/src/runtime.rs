@@ -818,6 +818,10 @@ mod tests {
             token,
             native_session_id: "native-1".into(),
             hook_event_name: "SessionStart".into(),
+            transcript_path: Some("rollout.jsonl".into()),
+            source: Some("startup".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
         };
         let validated = manager.apply_hook_report(&report).unwrap();
         assert_eq!(validated.binding.native_session_id, "native-1");
