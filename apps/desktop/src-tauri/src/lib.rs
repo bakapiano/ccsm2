@@ -1,6 +1,7 @@
 mod browser;
 mod commands;
 mod directory_browser;
+mod runtime_channel;
 mod webview_focus;
 
 use std::{

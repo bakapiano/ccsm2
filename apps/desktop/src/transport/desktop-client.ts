@@ -44,8 +44,11 @@ import type { ReadGitDiffRequest } from "../generated/ReadGitDiffRequest";
 import type { ReplaceCliSessionRequest } from "../generated/ReplaceCliSessionRequest";
 import type { ResolveFileReferenceRequest } from "../generated/ResolveFileReferenceRequest";
 import type { ResolvedFileReferenceDto } from "../generated/ResolvedFileReferenceDto";
-import type { RuntimeEvent } from "../generated/RuntimeEvent";
 import type { RuntimeStartedDto } from "../generated/RuntimeStartedDto";
+import {
+  decodeRuntimeEventFrame,
+  type RuntimeStreamEvent,
+} from "../runtime-channel";
 import type { SaveLayoutRequest } from "../generated/SaveLayoutRequest";
 import type { SetFolderCollapsedRequest } from "../generated/SetFolderCollapsedRequest";
 import type { SpaceLayoutDto } from "../generated/SpaceLayoutDto";
@@ -93,7 +96,7 @@ export interface AppBackendClient {
   replaceCliSession(request: ReplaceCliSessionRequest): Promise<CliSessionDto>;
   startRuntime(
     request: StartRuntimeRequest,
-    onEvent: (event: RuntimeEvent) => void,
+    onEvent: (event: RuntimeStreamEvent) => void,
   ): Promise<RuntimeStartedDto>;
   writeRuntime(runtimeId: string, data: string): Promise<void>;
   resizeRuntime(runtimeId: string, cols: number, rows: number): Promise<void>;
@@ -301,10 +304,10 @@ class TauriBackendClient implements AppBackendClient {
 
   startRuntime(
     request: StartRuntimeRequest,
-    onEvent: (event: RuntimeEvent) => void,
+    onEvent: (event: RuntimeStreamEvent) => void,
   ): Promise<RuntimeStartedDto> {
-    const channel = new Channel<RuntimeEvent>();
-    channel.onmessage = onEvent;
+    const channel = new Channel<ArrayBuffer>();
+    channel.onmessage = (frame) => onEvent(decodeRuntimeEventFrame(frame));
     return invoke("start_runtime", { request, onEvent: channel });
   }
 

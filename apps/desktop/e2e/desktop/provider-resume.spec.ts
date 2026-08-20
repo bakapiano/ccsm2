@@ -21,13 +21,36 @@ interface TerminalSnapshot {
   bindingState: string | null;
   nativeSessionId: string | null;
   inputEnabled: boolean;
+  inputEnqueuedEvents: number;
+  inputWriteBatches: number;
   lastOutputRuntimeId: string | null;
   text: string;
+}
+
+interface TerminalInputTiming {
+  mode: "single" | "burst";
+  round: number;
+  warmup: boolean;
+  inputEvents: number;
+  inputBytes: number;
+  writeBatches: number;
+  dispatchMs: number;
+  echoMs: number;
 }
 
 const artifactDirectory = requiredEnvironment("CCSM_E2E_ARTIFACT_DIR");
 const spaceRootBase = requiredEnvironment("CCSM_E2E_TARGET_ROOT_BASE");
 const runId = requiredEnvironment("CCSM_E2E_RUN_ID");
+const terminalStressBytes = optionalNonNegativeInteger(
+  "CCSM_E2E_TERMINAL_STRESS_BYTES",
+);
+const terminalInputStressEvents = optionalNonNegativeInteger(
+  "CCSM_E2E_TERMINAL_INPUT_EVENTS",
+);
+const terminalInputStressRounds = optionalNonNegativeInteger(
+  "CCSM_E2E_TERMINAL_INPUT_ROUNDS",
+  7,
+);
 const providerCases: ProviderCase[] = [
   { provider: "claude", label: "Claude", scenarioId: "claude-resume" },
   { provider: "codex", label: "Codex", scenarioId: "codex-resume" },
@@ -50,9 +73,17 @@ describe("real provider CLI with stubbed model API", () => {
       const spaceName = `E2E ${label} ${runId}`;
       const spaceRoot = join(spaceRootBase, provider);
       const firstPrompt = `${provider}-prompt-one`;
-      const firstResponse = `STUB_${provider.toUpperCase()}_RESPONSE_ONE`;
+      const firstResponseMarker = `STUB_${provider.toUpperCase()}_RESPONSE_ONE`;
+      const firstResponse = terminalResponse(firstResponseMarker);
       const secondPrompt = `${provider}-prompt-two`;
-      const secondResponse = `STUB_${provider.toUpperCase()}_RESPONSE_TWO`;
+      const secondResponseMarker = `STUB_${provider.toUpperCase()}_RESPONSE_TWO`;
+      const secondResponse = terminalResponse(secondResponseMarker);
+      const turnTimings: Array<{
+        phase: "first" | "follow-up";
+        responseBytes: number;
+        elapsedMs: number;
+      }> = [];
+      const inputTimings: TerminalInputTiming[] = [];
       setModelResponse(provider, firstPrompt, firstResponse);
 
       let primaryError: unknown;
@@ -79,76 +110,131 @@ describe("real provider CLI with stubbed model API", () => {
         await waitForStablePrompt(provider, firstRuntimeId);
         await evidence.checkpoint("cli-started");
 
+        if (terminalInputStressEvents > 0) {
+          currentStep = "input-latency";
+          inputTimings.push(
+            ...(await measureTerminalInputLatency(
+              provider,
+              firstRuntimeId,
+              terminalInputStressEvents,
+              terminalInputStressRounds,
+            )),
+          );
+        }
+
         currentStep = "first-prompt";
+        const firstTurnStartedAt = performance.now();
         await sendTerminalLine(provider, firstPrompt);
         const firstTurn = await waitForProvider(
           provider,
           (snapshot) =>
-            snapshot.text.includes(firstResponse) &&
+            snapshot.text.includes(firstResponseMarker) &&
             snapshot.bindingState === "bound" &&
             Boolean(snapshot.nativeSessionId) &&
             terminalPromptReady(provider, snapshot.text),
         );
+        turnTimings.push({
+          phase: "first",
+          responseBytes: firstResponse.length,
+          elapsedMs: performance.now() - firstTurnStartedAt,
+        });
         const nativeSessionId = firstTurn.nativeSessionId!;
         await waitForAgentActivity(firstTurn.cliSessionId!, "idle");
         await evidence.checkpoint("first-model-response");
 
-        currentStep = "close-cli";
-        await clickRuntimeAction(provider);
-        await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
-        await evidence.checkpoint("cli-closed");
-
-        currentStep = "resume-cli";
-        await clickRuntimeAction(provider);
-        await acknowledgeProviderStartup(provider);
-        const resumed = await waitForProvider(provider, (snapshot) =>
-          Boolean(
-            snapshot.runtimeId &&
-              snapshot.runtimeId !== firstRuntimeId &&
-              snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
-              snapshot.inputEnabled &&
+        if (terminalStressBytes > 0) {
+          currentStep = "follow-up-prompt";
+          setModelResponse(provider, secondPrompt, secondResponse);
+          const followUpTurnStartedAt = performance.now();
+          await sendTerminalLine(provider, secondPrompt);
+          const followUpTurn = await waitForProvider(
+            provider,
+            (snapshot) =>
+              snapshot.text.includes(secondResponseMarker) &&
               snapshot.nativeSessionId === nativeSessionId &&
-              snapshot.text.includes(firstPrompt) &&
-              snapshot.text.includes(firstResponse) &&
               terminalPromptReady(provider, snapshot.text),
-          ),
-        );
-        expect(resumed.runtimeId).not.toBe(firstRuntimeId);
-        expect(resumed.nativeSessionId).toBe(nativeSessionId);
-        expect(resumed.text).toContain(firstPrompt);
-        expect(resumed.text).toContain(firstResponse);
-        await waitForStablePrompt(provider, resumed.runtimeId!);
-        await waitForAgentActivity(resumed.cliSessionId!, "idle");
-        await evidence.checkpoint("cli-resumed");
+          );
+          turnTimings.push({
+            phase: "follow-up",
+            responseBytes: secondResponse.length,
+            elapsedMs: performance.now() - followUpTurnStartedAt,
+          });
+          expect(followUpTurn.runtimeId).toBe(firstRuntimeId);
+          await waitForAgentActivity(followUpTurn.cliSessionId!, "idle");
+          assertModelResponses(provider, [
+            [firstPrompt, firstResponse],
+            [secondPrompt, secondResponse],
+          ]);
+          await evidence.checkpoint("follow-up-model-response");
 
-        currentStep = "resumed-prompt";
-        setModelResponse(provider, secondPrompt, secondResponse);
-        await sendTerminalLine(provider, secondPrompt);
-        const secondTurn = await waitForProvider(
-          provider,
-          (snapshot) =>
-            snapshot.text.includes(secondResponse) &&
-            snapshot.nativeSessionId === nativeSessionId &&
-            terminalPromptReady(provider, snapshot.text),
-        );
-        expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
-        await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
-        assertModelResponses(provider, [
-          [firstPrompt, firstResponse],
-          [secondPrompt, secondResponse],
-        ]);
-        assertResumedModelContext(
-          provider,
-          firstPrompt,
-          firstResponse,
-          secondPrompt,
-        );
-        await evidence.checkpoint("resumed-model-response");
+          currentStep = "final-stop";
+          await clickRuntimeAction(provider);
+          await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+          await evidence.checkpoint("cli-stopped");
+        } else {
+          currentStep = "close-cli";
+          await clickRuntimeAction(provider);
+          await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+          await evidence.checkpoint("cli-closed");
 
-        currentStep = "final-stop";
-        await clickRuntimeAction(provider);
-        await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
-        await evidence.checkpoint("cli-stopped");
+          currentStep = "resume-cli";
+          await clickRuntimeAction(provider);
+          await acknowledgeProviderStartup(provider);
+          const resumed = await waitForProvider(provider, (snapshot) =>
+            Boolean(
+              snapshot.runtimeId &&
+                snapshot.runtimeId !== firstRuntimeId &&
+                snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
+                snapshot.inputEnabled &&
+                snapshot.nativeSessionId === nativeSessionId &&
+                snapshot.text.includes(firstPrompt) &&
+                snapshot.text.includes(firstResponseMarker) &&
+                terminalPromptReady(provider, snapshot.text),
+            ),
+          );
+          expect(resumed.runtimeId).not.toBe(firstRuntimeId);
+          expect(resumed.nativeSessionId).toBe(nativeSessionId);
+          expect(resumed.text).toContain(firstPrompt);
+          expect(resumed.text).toContain(firstResponseMarker);
+          await waitForStablePrompt(provider, resumed.runtimeId!);
+          await waitForAgentActivity(resumed.cliSessionId!, "idle");
+          await evidence.checkpoint("cli-resumed");
+
+          currentStep = "resumed-prompt";
+          setModelResponse(provider, secondPrompt, secondResponse);
+          const resumedTurnStartedAt = performance.now();
+          await sendTerminalLine(provider, secondPrompt);
+          const secondTurn = await waitForProvider(
+            provider,
+            (snapshot) =>
+              snapshot.text.includes(secondResponseMarker) &&
+              snapshot.nativeSessionId === nativeSessionId &&
+              terminalPromptReady(provider, snapshot.text),
+          );
+          turnTimings.push({
+            phase: "follow-up",
+            responseBytes: secondResponse.length,
+            elapsedMs: performance.now() - resumedTurnStartedAt,
+          });
+          expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
+          await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
+          assertModelResponses(provider, [
+            [firstPrompt, firstResponse],
+            [secondPrompt, secondResponse],
+          ]);
+          assertResumedModelContext(
+            provider,
+            firstPrompt,
+            firstResponse,
+            secondPrompt,
+          );
+          await evidence.checkpoint("resumed-model-response");
+
+          currentStep = "final-stop";
+          await clickRuntimeAction(provider);
+          await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+          await evidence.checkpoint("cli-stopped");
+        }
       } catch (error) {
         primaryError = error;
         writeFileSync(
@@ -192,6 +278,35 @@ describe("real provider CLI with stubbed model API", () => {
           supplementalErrors.push(error);
           writeDiagnostic(scenarioId, "gif-finalize", error);
         }
+        if (terminalStressBytes > 0) {
+          writeFileSync(
+            join(artifactDirectory, `${scenarioId}-terminal-performance.json`),
+            `${JSON.stringify(
+              {
+                provider,
+                configuredResponseBytes: terminalStressBytes,
+                turns: turnTimings,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        }
+        if (terminalInputStressEvents > 0) {
+          writeFileSync(
+            join(artifactDirectory, `${scenarioId}-terminal-input.json`),
+            `${JSON.stringify(
+              {
+                provider,
+                configuredInputEvents: terminalInputStressEvents,
+                configuredRounds: terminalInputStressRounds,
+                samples: inputTimings,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        }
         if (!primaryError && supplementalErrors.length > 0) {
           [primaryError] = supplementalErrors;
         }
@@ -200,6 +315,173 @@ describe("real provider CLI with stubbed model API", () => {
     });
   }
 });
+
+function terminalResponse(marker: string): string {
+  if (terminalStressBytes === 0) return marker;
+  const payloadLength = Math.max(0, terminalStressBytes - marker.length - 1);
+  const pattern = "0123456789abcdef";
+  const payload = pattern
+    .repeat(Math.ceil(payloadLength / pattern.length))
+    .slice(0, payloadLength);
+  return `${payload}\n${marker}`;
+}
+
+async function measureTerminalInputLatency(
+  provider: Provider,
+  runtimeId: string,
+  burstEvents: number,
+  rounds: number,
+): Promise<TerminalInputTiming[]> {
+  const samples: TerminalInputTiming[] = [];
+  for (let round = 0; round <= rounds; round += 1) {
+    for (const mode of ["single", "burst"] as const) {
+      const marker = `qv${mode === "single" ? "s" : "b"}${round
+        .toString(36)
+        .padStart(3, "0")}zq`;
+      const chunks =
+        mode === "single"
+          ? [marker]
+          : [...Array(Math.max(0, burstEvents - 1)).fill("x"), marker];
+      const dispatched = await dispatchTerminalInput(provider, chunks);
+      let observedAt = dispatched.dispatchedAt;
+      let observedWriteBatches = dispatched.writeBatchesBefore;
+      await browser.waitUntil(
+        async () => {
+          const observation = await observeTerminalMarker(provider, marker);
+          if (observation.visible) {
+            observedAt = observation.observedAt;
+            observedWriteBatches = observation.inputWriteBatches;
+          }
+          return observation.visible;
+        },
+        {
+          timeout: 30_000,
+          interval: 5,
+          timeoutMsg: `${provider} did not echo ${mode} input marker ${marker}`,
+        },
+      );
+      samples.push({
+        mode,
+        round,
+        warmup: round === 0,
+        inputEvents: chunks.length,
+        inputBytes: chunks.reduce((total, chunk) => total + chunk.length, 0),
+        writeBatches: observedWriteBatches - dispatched.writeBatchesBefore,
+        dispatchMs: dispatched.dispatchedAt - dispatched.startedAt,
+        echoMs: observedAt - dispatched.startedAt,
+      });
+      await dispatchTerminalInput(provider, ["\x03"]);
+      await waitForStablePrompt(provider, runtimeId);
+    }
+  }
+  return samples;
+}
+
+async function dispatchTerminalInput(
+  provider: Provider,
+  chunks: string[],
+): Promise<{
+  startedAt: number;
+  dispatchedAt: number;
+  writeBatchesBefore: number;
+}> {
+  return browser.execute(
+    (requestedProvider, inputChunks) => {
+      const panelAndSnapshot = [
+        ...document.querySelectorAll<HTMLElement>(".terminal-panel"),
+      ]
+        .map((element) => ({
+          element,
+          snapshot: (
+            element as HTMLElement & {
+              __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
+            }
+          ).__CCSM_TERMINAL_DEBUG__?.(),
+        }))
+        .find(
+          ({ snapshot }) =>
+            snapshot?.provider === requestedProvider && snapshot.inputEnabled,
+        );
+      if (!panelAndSnapshot)
+        throw new Error(`${requestedProvider} terminal panel is unavailable`);
+      const input = panelAndSnapshot.element.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Terminal input"]',
+      );
+      if (!input)
+        throw new Error(`${requestedProvider} terminal input is unavailable`);
+      input.focus();
+      const startedAt = performance.now();
+      for (const data of inputChunks) {
+        input.dispatchEvent(
+          new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            data,
+            inputType: "insertText",
+          }),
+        );
+      }
+      return {
+        startedAt,
+        dispatchedAt: performance.now(),
+        writeBatchesBefore: Number(
+          panelAndSnapshot.snapshot!.inputWriteBatches ?? 0,
+        ),
+      };
+    },
+    provider,
+    chunks,
+  );
+}
+
+async function observeTerminalMarker(
+  provider: Provider,
+  marker: string,
+): Promise<{
+  visible: boolean;
+  observedAt: number;
+  inputWriteBatches: number;
+}> {
+  return browser.execute(
+    (requestedProvider, expectedMarker) => {
+      for (const element of document.querySelectorAll<HTMLElement>(
+        ".terminal-panel",
+      )) {
+        const snapshot = (
+          element as HTMLElement & {
+            __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
+          }
+        ).__CCSM_TERMINAL_DEBUG__?.();
+        if (snapshot?.provider !== requestedProvider || !snapshot.inputEnabled)
+          continue;
+        return {
+          visible: snapshot.text
+            .replaceAll(/\s/gu, "")
+            .includes(expectedMarker),
+          observedAt: performance.now(),
+          inputWriteBatches: Number(snapshot.inputWriteBatches ?? 0),
+        };
+      }
+      return {
+        visible: false,
+        observedAt: performance.now(),
+        inputWriteBatches: 0,
+      };
+    },
+    provider,
+    marker,
+  );
+}
+
+function optionalNonNegativeInteger(name: string, fallback = 0): number {
+  const value = process.env[name] ?? String(fallback);
+  if (!/^\d+$/u.test(value)) {
+    throw new Error(
+      `${name} must be a non-negative integer; received ${value}`,
+    );
+  }
+  return Number(value);
+}
 
 async function ensureDesktopViewport(): Promise<void> {
   await browser.maximizeWindow();
@@ -365,6 +647,8 @@ async function terminalSnapshot(
         bindingState: snapshot.bindingState ?? null,
         nativeSessionId: snapshot.nativeSessionId ?? null,
         inputEnabled: Boolean(snapshot.inputEnabled),
+        inputEnqueuedEvents: Number(snapshot.inputEnqueuedEvents ?? 0),
+        inputWriteBatches: Number(snapshot.inputWriteBatches ?? 0),
         lastOutputRuntimeId: snapshot.lastOutputRuntimeId ?? null,
         text: String(snapshot.text ?? ""),
       };
