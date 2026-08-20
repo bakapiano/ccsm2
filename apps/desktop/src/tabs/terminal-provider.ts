@@ -1,7 +1,6 @@
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
 
 import type { CliSessionDto } from "../generated/CliSessionDto";
-import type { RuntimeEvent } from "../generated/RuntimeEvent";
 import type { TabDto } from "../generated/TabDto";
 import { FrameTaskScheduler } from "../frame-task-scheduler";
 import { focusWhenPanelActive } from "../panel-visibility";
@@ -20,6 +19,7 @@ import {
   installCliWindowFocusRestore,
   isAgentCliCopyShortcut,
 } from "../terminal-keyboard";
+import { TerminalInputWriter } from "../terminal-input";
 import {
   isDockGeometrySettled,
   isRenderableTerminalViewport,
@@ -47,6 +47,7 @@ import {
   type TerminalFileReference,
   type TerminalLinkTarget,
 } from "../terminal-links";
+import type { RuntimeStreamEvent } from "../runtime-channel";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
 import { uiIcon } from "../ui-icons";
@@ -194,7 +195,7 @@ class TerminalPanel implements IContentRenderer {
   #renderFailureCount = 0;
   #pendingExitCode: number | null = null;
   readonly #exitedRuntimeIds = new Set<string>();
-  #inputQueue: Promise<void> = Promise.resolve();
+  readonly #inputWriter: TerminalInputWriter;
   #resetOnNextRuntimeOutput = false;
   #lastOutputRuntimeId: string | null = null;
   #inputFollowDispose: (() => void) | null = null;
@@ -210,6 +211,14 @@ class TerminalPanel implements IContentRenderer {
   ) {
     this.#tab = tab;
     this.#client = client;
+    this.#inputWriter = new TerminalInputWriter(
+      (runtimeId, data) => this.#client.backend.writeRuntime(runtimeId, data),
+      (error) => {
+        this.#terminal?.writeln(
+          `\r\n\x1b[31m[input failed: ${describeError(error)}]\x1b[0m`,
+        );
+      },
+    );
     this.element.className = "terminal-panel";
     this.element.dataset.cliSessionId = tab.resourceId ?? "";
     (this.element as TerminalDebugElement).__CCSM_TERMINAL_DEBUG__ = () =>
@@ -499,7 +508,7 @@ class TerminalPanel implements IContentRenderer {
     this.#syncAction();
     this.#setStatus("starting", `starting ${this.#tab.title}`);
     try {
-      await this.#inputQueue;
+      await this.#inputWriter.drain();
       if (!(await this.#waitForOutputDrain())) this.#dropOutputQueue();
       this.#pendingExitCode = null;
       this.#resetOnNextRuntimeOutput = true;
@@ -551,7 +560,7 @@ class TerminalPanel implements IContentRenderer {
     }
   }
 
-  #onRuntimeEvent(event: RuntimeEvent): void {
+  #onRuntimeEvent(event: RuntimeStreamEvent): void {
     if (this.#destroyed) return;
     if (event.type === "output") {
       if (this.#exitedRuntimeIds.has(event.runtimeId)) return;
@@ -562,7 +571,7 @@ class TerminalPanel implements IContentRenderer {
         this.#terminal?.reset();
       }
       this.#runtimeId ??= event.runtimeId;
-      const rawOutput = new Uint8Array(event.data);
+      const rawOutput = event.data;
       this.#resizeOutputSettler?.push(event.runtimeId, rawOutput);
       if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) {
         this.#queueOutputAck(event.runtimeId, rawOutput.byteLength);
@@ -627,14 +636,7 @@ class TerminalPanel implements IContentRenderer {
 
   #enqueueInput(data: string): void {
     if (!this.#runtimeId) return;
-    const runtimeId = this.#runtimeId;
-    this.#inputQueue = this.#inputQueue
-      .then(() => this.#client.backend.writeRuntime(runtimeId, data))
-      .catch((error) => {
-        this.#terminal?.writeln(
-          `\r\n\x1b[31m[input failed: ${describeError(error)}]\x1b[0m`,
-        );
-      });
+    this.#inputWriter.enqueue(this.#runtimeId, data);
   }
 
   #scheduleResize(cols: number, rows: number): void {
@@ -1119,6 +1121,7 @@ class TerminalPanel implements IContentRenderer {
 
   #debugSnapshot(): object {
     const terminal = this.#terminal;
+    const input = this.#inputWriter.snapshot();
     const lines: string[] = [];
     if (terminal) {
       const buffer = terminal.buffer.active;
@@ -1172,6 +1175,11 @@ class TerminalPanel implements IContentRenderer {
       repaintCaptureActive: Boolean(this.#repaintCapture),
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,
+      inputEnqueuedEvents: input.enqueuedEvents,
+      inputWriteBatches: input.writeBatches,
+      pendingInputEvents: input.pendingEvents,
+      pendingInputCodeUnits: input.pendingCodeUnits,
+      inputWriteInFlight: input.writeInFlight,
       lastOutputRuntimeId: this.#lastOutputRuntimeId,
       mouseTracking: terminal?.hasMouseTracking() ?? false,
       mouseSgr: terminal?.getMode(1006) ?? false,
