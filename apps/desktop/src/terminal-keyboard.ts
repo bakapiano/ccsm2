@@ -6,10 +6,15 @@ type ModifierKeyEvent = Pick<
 >;
 
 interface CliInputTerminal {
+  hasSelection(): boolean;
   onKey(listener: (event: { domEvent: KeyboardEvent }) => void): {
     dispose(): void;
   };
   scrollToBottom(): void;
+}
+
+interface CliCopyTarget {
+  getSelection(): string;
 }
 
 interface CliFocusTarget {
@@ -63,16 +68,23 @@ export function cliShortcutInput(
   return null;
 }
 
-export function isAgentCliCopyShortcut(
-  provider: ProviderKind | null,
-  event: ModifierKeyEvent,
-): boolean {
+export function isCliCopyShortcut(event: ModifierKeyEvent): boolean {
   return (
-    provider !== null &&
-    provider !== "shell" &&
-    event.code === "KeyC" &&
-    (event.ctrlKey || event.metaKey) &&
-    !event.altKey
+    event.code === "KeyC" && (event.ctrlKey || event.metaKey) && !event.altKey
+  );
+}
+
+export function cliCopyShortcutText(
+  terminal: CliCopyTarget,
+  event: ModifierKeyEvent,
+): string | null {
+  if (!isCliCopyShortcut(event)) return null;
+  return terminal.getSelection() || null;
+}
+
+export function isCliPasteShortcut(event: ModifierKeyEvent): boolean {
+  return (
+    event.code === "KeyV" && (event.ctrlKey || event.metaKey) && !event.altKey
   );
 }
 
@@ -88,15 +100,14 @@ export function installCliInputFollow(
     }
   };
   const keySubscription = terminal.onKey(({ domEvent }) => {
-    const provider = getProvider();
-    const pasteShortcut =
-      domEvent.code === "KeyV" &&
-      (domEvent.ctrlKey || domEvent.metaKey) &&
-      !domEvent.altKey;
+    const copyConsumesInput =
+      isCliCopyShortcut(domEvent) &&
+      (domEvent.metaKey || terminal.hasSelection());
+    const nativePasteShortcut = isCliPasteShortcut(domEvent);
     if (
       !MODIFIER_ONLY_KEYS.has(domEvent.key) &&
-      !isAgentCliCopyShortcut(provider, domEvent) &&
-      !pasteShortcut
+      !copyConsumesInput &&
+      !nativePasteShortcut
     ) {
       followInput();
     }

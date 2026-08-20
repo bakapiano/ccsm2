@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  cliCopyShortcutText,
   cliShortcutInput,
   installCliInputFollow,
   installCliWindowFocusRestore,
-  isAgentCliCopyShortcut,
+  isCliCopyShortcut,
+  isCliPasteShortcut,
 } from "./terminal-keyboard";
 
 const noModifiers = {
@@ -15,15 +17,30 @@ const noModifiers = {
 };
 
 describe("cliShortcutInput", () => {
-  test("reserves Ctrl/Cmd+C for copy only in Agent CLI Tabs", () => {
+  test("copies Ctrl/Cmd+C selections and lets an empty Ctrl+C reach PTY", () => {
     const ctrlC = { ...noModifiers, code: "KeyC", ctrlKey: true };
     const cmdC = { ...noModifiers, code: "KeyC", metaKey: true };
+    const ctrlV = { ...noModifiers, code: "KeyV", ctrlKey: true };
+    let selection = "copied text";
+    let selectionReadCount = 0;
+    const terminal = {
+      getSelection() {
+        selectionReadCount += 1;
+        return selection;
+      },
+    };
 
-    expect(isAgentCliCopyShortcut("claude", ctrlC)).toBe(true);
-    expect(isAgentCliCopyShortcut("codex", ctrlC)).toBe(true);
-    expect(isAgentCliCopyShortcut("copilot", cmdC)).toBe(true);
-    expect(isAgentCliCopyShortcut("shell", ctrlC)).toBe(false);
-    expect(isAgentCliCopyShortcut(null, ctrlC)).toBe(false);
+    expect(isCliCopyShortcut(ctrlC)).toBe(true);
+    expect(isCliCopyShortcut(cmdC)).toBe(true);
+    expect(isCliCopyShortcut(ctrlV)).toBe(false);
+    expect(isCliPasteShortcut(ctrlV)).toBe(true);
+    expect(isCliPasteShortcut(ctrlC)).toBe(false);
+    expect(cliCopyShortcutText(terminal, ctrlC)).toBe("copied text");
+
+    selection = "";
+    expect(cliCopyShortcutText(terminal, ctrlC)).toBeNull();
+    expect(cliCopyShortcutText(terminal, ctrlV)).toBeNull();
+    expect(selectionReadCount).toBe(2);
   });
 
   test("maps Codex Ctrl+Enter and Shift+Enter to legacy Alt+Enter", () => {
@@ -80,9 +97,13 @@ describe("installCliInputFollow", () => {
     let provider: "shell" | "claude" | "codex" = "shell";
     let keyListener: ((event: { domEvent: KeyboardEvent }) => void) | null =
       null;
+    let hasSelection = false;
     let scrollCount = 0;
     const dispose = installCliInputFollow(
       {
+        hasSelection() {
+          return hasSelection;
+        },
         onKey(listener) {
           keyListener = listener;
           return { dispose: () => (keyListener = null) };
@@ -107,6 +128,39 @@ describe("installCliInputFollow", () => {
       domEvent: {
         key: "c",
         code: "KeyC",
+        ctrlKey: false,
+        metaKey: true,
+        altKey: false,
+      } as KeyboardEvent,
+    });
+    keyListener!({
+      domEvent: {
+        key: "v",
+        code: "KeyV",
+        ctrlKey: false,
+        metaKey: true,
+        altKey: false,
+      } as KeyboardEvent,
+    });
+    expect(scrollCount).toBe(0);
+
+    hasSelection = true;
+    keyListener!({
+      domEvent: {
+        key: "c",
+        code: "KeyC",
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      } as KeyboardEvent,
+    });
+    expect(scrollCount).toBe(0);
+
+    hasSelection = false;
+    keyListener!({
+      domEvent: {
+        key: "c",
+        code: "KeyC",
         ctrlKey: true,
         metaKey: false,
         altKey: false,
@@ -121,26 +175,26 @@ describe("installCliInputFollow", () => {
         altKey: false,
       } as KeyboardEvent,
     });
-    expect(scrollCount).toBe(0);
+    expect(scrollCount).toBe(1);
 
     keyListener!({ domEvent: { key: "a" } as KeyboardEvent });
     host.dispatchEvent(new Event("paste"));
-    expect(scrollCount).toBe(2);
+    expect(scrollCount).toBe(3);
 
     provider = "claude";
     host.dispatchEvent(new Event("compositionend"));
-    expect(scrollCount).toBe(3);
-    host.dispatchEvent(new Event("input"));
     expect(scrollCount).toBe(4);
+    host.dispatchEvent(new Event("input"));
+    expect(scrollCount).toBe(5);
     const composingInput = new Event("input");
     Object.defineProperty(composingInput, "isComposing", { value: true });
     host.dispatchEvent(composingInput);
-    expect(scrollCount).toBe(4);
+    expect(scrollCount).toBe(5);
 
     dispose();
     host.dispatchEvent(new Event("paste"));
     expect(keyListener).toBeNull();
-    expect(scrollCount).toBe(4);
+    expect(scrollCount).toBe(5);
   });
 });
 
