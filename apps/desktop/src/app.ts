@@ -48,6 +48,7 @@ import {
   SpaceTreeView,
 } from "./space-tree";
 import { SurfaceOcclusionController } from "./surface-occlusion";
+import { SettingsDialog } from "./settings-dialog";
 import { createTabContextMenuItems } from "./tab-context-menu";
 import { CcsmTabRenderer } from "./tab-header";
 import { closeTabAfterApproval } from "./tab-close";
@@ -60,7 +61,8 @@ import {
   TerminalTabProvider,
   type TerminalLinkOpenRequest,
 } from "./tabs/terminal-provider";
-import { type ThemeController, updateThemeButton } from "./theme";
+import desktopPackage from "../package.json";
+import type { ThemeController } from "./theme";
 import { describeError, desktopClient } from "./transport/desktop-client";
 import { uiIcon, type UiIconName } from "./ui-icons";
 import { bindWindowChrome } from "./window-chrome";
@@ -85,6 +87,7 @@ export class CcsmApp {
   readonly #tabs = new Map<string, TabDto>();
   readonly #spaceTree: SpaceTreeView;
   readonly #sidebarLayout: SidebarLayoutController;
+  readonly #settingsDialog: SettingsDialog;
   readonly #newTabMenu: HTMLElement;
   #newTabAnchor: HTMLButtonElement | null = null;
   #newTabTargetGroupId: string | null = null;
@@ -99,6 +102,7 @@ export class CcsmApp {
   #newTabMenuToken = 0;
   #eventUnlisten: (() => void) | null = null;
   #windowCloseUnlisten: (() => void) | null = null;
+  #updateCheckTimer: number | null = null;
   #closingWindow = false;
   #dialogSequence = 0;
   #tabCloseRequestQueue: Promise<void> = Promise.resolve();
@@ -123,14 +127,7 @@ export class CcsmApp {
       theme.current,
       (request) => void this.#openTerminalLink(request),
     );
-    const themeButton = requiredElement<HTMLButtonElement>(
-      root,
-      "#theme-toggle",
-    );
-    updateThemeButton(themeButton, theme.current);
-    themeButton.addEventListener("click", () => theme.toggle());
     theme.subscribe((nextTheme) => {
-      updateThemeButton(themeButton, nextTheme);
       this.#terminalProvider.setTheme(nextTheme);
       void desktopClient.windowChrome.setTheme(nextTheme).catch((error) => {
         this.#setGlobalStatus("error", `theme · ${describeError(error)}`);
@@ -164,6 +161,29 @@ export class CcsmApp {
       ),
     );
     this.#registry.register(this.#fileEditorProvider);
+    const settingsButton = requiredElement<HTMLButtonElement>(
+      root,
+      "#settings-button",
+    );
+    this.#settingsDialog = new SettingsDialog({
+      theme,
+      updates: desktopClient.updates,
+      currentVersion:
+        import.meta.env.VITE_CCSM_VERSION?.trim() || desktopPackage.version,
+      setModalVisible: (visible) =>
+        this.#surfaceOcclusion.set("settings-dialog", visible),
+      prepareInstall: () => this.#prepareUpdateInstall(),
+      updateAvailabilityChanged: (available) => {
+        settingsButton.dataset.updateAvailable = String(available);
+        settingsButton.title = available
+          ? "Settings — update available"
+          : "Settings";
+        settingsButton.setAttribute("aria-label", settingsButton.title);
+      },
+    });
+    settingsButton.addEventListener("click", () => {
+      void this.#settingsDialog.open(settingsButton);
+    });
     this.#registry.register(new GitTabProvider(desktopClient));
     this.#newTabMenu = requiredElement<HTMLElement>(root, "#new-tab-menu");
     this.#newTabMenu.replaceChildren(
@@ -308,6 +328,9 @@ export class CcsmApp {
       this.#terminalProvider.destroyAll();
       this.#fileEditorProvider.destroyAll();
       this.#browserProvider.destroy();
+      this.#settingsDialog.destroy();
+      if (this.#updateCheckTimer !== null)
+        window.clearTimeout(this.#updateCheckTimer);
       this.#restoreScheduler.clear();
       void this.flushLayout();
     });
@@ -323,6 +346,12 @@ export class CcsmApp {
       this.#spaceTree.render(state);
       await this.#refreshAgents();
       this.#setGlobalStatus("running", "ready");
+      if (import.meta.env.MODE !== "e2e") {
+        this.#updateCheckTimer = window.setTimeout(() => {
+          this.#updateCheckTimer = null;
+          void this.#settingsDialog.checkForUpdates(false);
+        }, 5_000);
+      }
     } catch (error) {
       this.#setGlobalStatus("error", describeError(error));
       throw error;
@@ -1249,6 +1278,13 @@ export class CcsmApp {
       this.#closingWindow = false;
       this.#setGlobalStatus("error", `close · ${describeError(error)}`);
     }
+  }
+
+  async #prepareUpdateInstall(): Promise<boolean> {
+    if (!(await this.#fileEditorProvider.requestCloseAll())) return false;
+    await this.#tabDeletionQueue;
+    await this.flushLayout();
+    return true;
   }
 
   #beginDockDrag(): void {

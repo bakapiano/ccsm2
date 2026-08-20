@@ -1,0 +1,23 @@
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "resources": {
+      "../../../crates/ccsm-platform/vendor/conpty/herdr-conpty.json": "conpty/herdr-conpty.json",
+      "../../../crates/ccsm-platform/vendor/conpty/conpty.dll": "conpty/conpty.dll",
+      "../../../crates/ccsm-platform/vendor/conpty/x64/OpenConsole.exe": "conpty/x64/OpenConsole.exe",
+      "../../../crates/ccsm-platform/vendor/conpty/arm64/OpenConsole.exe": "conpty/arm64/OpenConsole.exe",
+      "../../../crates/ccsm-platform/vendor/conpty-notices/Microsoft.Windows.Console.ConPTY-LICENSE.txt": "THIRD-PARTY-NOTICES/Microsoft.Windows.Console.ConPTY-LICENSE.txt",
+      "../../../crates/ccsm-platform/vendor/conpty-notices/Microsoft.Windows.Console.ConPTY-NOTICE.md": "THIRD-PARTY-NOTICES/Microsoft.Windows.Console.ConPTY-NOTICE.md",
+      "../../../crates/ccsm-platform/vendor/portable-pty/LICENSE.md": "THIRD-PARTY-NOTICES/portable-pty-LICENSE.md",
+      "../../../crates/ccsm-platform/vendor/HERDR-APACHE-2.0.txt": "THIRD-PARTY-NOTICES/HERDR-APACHE-2.0.txt",
+      "../../../crates/ccsm-platform/vendor/NOTICE.md": "THIRD-PARTY-NOTICES/VENDORED-COMPONENTS.md"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/nsis-hooks.nsh",
+        "languages": ["English", "SimpChinese"]
+      }
+    }
+  }
+}

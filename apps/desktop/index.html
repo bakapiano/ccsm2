@@ -38,29 +38,17 @@
         </span>
         <div class="app-titlebar-drag" data-tauri-drag-region></div>
         <button
-          id="theme-toggle"
-          class="theme-toggle"
+          id="settings-button"
+          class="settings-button"
           type="button"
-          aria-label="Switch to dark mode"
-          title="Switch to dark mode"
+          aria-label="Settings"
+          title="Settings"
+          data-testid="settings-button"
         >
-          <svg
-            class="theme-icon theme-icon-moon"
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-          >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.25" />
             <path
-              d="M12.8 10.2A5.5 5.5 0 0 1 5.8 3.2 5.5 5.5 0 1 0 12.8 10.2Z"
-            />
-          </svg>
-          <svg
-            class="theme-icon theme-icon-sun"
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-          >
-            <circle cx="8" cy="8" r="2.6" />
-            <path
-              d="M8 1.2v1.5M8 13.3v1.5M1.2 8h1.5M13.3 8h1.5M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1"
+              d="M6.9 1.6h2.2l.45 1.55 1.2.5 1.42-.78 1.56 1.56-.78 1.42.5 1.2 1.55.45v2.2l-1.55.45-.5 1.2.78 1.42-1.56 1.56-1.42-.78-1.2.5-.45 1.55H6.9l-.45-1.55-1.2-.5-1.42.78-1.56-1.56.78-1.42-.5-1.2L1 9.7V7.5l1.55-.45.5-1.2-.78-1.42 1.56-1.56 1.42.78 1.2-.5z"
             />
           </svg>
         </button>

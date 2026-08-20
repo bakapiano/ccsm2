@@ -44,6 +44,7 @@ jobs:
           fi
 
           node scripts/check-release-version.mjs "${version}"
+          node --test .github/scripts/generate-update-manifest.test.mjs
           git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
 
           echo "version=${version}" >>"${GITHUB_OUTPUT}"
@@ -66,7 +67,8 @@ jobs:
       - validate
       - quality
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 120
+    environment: release
     permissions:
       attestations: write
       contents: read
@@ -78,13 +80,15 @@ jobs:
           - name: Windows x64
             os: windows-2022
             artifact: windows-x64
-            asset: windows-x64.zip
           - name: Ubuntu 24.04 x86_64
             os: ubuntu-24.04
-            artifact: ubuntu-24.04-x86_64
-            asset: ubuntu-24.04-x86_64.tar.gz
+            artifact: linux-x86_64
     env:
+      CCSM_PACKAGE_OUTPUT_DIR: ${{ github.workspace }}/.release-dist/${{ matrix.artifact }}
       RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      EXPECTED_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
 
     steps:
       - name: Check out source and tags
@@ -94,19 +98,22 @@ jobs:
 
       - name: Install Ubuntu build dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo bash .github/scripts/install-ubuntu-dependencies.sh \
             build-essential \
             file \
             libayatana-appindicator3-dev \
+            libfuse2t64 \
             libgtk-3-dev \
             librsvg2-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
             patchelf \
-            pkg-config
+            pkg-config \
+            xauth \
+            xvfb
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -135,79 +142,73 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows release archive
+      - name: Verify updater signing configuration
+        shell: bash
+        run: |
+          test -n "${TAURI_SIGNING_PRIVATE_KEY}"
+          test -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
+          test -n "${EXPECTED_UPDATER_PUBLIC_KEY}"
+          node - <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const config = JSON.parse(readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8"));
+          if (config.plugins.updater.pubkey !== process.env.EXPECTED_UPDATER_PUBLIC_KEY) {
+            throw new Error("release environment public key differs from tauri.conf.json");
+          }
+          NODE
+
+      - name: Build Windows NSIS and updater
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/package-windows.ps1 -Version $env:RELEASE_VERSION
 
-      - name: Build Ubuntu release archive
+      - name: Build Linux DEB, AppImage, and updaters
         if: runner.os == 'Linux'
         shell: bash
         run: bash scripts/package-ubuntu.sh "${RELEASE_VERSION}"
 
-      - name: Verify Windows archive
+      - name: Verify and install Windows NSIS
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $name = "CCSM-$env:RELEASE_VERSION-windows-x64.zip"
-          $archive = Join-Path "target/release" $name
-          $expected = ((Get-Content -LiteralPath "$archive.sha256" -Raw).Trim() -split '\s+')[0]
-          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) {
-            throw "Archive checksum mismatch: expected $expected, got $actual"
-          }
-          $extractRoot = Join-Path $env:RUNNER_TEMP "ccsm-windows-package"
-          Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot
-          foreach ($relative in @("ccsm-desktop.exe", "BUILD-INFO.txt", "conpty/conpty.dll", "LICENSE", "README.md")) {
-            if (-not (Test-Path -LiteralPath (Join-Path $extractRoot $relative) -PathType Leaf)) {
-              throw "Missing packaged file: $relative"
+          $dist = Resolve-Path $env:CCSM_PACKAGE_OUTPUT_DIR
+          Push-Location $dist
+          try {
+            foreach ($line in Get-Content "SHA256SUMS-windows-x64.txt") {
+              $parts = $line -split '\s+', 2
+              $actual = (Get-FileHash -LiteralPath $parts[1] -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($actual -ne $parts[0]) { throw "Checksum mismatch for $($parts[1])" }
             }
-          }
-          $buildInfo = Get-Content -LiteralPath (Join-Path $extractRoot "BUILD-INFO.txt")
-          if ($buildInfo -notcontains "Source: v$env:RELEASE_VERSION") {
-            throw "BUILD-INFO source revision does not match v$env:RELEASE_VERSION"
-          }
+          } finally { Pop-Location }
 
-      - name: Verify Ubuntu archive
+          $installer = Join-Path $dist "CCSM-$env:RELEASE_VERSION-windows-x64-setup.exe"
+          ./scripts/test-windows-package.ps1 -InstallerPath $installer -DataDirectory (Join-Path $env:RUNNER_TEMP "ccsm-installed-smoke")
+
+      - name: Verify and install Linux packages
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          name="CCSM-${RELEASE_VERSION}-ubuntu-24.04-x86_64"
           (
-            cd target/release
-            sha256sum -c "${name}.tar.gz.sha256"
+            cd "${CCSM_PACKAGE_OUTPUT_DIR}"
+            sha256sum -c SHA256SUMS-linux-x86_64.txt
           )
-          extract_root="$(mktemp -d)"
-          tar -xzf "target/release/${name}.tar.gz" -C "${extract_root}"
-          test -x "${extract_root}/${name}/ccsm-desktop"
-          test -x "${extract_root}/${name}/run.sh"
-          test -f "${extract_root}/${name}/BUILD-INFO.txt"
-          test -f "${extract_root}/${name}/LICENSE"
-          test -f "${extract_root}/${name}/README.md"
-          grep -Fx "Source: v${RELEASE_VERSION}" "${extract_root}/${name}/BUILD-INFO.txt"
+          sudo env \
+            CCSM_PACKAGE_SMOKE_DATA_DIR="${RUNNER_TEMP}/ccsm-package-smoke-data" \
+            CCSM_PACKAGE_SMOKE_LOG_DIR="${RUNNER_TEMP}/ccsm-package-smoke-logs" \
+            bash scripts/test-linux-packages.sh "${RELEASE_VERSION}" "${CCSM_PACKAGE_OUTPUT_DIR}"
 
       - name: Ensure lockfiles did not change
         run: git diff --exit-code -- Cargo.lock pnpm-lock.yaml
 
-      - name: Attest Windows archive
-        if: runner.os == 'Windows'
+      - name: Attest packaged artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: target/release/CCSM-${{ needs.validate.outputs.version }}-windows-x64.zip
-
-      - name: Attest Ubuntu archive
-        if: runner.os == 'Linux'
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: target/release/CCSM-${{ needs.validate.outputs.version }}-ubuntu-24.04-x86_64.tar.gz
+          subject-path: ${{ github.workspace }}/.release-dist/${{ matrix.artifact }}/CCSM-*
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ccsm-${{ matrix.artifact }}
-          path: |
-            target/release/CCSM-${{ needs.validate.outputs.version }}-${{ matrix.asset }}
-            target/release/CCSM-${{ needs.validate.outputs.version }}-${{ matrix.asset }}.sha256
+          path: ${{ github.workspace }}/.release-dist/${{ matrix.artifact }}/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -218,7 +219,7 @@ jobs:
       - validate
       - build
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: release
     permissions:
       contents: write
@@ -228,6 +229,14 @@ jobs:
       RELEASE_VERSION: ${{ needs.validate.outputs.version }}
 
     steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
       - name: Download packaged artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -237,31 +246,23 @@ jobs:
       - name: Verify release assets
         shell: bash
         run: |
-          windows="CCSM-${RELEASE_VERSION}-windows-x64.zip"
-          ubuntu="CCSM-${RELEASE_VERSION}-ubuntu-24.04-x86_64.tar.gz"
-          test -f "dist/${windows}"
-          test -f "dist/${windows}.sha256"
-          test -f "dist/${ubuntu}"
-          test -f "dist/${ubuntu}.sha256"
           (
             cd dist
-            sha256sum -c "${windows}.sha256"
-            sha256sum -c "${ubuntu}.sha256"
-            sha256sum "${windows}" "${ubuntu}" >SHA256SUMS.txt
+            sha256sum -c SHA256SUMS-windows-x64.txt
+            sha256sum -c SHA256SUMS-linux-x86_64.txt
+            find . -maxdepth 1 -type f -name 'CCSM-*' ! -name '*.sig' -print0 |
+              sort -z | xargs -0 sha256sum >SHA256SUMS.txt
           )
+          test -f "dist/CCSM-${RELEASE_VERSION}-windows-x64-setup.exe.sig"
+          test -f "dist/CCSM-${RELEASE_VERSION}-linux-x86_64.deb.sig"
+          test -f "dist/CCSM-${RELEASE_VERSION}-linux-x86_64.AppImage.sig"
 
-      - name: Create and publish release
+      - name: Create and publish version release
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME}"
-          notes="Native Windows x64 and Ubuntu 24.04 x86_64 builds generated from ${GITHUB_SHA} by GitHub Actions. Verify downloads with the adjacent .sha256 files or SHA256SUMS.txt."
-
+          notes="Signed Windows NSIS, Linux DEB, and Linux AppImage builds generated from ${GITHUB_SHA}."
           if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            is_draft="$(gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)"
-            if [[ "${is_draft}" != "true" ]]; then
-              echo "Release ${tag} is already published; leaving its assets unchanged."
-              exit 0
-            fi
             gh release upload "${tag}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
           else
             create_args=(
@@ -288,3 +289,30 @@ jobs:
             edit_args+=(--latest)
           fi
           gh release edit "${edit_args[@]}"
+          gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body >release-notes.md
+
+      - name: Generate and publish updater manifest
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+          node scripts/generate-update-manifest.mjs \
+            --version "${RELEASE_VERSION}" \
+            --artifacts-dir dist \
+            --base-url "${base_url}" \
+            --notes-file release-notes.md \
+            --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output dist/latest.json
+          gh release upload "${tag}" dist/latest.json --repo "${GITHUB_REPOSITORY}" --clobber
+
+          channel="updater-beta"
+          if ! gh release view "${channel}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${channel}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "CCSM Beta Updates" \
+              --notes "Current signed CCSM beta updater manifest." \
+              --prerelease \
+              --latest=false
+          fi
+          gh release upload "${channel}" dist/latest.json --repo "${GITHUB_REPOSITORY}" --clobber

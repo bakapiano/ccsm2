@@ -92,27 +92,21 @@ export class ThemeController {
     return this.#theme;
   }
 
-  toggle(): ThemeMode {
-    this.#theme = nextTheme(this.#theme);
+  set(theme: ThemeMode): ThemeMode {
+    if (theme === this.#theme) return this.#theme;
+    this.#theme = theme;
     this.storage.setItem(THEME_STORAGE_KEY, this.#theme);
     this.apply(this.#theme);
     for (const listener of this.#listeners) listener(this.#theme);
     return this.#theme;
   }
 
+  toggle(): ThemeMode {
+    return this.set(nextTheme(this.#theme));
+  }
+
   subscribe(listener: (theme: ThemeMode) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
-}
-
-export function updateThemeButton(
-  button: HTMLButtonElement,
-  theme: ThemeMode,
-): void {
-  const target = theme === "light" ? "dark" : "light";
-  const label = `Switch to ${target} mode`;
-  button.dataset.theme = theme;
-  button.setAttribute("aria-label", label);
-  button.title = label;
 }

@@ -13,11 +13,8 @@ fi
 
 target_root="${CARGO_TARGET_DIR:-${repo_root}/target}"
 release_root="${target_root}/release"
-output_root="$(realpath -m "${CCSM_PACKAGE_OUTPUT_DIR:-${release_root}}")"
-package_name="CCSM-${version}-ubuntu-24.04-x86_64"
-stage_root="${release_root}/package/${package_name}"
-archive_path="${output_root}/${package_name}.tar.gz"
-source_revision="$(git -C "${repo_root}" describe --always --dirty)"
+bundle_root="${release_root}/bundle"
+output_root="$(realpath -m "${CCSM_PACKAGE_OUTPUT_DIR:-${release_root}/dist}")"
 
 if [[ "${CCSM_SKIP_BUILD:-0}" != "1" ]]; then
   (
@@ -26,67 +23,49 @@ if [[ "${CCSM_SKIP_BUILD:-0}" != "1" ]]; then
   )
 fi
 
-required_files=(
-  "${release_root}/ccsm-desktop"
-  "${repo_root}/README.md"
-  "${repo_root}/LICENSE"
-  "${repo_root}/scripts/ubuntu-release-README.md"
-  "${repo_root}/scripts/ubuntu-release-run.sh"
-  "${repo_root}/crates/ccsm-platform/vendor/portable-pty/LICENSE.md"
-  "${repo_root}/crates/ccsm-platform/vendor/HERDR-APACHE-2.0.txt"
-  "${repo_root}/crates/ccsm-platform/vendor/NOTICE.md"
-)
-for required_file in "${required_files[@]}"; do
+single_file() {
+  local directory="$1"
+  local pattern="$2"
+  local files=()
+  mapfile -t files < <(find "${directory}" -maxdepth 1 -type f -name "${pattern}" -print | sort)
+  if [[ "${#files[@]}" -ne 1 ]]; then
+    echo "Expected one ${pattern} in ${directory}, found ${#files[@]}" >&2
+    exit 1
+  fi
+  printf '%s\n' "${files[0]}"
+}
+
+deb_path="$(single_file "${bundle_root}/deb" "*_${version}_amd64.deb")"
+deb_signature="${deb_path}.sig"
+appimage_path="$(single_file "${bundle_root}/appimage" "*_${version}_amd64.AppImage")"
+appimage_signature="${appimage_path}.sig"
+
+for required_file in "${deb_signature}" "${appimage_signature}"; do
   if [[ ! -f "${required_file}" ]]; then
-    echo "Missing release artifact: ${required_file}" >&2
+    echo "Missing signed updater artifact: ${required_file}" >&2
     exit 1
   fi
 done
 
-case "${stage_root}" in
-  "${release_root}"/package/CCSM-*) ;;
-  *)
-    echo "Refusing to replace unexpected staging path: ${stage_root}" >&2
-    exit 1
-    ;;
-esac
-
-rm -rf -- "${stage_root}"
-rm -f -- "${archive_path}" "${archive_path}.sha256"
-mkdir -p "${stage_root}/THIRD-PARTY-NOTICES"
-
-install -m 0755 "${release_root}/ccsm-desktop" "${stage_root}/ccsm-desktop"
-install -m 0755 "${repo_root}/scripts/ubuntu-release-run.sh" "${stage_root}/run.sh"
-sed "s/__VERSION__/${version}/g" \
-  "${repo_root}/scripts/ubuntu-release-README.md" \
-  >"${stage_root}/README-UBUNTU.md"
-chmod 0644 "${stage_root}/README-UBUNTU.md"
-install -m 0644 "${repo_root}/README.md" "${stage_root}/README.md"
-install -m 0644 "${repo_root}/LICENSE" "${stage_root}/LICENSE"
-install -m 0644 \
-  "${repo_root}/crates/ccsm-platform/vendor/portable-pty/LICENSE.md" \
-  "${stage_root}/THIRD-PARTY-NOTICES/portable-pty-LICENSE.md"
-install -m 0644 \
-  "${repo_root}/crates/ccsm-platform/vendor/HERDR-APACHE-2.0.txt" \
-  "${stage_root}/THIRD-PARTY-NOTICES/HERDR-APACHE-2.0.txt"
-install -m 0644 \
-  "${repo_root}/crates/ccsm-platform/vendor/NOTICE.md" \
-  "${stage_root}/THIRD-PARTY-NOTICES/VENDORED-COMPONENTS.md"
-
-binary_sha256="$(sha256sum "${stage_root}/ccsm-desktop" | cut -d' ' -f1)"
-{
-  printf 'Package: %s\n' "${package_name}"
-  printf 'Source: %s\n' "${source_revision}"
-  printf 'Built on: %s\n' "$(. /etc/os-release && printf '%s %s' "${NAME}" "${VERSION_ID}")"
-  printf 'Architecture: %s\n' "$(uname -m)"
-  printf 'ccsm-desktop SHA256: %s\n' "${binary_sha256}"
-} >"${stage_root}/BUILD-INFO.txt"
+dpkg-deb --info "${deb_path}" >/dev/null
+file "${appimage_path}" | grep -q 'ELF'
 
 mkdir -p "${output_root}"
-tar -C "${release_root}/package" -czf "${archive_path}" "${package_name}"
-archive_sha256="$(sha256sum "${archive_path}" | cut -d' ' -f1)"
-printf '%s  %s\n' "${archive_sha256}" "$(basename "${archive_path}")" >"${archive_path}.sha256"
+deb_name="CCSM-${version}-linux-x86_64.deb"
+appimage_name="CCSM-${version}-linux-x86_64.AppImage"
 
-printf 'Archive: %s\n' "${archive_path}"
-printf 'Bytes: %s\n' "$(stat -c %s "${archive_path}")"
-printf 'SHA256: %s\n' "${archive_sha256}"
+install -m 0644 "${deb_path}" "${output_root}/${deb_name}"
+install -m 0644 "${deb_signature}" "${output_root}/${deb_name}.sig"
+install -m 0755 "${appimage_path}" "${output_root}/${appimage_name}"
+install -m 0644 "${appimage_signature}" "${output_root}/${appimage_name}.sig"
+
+(
+  cd "${output_root}"
+  sha256sum "${deb_name}" "${appimage_name}" \
+    >"SHA256SUMS-linux-x86_64.txt"
+)
+
+printf 'DEB: %s\n' "${output_root}/${deb_name}"
+printf 'AppImage: %s\n' "${output_root}/${appimage_name}"
+printf 'Updater: %s\n' "${output_root}/${appimage_name}"
+printf 'Checksums: %s\n' "${output_root}/SHA256SUMS-linux-x86_64.txt"

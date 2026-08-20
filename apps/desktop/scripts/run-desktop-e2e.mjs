@@ -593,6 +593,7 @@ function expectedScenarioIds(selected, cliArguments) {
       "ghcp-resume",
       "markdown-edit-preview",
       "sidebar-collapse",
+      "settings-update",
       "terminal-clipboard-interrupt",
     ],
     claude: ["claude-resume"],
@@ -600,6 +601,7 @@ function expectedScenarioIds(selected, cliArguments) {
     ghcp: ["ghcp-resume"],
     markdown: ["markdown-edit-preview"],
     sidebar: ["sidebar-collapse"],
+    settings: ["settings-update"],
     terminal: ["terminal-clipboard-interrupt"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
@@ -628,6 +630,9 @@ function expectedScenarioIds(selected, cliArguments) {
     }
     if (normalized.includes("sidebar-collapse.spec")) {
       specScenarioIds.add("sidebar-collapse");
+    }
+    if (normalized.includes("settings.spec")) {
+      specScenarioIds.add("settings-update");
     }
     if (normalized.includes("terminal-clipboard.spec")) {
       specScenarioIds.add("terminal-clipboard-interrupt");

@@ -56,6 +56,8 @@ import type { SpaceSnapshotDto } from "../generated/SpaceSnapshotDto";
 import type { StartRuntimeRequest } from "../generated/StartRuntimeRequest";
 import type { TabDto } from "../generated/TabDto";
 import type { ThemeMode } from "../theme";
+import type { UpdateInfoDto } from "../generated/UpdateInfoDto";
+import type { UpdateProgressDto } from "../generated/UpdateProgressDto";
 import type { UpdateTabStateRequest } from "../generated/UpdateTabStateRequest";
 import type { WriteFileRequest } from "../generated/WriteFileRequest";
 import type { WriteFileResultDto } from "../generated/WriteFileResultDto";
@@ -158,11 +160,21 @@ export interface WindowChromeClient {
   subscribeCloseRequested(listener: () => void): Promise<UnlistenFn>;
 }
 
+export interface DesktopUpdateClient {
+  check(): Promise<UpdateInfoDto | null>;
+  download(
+    updateId: string,
+    onProgress: (progress: UpdateProgressDto) => void,
+  ): Promise<void>;
+  install(updateId: string): Promise<void>;
+}
+
 export interface CcsmDesktopClient {
   backend: AppBackendClient;
   browser: BrowserSurfaceClient;
   clipboard: ClipboardClient;
   directories: DirectoryBrowserClient;
+  updates: DesktopUpdateClient;
   windowChrome: WindowChromeClient;
   events: DesktopEventStream;
 }
@@ -474,11 +486,31 @@ class TauriWindowChromeClient implements WindowChromeClient {
   }
 }
 
+class TauriDesktopUpdateClient implements DesktopUpdateClient {
+  check(): Promise<UpdateInfoDto | null> {
+    return invoke("check_update");
+  }
+
+  download(
+    updateId: string,
+    onProgress: (progress: UpdateProgressDto) => void,
+  ): Promise<void> {
+    const channel = new Channel<UpdateProgressDto>();
+    channel.onmessage = onProgress;
+    return invoke("download_update", { updateId, onProgress: channel });
+  }
+
+  install(updateId: string): Promise<void> {
+    return invoke("install_update", { updateId });
+  }
+}
+
 export const desktopClient: CcsmDesktopClient = {
   backend: new TauriBackendClient(),
   browser: new TauriBrowserSurfaceClient(),
   clipboard: new TauriClipboardClient(),
   directories: new TauriDirectoryBrowserClient(),
+  updates: new TauriDesktopUpdateClient(),
   windowChrome: new TauriWindowChromeClient(),
   events: {
     subscribe(listener) {

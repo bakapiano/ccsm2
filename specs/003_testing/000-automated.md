@@ -28,6 +28,8 @@ Pull Request / main push
         │       ├── build Windows E2E executable
         │       ├── pinned real-provider CLI contract
         │       ├── WDIO desktop scenarios
+        │       ├── build/install NSIS A/B E2E packages
+        │       ├── Settings signed update + restart reconnect
         │       ├── acceptance GIF + result files
         │       └── upload Actions Artifact (7 days)
         │
@@ -36,6 +38,8 @@ Pull Request / main push
                 ├── build Linux E2E executable
                 ├── pinned real-provider CLI contract
                 ├── WDIO desktop scenarios
+                ├── build/install DEB + AppImage A/B E2E packages
+                ├── Settings signed updates + restart reconnect
                 ├── acceptance GIF + result files
                 └── upload Actions Artifact (7 days)
 
@@ -67,12 +71,15 @@ initialize failure evidence
 → pnpm test:desktop:build
 → pnpm test:provider-cli-contract
 → pnpm test:desktop:ci
+→ build signed A/B E2E platform packages
+→ install A and drive Settings update to B
+→ reconnect after restart and verify B
 → finalize acceptance evidence
 → upload artifact
 → report job status
 ```
 
-`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。E2E-only Cargo tests 先执行，平台 build 最后写入带 Tauri E2E config overlay 的 executable。`pnpm test:provider-cli-contract` 使用该 executable 的生产 wrapper 验证固定版本真实 CLI。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。Linux job 在虚拟 display 中运行应用，Windows job 在 runner desktop session 中运行应用。
+`pnpm test:desktop:build` 构建启用 `e2e` feature 的平台 executable。E2E-only Cargo tests 先执行，平台 build 最后写入带 Tauri E2E config overlay 的 executable。`pnpm test:provider-cli-contract` 使用该 executable 的生产 wrapper 验证固定版本真实 CLI。`pnpm test:desktop:ci` 使用同一份 WDIO 配置和同一组 Desktop Scenarios。随后同一 job 使用临时 updater key、loopback 多 endpoint 和 E2E config 构建 A/B 安装包；Windows 从 Settings 完成 NSIS A→B，Linux 从 Settings 分别完成 DEB 与 AppImage A→B。每条链路在自动重启后重连 embedded WebDriver，并验证 B 版本和持久化数据。tag release workflow 对 production bundles 执行当前候选 package gate。
 
 job 开始时创建最小 `workflow-state.json`。测试步骤失败后，证据整理和上传步骤使用 `if: always()` 继续执行。finalizer 将 workflow 状态、display cleanup 和 runner 结果汇总为一个最终结论；证据生成、teardown 或 artifact 上传失败也会使该平台 job 失败。
 
@@ -252,7 +259,7 @@ PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短�
 https://<owner>.github.io/<repository>/e2e/pr/<number>/
 ```
 
-报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar和Terminal Clipboard场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
+报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar、Settings和Terminal Clipboard场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
 
 `gh-pages`保存当前active PR报告集合，并通过串行concurrency group发布单一orphan snapshot commit。`pull_request_target: closed`从默认分支执行对应目录清理；每日prune以GitHub API返回的open PR集合刷新站点。报告发布job提供人工验收导航，四个原生required checks继续提供合并结论。
 
@@ -276,7 +283,7 @@ PR Pages评论与owner结论是人工验收记录；四个required status checks
 
 - Pull Request：运行两个必需平台 job。
 - `main` push：运行两个平台 job，验证合并结果。
-- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp/markdown/sidebar` 指定诊断范围，结果保留相同证据格式。
+- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp/markdown/sidebar/settings/terminal` 指定诊断范围，结果保留相同证据格式。
 - 同一 PR 的旧 commit 运行通过 concurrency group 取消。
 - job 和单场景设置明确 timeout。
 - artifact 使用 7 天 retention，为 PR 审查和跨时区验收提供完整窗口。
