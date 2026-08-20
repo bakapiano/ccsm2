@@ -45,8 +45,8 @@ const MODIFIER_ONLY_KEYS = new Set([
 ]);
 
 /**
- * Translate host chords whose standalone-terminal compatibility encoding is
- * different from the browser terminal's lossless modified-key encoding.
+ * Provider fallback for host chords whose downstream VT conversion cannot
+ * retain the modified-key record produced by Windows ConPTY Input Mode.
  */
 export function cliShortcutInput(
   provider: ProviderKind | null,
@@ -59,9 +59,8 @@ export function cliShortcutInput(
     !event.metaKey &&
     ((event.ctrlKey && !event.shiftKey) || (event.shiftKey && !event.ctrlKey))
   ) {
-    // Codex accepts legacy Alt+Enter as multiline input through ConPTY. Keep
-    // this as ESC + CR: CSI-u is not negotiated on the live input path and its
-    // printable suffix would otherwise be inserted into the prompt.
+    // Codex accepts legacy Alt+Enter as multiline input. Keep this as ESC + CR:
+    // an unnegotiated CSI-u printable suffix would be inserted into the prompt.
     return "\x1b\r";
   }
 

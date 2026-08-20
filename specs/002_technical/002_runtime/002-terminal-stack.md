@@ -57,7 +57,7 @@ portable-pty platform backend
 - Session resume 等待首个稳定尺寸，再以该 rows/cols 创建 PTY 和启动 TUI。
 - GUI进程生命周期内 ghostty-web持有完整 VT/scrollback。应用退出释放PTY和CLI process tree；下次启动根据Session desired state创建新runtime。
 - 每个retained Terminal renderer持有独立Ghostty WASM实例；WASM module下载可缓存，allocator和RenderState arena不跨Tab共享，关闭后新建Tab不能观察已释放VT的cells。
-- CLI Provider兼容层将Codex的`Shift+Enter`和`Ctrl+Enter`映射为其已支持的legacy `Alt+Enter`（`ESC CR`）multiline input；不得发送未协商的CSI-u序列，否则可打印后缀会进入prompt。终端输入回归集同时验证协商后的通用modified Enter、Claude所需的`Shift+Enter`不退化为CR，以及默认DEC Alt ESC prefix下`Alt+V`产生`ESC v`。
+- Windows ConPTY输入兼容层跨PTY output chunk跟踪`CSI ?9001h/l` Win32 Input Mode；普通文本、`Ctrl+C`与独立modifier保留Ghostty/raw VT路径，修饰组合和功能键编码为`CSI Vk;Sc;Uc;Kd;Cs;Rc_` KEY_EVENT_RECORD序列。目标键record中的control state保留左右Ctrl/Alt、Shift、lock与enhanced-key状态。Codex的`Ctrl+Enter`和`Shift+Enter`继续走Provider legacy `Alt+Enter`（`ESC CR`）fallback；本地Codex回归确认Win32/xterm modified Enter经过ConPTY应用VT转换后表现为普通Enter。不得发送未协商的CSI-u序列，否则可打印后缀会进入prompt。终端输入回归集同时验证9001分片协商、Win32 key record、Codex fallback、Claude所需的`Shift+Enter`不退化为CR，以及默认DEC Alt ESC prefix下`Alt+V`产生`ESC v`。
 - CLI Provider层读取SelectionManager选区，并通过desktop clipboard transport写入系统剪贴板；有选区时消费`Ctrl/Cmd+C`，空选区时`Ctrl+C`进入Ghostty key encoder并产生ETX（`0x03`）。`Ctrl/Cmd+V`通过同一transport读取文本，再交给Terminal paste保留bracketed-paste语义。Windows clipboard瞬时占用使用有界重试。
 - ghostty-web LinkProvider在VT buffer完成ANSI解析后识别普通URL、OSC 8 URL和文件引用。HTTP/HTTPS/`about:`交给CCSM创建内置Browser Tab；文件引用先由platform adapter canonicalize并验证Space containment，再创建或聚焦File Editor Tab。链接路由不改写PTY byte stream。
 
