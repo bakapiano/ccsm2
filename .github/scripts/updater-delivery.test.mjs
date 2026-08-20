@@ -87,3 +87,9 @@ test("generates ephemeral updater signing passwords in both E2E jobs", () => {
   assert.match(workflow, /--password \$updateSigningPassword/u);
   assert.match(workflow, /--password "\$\{update_signing_password\}"/u);
 });
+
+test("downloads only packaged artifacts when publishing a release", () => {
+  const workflow = readFileSync(".github/workflows/release.yml", "utf8");
+
+  assert.match(workflow, /pattern: ccsm-\*/u);
+});
