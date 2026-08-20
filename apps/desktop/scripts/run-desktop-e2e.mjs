@@ -88,6 +88,7 @@ mkdirSync(providerHome, { recursive: true });
 for (const provider of ["claude", "codex", "copilot", "markdown"]) {
   mkdirSync(join(spacesDirectory, provider), { recursive: true });
 }
+mkdirSync(join(spacesDirectory, "terminal"), { recursive: true });
 const baselineSourceProcessIds = new Set(
   listSourceBinaryProcesses().map((entry) => entry.ProcessId),
 );
@@ -592,12 +593,14 @@ function expectedScenarioIds(selected, cliArguments) {
       "ghcp-resume",
       "markdown-edit-preview",
       "sidebar-collapse",
+      "terminal-clipboard-interrupt",
     ],
     claude: ["claude-resume"],
     codex: ["codex-resume"],
     ghcp: ["ghcp-resume"],
     markdown: ["markdown-edit-preview"],
     sidebar: ["sidebar-collapse"],
+    terminal: ["terminal-clipboard-interrupt"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
   const requestedSpecs = [];
@@ -625,6 +628,9 @@ function expectedScenarioIds(selected, cliArguments) {
     }
     if (normalized.includes("sidebar-collapse.spec")) {
       specScenarioIds.add("sidebar-collapse");
+    }
+    if (normalized.includes("terminal-clipboard.spec")) {
+      specScenarioIds.add("terminal-clipboard-interrupt");
     }
   }
   if (specScenarioIds.size === 0) return selectedScenarioIds;

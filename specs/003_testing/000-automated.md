@@ -159,7 +159,7 @@ Provider门禁包含三条独立场景：
 2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 
-Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。
+Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。Terminal Clipboard场景覆盖鼠标拖选、`Ctrl+C`复制、`Ctrl+V`回贴和空选区`Ctrl+C`中断PTY任务。
 
 Desktop E2E使用DOM Browser placeholder，保持embedded driver对主WebView的控制；Markdown场景显式创建Browser Tab并验证右侧Dock落位。native Browser child的bounds、visibility与lifecycle由独立平台套件验收。
 
@@ -250,7 +250,7 @@ PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短�
 https://<owner>.github.io/<repository>/e2e/pr/<number>/
 ```
 
-报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown和Sidebar场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
+报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar和Terminal Clipboard场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
 
 `gh-pages`保存当前active PR报告集合，并通过串行concurrency group发布单一orphan snapshot commit。`pull_request_target: closed`从默认分支执行对应目录清理；每日prune以GitHub API返回的open PR集合刷新站点。报告发布job提供人工验收导航，四个原生required checks继续提供合并结论。
 

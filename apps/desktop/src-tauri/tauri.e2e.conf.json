@@ -33,6 +33,8 @@
             "core:window:allow-start-dragging",
             "core:window:allow-start-resize-dragging",
             "core:window:allow-toggle-maximize",
+            "clipboard-manager:allow-read-text",
+            "clipboard-manager:allow-write-text",
             "wdio:default",
             "wdio-webdriver:default"
           ]

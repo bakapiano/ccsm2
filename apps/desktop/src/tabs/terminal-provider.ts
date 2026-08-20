@@ -14,10 +14,11 @@ import {
   takeByteBatch,
 } from "../terminal-flow";
 import {
+  cliCopyShortcutText,
   cliShortcutInput,
   installCliInputFollow,
   installCliWindowFocusRestore,
-  isAgentCliCopyShortcut,
+  isCliPasteShortcut,
 } from "../terminal-keyboard";
 import { TerminalInputWriter } from "../terminal-input";
 import {
@@ -457,8 +458,21 @@ class TerminalPanel implements IContentRenderer {
       this.#terminal.onData((data) => this.#enqueueInput(data));
       this.#terminal.attachCustomKeyEventHandler((event) => {
         const provider = this.#session?.provider ?? null;
-        if (isAgentCliCopyShortcut(provider, event)) {
-          this.#terminal?.copySelection();
+        const copyText = this.#terminal
+          ? cliCopyShortcutText(this.#terminal, event)
+          : null;
+        if (copyText !== null) {
+          setTimeout(() => {
+            void this.#client.clipboard
+              .writeText(copyText)
+              .catch((error) =>
+                console.warn("Terminal clipboard write failed", error),
+              );
+          }, 0);
+          return true;
+        }
+        if (isCliPasteShortcut(event)) {
+          setTimeout(() => void this.#pasteClipboardText(), 0);
           return true;
         }
         const data = cliShortcutInput(provider, event);
@@ -637,6 +651,21 @@ class TerminalPanel implements IContentRenderer {
   #enqueueInput(data: string): void {
     if (!this.#runtimeId) return;
     this.#inputWriter.enqueue(this.#runtimeId, data);
+  }
+
+  async #pasteClipboardText(): Promise<void> {
+    try {
+      const text = await this.#client.clipboard.readText();
+      const terminal = this.#terminal;
+      if (!text || !terminal) return;
+      const provider = this.#session?.provider;
+      if (provider === "claude" || provider === "codex") {
+        terminal.scrollToBottom();
+      }
+      terminal.paste(text);
+    } catch (error) {
+      console.warn("Terminal clipboard read failed", error);
+    }
   }
 
   #scheduleResize(cols: number, rows: number): void {
@@ -1184,6 +1213,8 @@ class TerminalPanel implements IContentRenderer {
       mouseTracking: terminal?.hasMouseTracking() ?? false,
       mouseSgr: terminal?.getMode(1006) ?? false,
       lastMouseReport: terminal?.getLastMouseReport() ?? null,
+      hasSelection: terminal?.hasSelection() ?? false,
+      selectedText: terminal?.getSelection() ?? "",
       theme: this.theme,
       text: lines.join("\n"),
     };

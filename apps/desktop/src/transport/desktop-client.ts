@@ -1,6 +1,10 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  readText as readClipboardText,
+  writeText as writeClipboardText,
+} from "@tauri-apps/plugin-clipboard-manager";
 
 import type { AppEvent } from "../generated/AppEvent";
 import type { AgentSummaryDto } from "../generated/AgentSummaryDto";
@@ -127,6 +131,11 @@ export interface DirectoryBrowserClient {
   cancel(operationId: string): Promise<void>;
 }
 
+export interface ClipboardClient {
+  readText(): Promise<string>;
+  writeText(text: string): Promise<void>;
+}
+
 export type WindowResizeDirection =
   | "East"
   | "North"
@@ -152,6 +161,7 @@ export interface WindowChromeClient {
 export interface CcsmDesktopClient {
   backend: AppBackendClient;
   browser: BrowserSurfaceClient;
+  clipboard: ClipboardClient;
   directories: DirectoryBrowserClient;
   windowChrome: WindowChromeClient;
   events: DesktopEventStream;
@@ -389,6 +399,37 @@ class TauriDirectoryBrowserClient implements DirectoryBrowserClient {
   }
 }
 
+class TauriClipboardClient implements ClipboardClient {
+  #pendingWrite: Promise<void> = Promise.resolve();
+
+  writeText(text: string): Promise<void> {
+    const operation = retryClipboardOperation(() => writeClipboardText(text));
+    this.#pendingWrite = operation.catch(() => {});
+    return operation;
+  }
+
+  async readText(): Promise<string> {
+    await this.#pendingWrite;
+    return retryClipboardOperation(readClipboardText);
+  }
+}
+
+async function retryClipboardOperation<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!String(error).includes("held by another party")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  throw lastError;
+}
+
 class TauriWindowChromeClient implements WindowChromeClient {
   #allowClose = false;
 
@@ -436,6 +477,7 @@ class TauriWindowChromeClient implements WindowChromeClient {
 export const desktopClient: CcsmDesktopClient = {
   backend: new TauriBackendClient(),
   browser: new TauriBrowserSurfaceClient(),
+  clipboard: new TauriClipboardClient(),
   directories: new TauriDirectoryBrowserClient(),
   windowChrome: new TauriWindowChromeClient(),
   events: {

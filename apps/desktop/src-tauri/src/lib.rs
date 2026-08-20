@@ -87,6 +87,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_wdio::init())
         .plugin(tauri_plugin_wdio_webdriver::init());
+    let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
     let app = builder
         .setup(move |app| {
             let data_dir = data_dir_override.map(Ok).unwrap_or_else(|| {

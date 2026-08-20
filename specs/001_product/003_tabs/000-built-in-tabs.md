@@ -19,7 +19,7 @@
 - 一个 CliSession只对应一个 CLI Tab；再次打开时激活所属 Space并聚焦已有 Tab。
 - CLI Tab禁用 Duplicate。
 - CLI Tab保留带修饰键的输入语义：Codex中`Shift+Enter`输入换行而不提交，并兼容`Ctrl+Enter`；Claude Code中`Shift+Enter`输入换行而不提交；Windows上的Claude Code中`Alt+V`交给CLI读取系统剪贴板并粘贴图片。
-- Claude Code、Codex和GitHub Copilot Tab中`Ctrl/Cmd+C`复制当前终端选区；无选区时无操作，且不向PTY发送ETX中断字节。Shell Tab保留`Ctrl+C`的PTY中断语义。
+- 所有CLI Tab的`Ctrl+C`在终端选区存在时复制选区，空选区时向PTY发送ETX；`Ctrl/Cmd+V`触发系统粘贴。`Cmd+C`复制当前终端选区。
 - Claude Code与Codex Tab在用户开始键盘输入、粘贴或提交IME文本时立即滚动到当前输出底部，再将输入交给CLI。
 - 单独按下Ctrl、Shift、Alt、Cmd等修饰键时保留当前终端滚动位置。
 - 顶层窗口重新激活时，CLI Tab恢复窗口失活前的终端输入焦点；切回时点击的界面目标继续获得焦点。
