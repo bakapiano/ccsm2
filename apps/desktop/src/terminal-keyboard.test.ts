@@ -43,7 +43,7 @@ describe("cliShortcutInput", () => {
     expect(selectionReadCount).toBe(2);
   });
 
-  test("maps Codex Ctrl+Enter and Shift+Enter to legacy Alt+Enter", () => {
+  test("falls back to legacy Alt+Enter for Codex modified Enter", () => {
     const ctrlEnter = cliShortcutInput("codex", {
       ...noModifiers,
       code: "Enter",

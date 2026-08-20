@@ -52,6 +52,7 @@ import type { RuntimeStreamEvent } from "../runtime-channel";
 import type { CcsmDesktopClient } from "../transport/desktop-client";
 import { describeError } from "../transport/desktop-client";
 import { uiIcon } from "../ui-icons";
+import { WindowsConptyInputCompatibility } from "../windows-conpty-input";
 import {
   FitAddon,
   Ghostty,
@@ -187,6 +188,7 @@ class TerminalPanel implements IContentRenderer {
   readonly #oscStripper = new OscSequenceStripper({
     preserveDynamicColorQueries: true,
   });
+  readonly #windowsInput = new WindowsConptyInputCompatibility();
   readonly #outputFrameScheduler = new FrameTaskScheduler(1);
   #outputWriteInFlight = false;
   #outputWriteCredits: Array<{ runtimeId: string; bytes: number }> = [];
@@ -201,6 +203,7 @@ class TerminalPanel implements IContentRenderer {
   #lastOutputRuntimeId: string | null = null;
   #inputFollowDispose: (() => void) | null = null;
   #windowFocusDispose: (() => void) | null = null;
+  #windowsInputKeyupDispose: (() => void) | null = null;
   #resizeGestureDispose: (() => void) | null = null;
   #unlisten: (() => void) | null = null;
 
@@ -334,6 +337,8 @@ class TerminalPanel implements IContentRenderer {
     this.#inputFollowDispose = null;
     this.#windowFocusDispose?.();
     this.#windowFocusDispose = null;
+    this.#windowsInputKeyupDispose?.();
+    this.#windowsInputKeyupDispose = null;
     this.#resizeGestureDispose?.();
     this.#resizeGestureDispose = null;
     this.#terminal?.dispose();
@@ -475,11 +480,28 @@ class TerminalPanel implements IContentRenderer {
           setTimeout(() => void this.#pasteClipboardText(), 0);
           return true;
         }
-        const data = cliShortcutInput(provider, event);
+        const data =
+          this.#windowsInput.encodeKeyDown(
+            event,
+            provider === "codex" ? "codex" : "default",
+          ) ?? cliShortcutInput(provider, event);
         if (data === null) return false;
         this.#terminal?.input(data, true);
         return true;
       });
+      const handleWindowsKeyUp = (event: KeyboardEvent): void => {
+        const data = this.#windowsInput.encodeKeyUp(
+          event,
+          this.#session?.provider === "codex" ? "codex" : "default",
+        );
+        if (data === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.#enqueueInput(data);
+      };
+      this.#host.addEventListener("keyup", handleWindowsKeyUp, true);
+      this.#windowsInputKeyupDispose = () =>
+        this.#host?.removeEventListener("keyup", handleWindowsKeyUp, true);
       this.#terminal.onResize(({ cols, rows }) =>
         this.#scheduleResize(cols, rows),
       );
@@ -582,10 +604,12 @@ class TerminalPanel implements IContentRenderer {
       if (this.#resetOnNextRuntimeOutput) {
         this.#resetOnNextRuntimeOutput = false;
         this.#oscStripper.reset();
+        this.#windowsInput.reset();
         this.#terminal?.reset();
       }
       this.#runtimeId ??= event.runtimeId;
       const rawOutput = event.data;
+      this.#windowsInput.observeOutput(rawOutput);
       this.#resizeOutputSettler?.push(event.runtimeId, rawOutput);
       if (this.#repaintCapture?.push(event.runtimeId, rawOutput)) {
         this.#queueOutputAck(event.runtimeId, rawOutput.byteLength);
@@ -623,6 +647,7 @@ class TerminalPanel implements IContentRenderer {
     if (this.#runtimeId === event.runtimeId) {
       this.#runtimeId = null;
       this.#backendSize = null;
+      this.#windowsInput.reset();
     }
     this.#pendingExitCode = event.code;
     this.#setStatus("stopped", `exit ${event.code}`);
@@ -1209,6 +1234,7 @@ class TerminalPanel implements IContentRenderer {
       pendingInputEvents: input.pendingEvents,
       pendingInputCodeUnits: input.pendingCodeUnits,
       inputWriteInFlight: input.writeInFlight,
+      win32InputMode: this.#windowsInput.active,
       lastOutputRuntimeId: this.#lastOutputRuntimeId,
       mouseTracking: terminal?.hasMouseTracking() ?? false,
       mouseSgr: terminal?.getMode(1006) ?? false,
