@@ -23,6 +23,7 @@ interface TerminalSnapshot {
   selectedText: string;
   text: string;
   viewportY: number;
+  win32InputMode: boolean;
 }
 
 interface SelectionGeometry {
@@ -36,6 +37,10 @@ const platform = requiredEnvironment("CCSM_E2E_PLATFORM");
 const runId = requiredEnvironment("CCSM_E2E_RUN_ID");
 const spaceRootBase = requiredEnvironment("CCSM_E2E_TARGET_ROOT_BASE");
 const scenarioId = "terminal-clipboard-interrupt";
+const webdriverKey = {
+  Control: "\uE009",
+  Enter: "\uE007",
+} as const;
 
 describe("Terminal keyboard routing", () => {
   it("copies and pastes terminal text and interrupts with Control-C", async () => {
@@ -58,6 +63,11 @@ describe("Terminal keyboard routing", () => {
             snapshot.inputEnabled,
         ),
       );
+
+      if (platform === "windows") {
+        currentStep = "verify-win32-input-records";
+        await verifyWindowsCtrlEnterRecord(spaceRootBase, runId);
+      }
 
       currentStep = "print-copy-marker";
       await typeShellLine(`echo ${marker}`);
@@ -300,6 +310,49 @@ async function typeShellLine(input: string): Promise<void> {
   await terminalInput.click();
   for (const character of input) await browser.keys(character);
   await browser.keys("Enter");
+}
+
+async function verifyWindowsCtrlEnterRecord(
+  root: string,
+  id: string,
+): Promise<void> {
+  const safeId = id.replaceAll(/[^a-z0-9]/giu, "_");
+  await verifyWindowsInputRecord(
+    join(root, "terminal", `ctrl-enter-${safeId}.txt`),
+    ["Control", "Enter"],
+    { character: 13, modifiers: 4 },
+  );
+}
+
+async function verifyWindowsInputRecord(
+  outputPath: string,
+  keys: string[],
+  expected: { character: number; modifiers: number },
+): Promise<void> {
+  const escapedPath = outputPath.replaceAll("'", "''");
+  await typeShellLine(
+    `$k=[Console]::ReadKey($true); [IO.File]::WriteAllText('${escapedPath}', "$([int]$k.Key)|$([int][char]$k.KeyChar)|$([int]$k.Modifiers)")`,
+  );
+  await browser.pause(250);
+  await browser
+    .action("key")
+    .down(webdriverKey[keys[0] as keyof typeof webdriverKey])
+    .down(webdriverKey[keys[1] as keyof typeof webdriverKey])
+    .up(webdriverKey[keys[1] as keyof typeof webdriverKey])
+    .up(webdriverKey[keys[0] as keyof typeof webdriverKey])
+    .perform();
+  await browser.waitUntil(() => existsSync(outputPath), {
+    timeout: 10_000,
+    interval: 100,
+    timeoutMsg: `Console.ReadKey did not record ${keys.join("+")}`,
+  });
+  const [key, character, modifiers] = readFileSync(outputPath, "utf8")
+    .trim()
+    .split("|")
+    .map(Number);
+  expect(key).toBe(13);
+  expect(character).toBe(expected.character);
+  expect(modifiers & expected.modifiers).toBe(expected.modifiers);
 }
 
 async function waitForShell(
