@@ -301,6 +301,34 @@ describe("installCliWindowFocusRestore", () => {
     expect(unlistenCount).toBe(1);
   });
 
+  test("releases transient input on DOM and native window focus loss", async () => {
+    const { hostWindow } = focusWindow();
+    let releaseCount = 0;
+    let nativeFocusListener: ((focused: boolean) => void) | null = null;
+    const dispose = installCliWindowFocusRestore(
+      {
+        hasFocus: () => true,
+        canRestoreFocus: () => true,
+        restoreFocus: () => {},
+        releaseTransientInput: () => (releaseCount += 1),
+      },
+      hostWindow,
+      async (listener) => {
+        nativeFocusListener = listener;
+        return () => {};
+      },
+    );
+    await Promise.resolve();
+
+    hostWindow.dispatchEvent(new Event("blur"));
+    nativeFocusListener!(false);
+    expect(releaseCount).toBe(2);
+
+    dispose();
+    hostWindow.dispatchEvent(new Event("blur"));
+    expect(releaseCount).toBe(2);
+  });
+
   test("remembers CLI focus when element blur arrives before window blur", () => {
     const { hostWindow, setDocumentFocus } = focusWindow();
     let hasFocus = true;

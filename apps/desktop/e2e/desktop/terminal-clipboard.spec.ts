@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -67,6 +68,7 @@ describe("Terminal keyboard routing", () => {
       if (platform === "windows") {
         currentStep = "verify-win32-input-records";
         await verifyWindowsCtrlEnterRecord(spaceRootBase, runId);
+        await verifyWindowsModifierReleaseAfterWindowBlur(spaceRootBase, runId);
       }
 
       currentStep = "print-copy-marker";
@@ -321,6 +323,143 @@ async function verifyWindowsCtrlEnterRecord(
     join(root, "terminal", `ctrl-enter-${safeId}.txt`),
     ["Control", "Enter"],
     { character: 13, modifiers: 4 },
+  );
+}
+
+interface NativeShiftEvents {
+  keydowns: number;
+  keyups: number;
+}
+
+async function verifyWindowsModifierReleaseAfterWindowBlur(
+  root: string,
+  id: string,
+): Promise<void> {
+  const safeId = id.replaceAll(/[^a-z0-9]/giu, "_");
+  const outputPath = join(root, "terminal", `shift-release-${safeId}.txt`);
+  const escapedPath = outputPath.replaceAll("'", "''");
+  await typeShellLine(
+    `$k=[Console]::ReadKey($true); [IO.File]::WriteAllText('${escapedPath}', "$([int]$k.Key)|$([int][char]$k.KeyChar)|$([int]$k.Modifiers)")`,
+  );
+  await browser.pause(250);
+
+  const panel = await $('.terminal-panel[data-provider="shell"]');
+  const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
+  await requestMainWindowFocus();
+  await terminalInput.click();
+  await beginNativeShiftCapture();
+  let shiftReleased = false;
+  try {
+    sendWindowsShift("down");
+    await browser.waitUntil(
+      async () => (await nativeShiftEvents()).keydowns === 1,
+      { timeoutMsg: "CCSM WebView did not receive native Shift keydown" },
+    );
+    await browser.minimizeWindow();
+    await browser.waitUntil(() => browser.execute(() => !document.hasFocus()), {
+      timeoutMsg: "CCSM window did not lose focus",
+    });
+    sendWindowsShift("up");
+    shiftReleased = true;
+  } finally {
+    if (!shiftReleased) sendWindowsShift("up");
+  }
+  await browser.pause(100);
+  expect(await nativeShiftEvents()).toEqual({ keydowns: 1, keyups: 0 });
+
+  await browser.maximizeWindow();
+  await browser.setWindowRect(20, 20, 1320, 800);
+  await requestMainWindowFocus();
+  await terminalInput.click();
+
+  await browser.keys("Enter");
+  await browser.waitUntil(() => existsSync(outputPath), {
+    timeout: 10_000,
+    interval: 100,
+    timeoutMsg: "Console.ReadKey did not record Enter after Shift release",
+  });
+  const [key, character, modifiers] = readFileSync(outputPath, "utf8")
+    .trim()
+    .split("|")
+    .map(Number);
+  expect(key).toBe(13);
+  expect(character).toBe(13);
+  expect(modifiers & 2).toBe(0);
+}
+
+async function requestMainWindowFocus(): Promise<void> {
+  const error = await browser.execute(async () => {
+    const invoke = (
+      window as Window & {
+        __TAURI__?: {
+          core?: {
+            invoke?: (
+              command: string,
+              args?: Record<string, unknown>,
+            ) => Promise<unknown>;
+          };
+        };
+      }
+    ).__TAURI__?.core?.invoke;
+    if (!invoke) return "Tauri invoke API is unavailable";
+    try {
+      await invoke("plugin:window|set_focus", { label: "main" });
+      return null;
+    } catch (focusError) {
+      return String(focusError);
+    }
+  });
+  expect(error).toBeNull();
+}
+
+async function beginNativeShiftCapture(): Promise<void> {
+  await browser.execute(() => {
+    const state = window as Window & {
+      __CCSM_E2E_NATIVE_SHIFT_EVENTS__?: NativeShiftEvents;
+    };
+    state.__CCSM_E2E_NATIVE_SHIFT_EVENTS__ = { keydowns: 0, keyups: 0 };
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.code === "ShiftLeft") {
+          state.__CCSM_E2E_NATIVE_SHIFT_EVENTS__!.keydowns += 1;
+        }
+      },
+      true,
+    );
+    document.addEventListener(
+      "keyup",
+      (event) => {
+        if (event.code === "ShiftLeft") {
+          state.__CCSM_E2E_NATIVE_SHIFT_EVENTS__!.keyups += 1;
+        }
+      },
+      true,
+    );
+  });
+}
+
+async function nativeShiftEvents(): Promise<NativeShiftEvents> {
+  return browser.execute(
+    () =>
+      (
+        window as Window & {
+          __CCSM_E2E_NATIVE_SHIFT_EVENTS__?: NativeShiftEvents;
+        }
+      ).__CCSM_E2E_NATIVE_SHIFT_EVENTS__ ?? { keydowns: 0, keyups: 0 },
+  );
+}
+
+function sendWindowsShift(action: "down" | "up"): void {
+  const flags = action === "up" ? 2 : 0;
+  const script = [
+    "Add-Type -Namespace CcsmE2e -Name NativeKeyboard -MemberDefinition '[System.Runtime.InteropServices.DllImport(\"user32.dll\")] public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, System.UIntPtr extraInfo);'",
+    `[CcsmE2e.NativeKeyboard]::keybd_event(0xA0, 0x2A, ${flags}, [System.UIntPtr]::Zero)`,
+  ].join("; ");
+  execFileSync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", script],
+    { stdio: "pipe", windowsHide: true },
   );
 }
 

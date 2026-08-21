@@ -70,6 +70,31 @@ describe("WindowsConptyInputCompatibility", () => {
     ).toBe("\x1b[13;28;13;1;8;1_");
   });
 
+  test("releases transient keys across a window focus boundary", () => {
+    const compatibility = activeCompatibility();
+    compatibility.encodeKeyDown(
+      keyEvent("ShiftLeft", "Shift", {
+        shiftKey: true,
+        keyCode: 0x10,
+      }),
+    );
+    compatibility.encodeKeyDown(
+      keyEvent("Enter", "Enter", { shiftKey: true, keyCode: 0x0d }),
+    );
+
+    compatibility.releaseTransientKeys();
+
+    expect(compatibility.active).toBe(true);
+    expect(
+      compatibility.encodeKeyUp(keyEvent("Enter", "Enter", { keyCode: 0x0d })),
+    ).toBeNull();
+    expect(
+      compatibility.encodeKeyDown(
+        keyEvent("Enter", "Enter", { keyCode: 0x0d }),
+      ),
+    ).toBe("\x1b[13;28;13;1;0;1_");
+  });
+
   test("maps Codex Ctrl+Enter to the Shift+Enter keymap record", () => {
     const compatibility = activeCompatibility();
     compatibility.encodeKeyDown(

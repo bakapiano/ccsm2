@@ -301,6 +301,7 @@ class TerminalPanel implements IContentRenderer {
 
   dispose(): void {
     this.#attached = false;
+    this.#windowsInput.releaseTransientKeys();
     if (this.#terminal) this.#terminal.options.disableStdin = true;
     this.#terminal?.textarea?.blur();
     this.#resizeObserver?.disconnect();
@@ -384,6 +385,7 @@ class TerminalPanel implements IContentRenderer {
     );
     this.#visibilitySubscription = api.onDidVisibilityChange(
       ({ isVisible }) => {
+        if (!isVisible) this.#windowsInput.releaseTransientKeys();
         this.#syncInputState();
         if (isVisible) {
           this.#scheduleFit(true);
@@ -392,6 +394,7 @@ class TerminalPanel implements IContentRenderer {
       },
     );
     this.#activeSubscription = api.onDidActiveChange(({ isActive }) => {
+      if (!isActive) this.#windowsInput.releaseTransientKeys();
       this.#syncInputState();
       if (isActive) {
         this.#scheduleFit(true);
@@ -456,6 +459,8 @@ class TerminalPanel implements IContentRenderer {
                 !this.#terminal.options.disableStdin,
             ),
           restoreFocus: () => this.#terminal?.focus(),
+          releaseTransientInput: () =>
+            this.#windowsInput.releaseTransientKeys(),
         },
         this.element.ownerDocument.defaultView ?? window,
         (listener) => this.#client.windowChrome.subscribeFocusChanged(listener),
@@ -499,9 +504,10 @@ class TerminalPanel implements IContentRenderer {
         event.stopPropagation();
         this.#enqueueInput(data);
       };
-      this.#host.addEventListener("keyup", handleWindowsKeyUp, true);
+      const ownerDocument = this.element.ownerDocument;
+      ownerDocument.addEventListener("keyup", handleWindowsKeyUp, true);
       this.#windowsInputKeyupDispose = () =>
-        this.#host?.removeEventListener("keyup", handleWindowsKeyUp, true);
+        ownerDocument.removeEventListener("keyup", handleWindowsKeyUp, true);
       this.#terminal.onResize(({ cols, rows }) =>
         this.#scheduleResize(cols, rows),
       );

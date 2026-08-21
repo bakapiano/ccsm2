@@ -199,7 +199,7 @@ test-results/desktop/<run_id>/
 - fixture 使用合成 Space、provider home 和 credential 数据。
 - Markdown场景使用独立合成Space，覆盖Preview、键盘编辑、Dirty、显式保存和磁盘结果。
 - Sidebar场景覆盖折叠、状态恢复、展开，以及折叠态可见元素集合。
-- Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、软换行文本校验和PTY中断恢复。
+- Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、窗口失焦期间modifier keyup丢失后的Win32输入状态恢复、软换行文本校验和PTY中断恢复。
 - 平台差异放入 screenshot、process 和 display adapter，业务步骤保持共享。
 
 ## 本地验收证据
