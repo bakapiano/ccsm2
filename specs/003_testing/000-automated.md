@@ -168,7 +168,7 @@ Provider门禁包含三条独立场景：
 2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 
-Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。Terminal Clipboard场景覆盖鼠标拖选、`Ctrl+C`复制、`Ctrl+V`回贴和空选区`Ctrl+C`中断PTY任务。
+Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。Terminal Clipboard场景覆盖鼠标拖选、`Ctrl+C`复制、`Ctrl+V`回贴、窗口失焦时丢失modifier keyup后的Win32输入状态恢复和空选区`Ctrl+C`中断PTY任务。
 
 Desktop E2E使用DOM Browser placeholder，保持embedded driver对主WebView的控制；Markdown场景显式创建Browser Tab并验证右侧Dock落位。native Browser child的bounds、visibility与lifecycle由独立平台套件验收。
 

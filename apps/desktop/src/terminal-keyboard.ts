@@ -21,6 +21,7 @@ interface CliFocusTarget {
   hasFocus(): boolean;
   canRestoreFocus(): boolean;
   restoreFocus(): void;
+  releaseTransientInput?(): void;
 }
 
 type WindowFocusSubscriber = (
@@ -146,6 +147,7 @@ export function installCliWindowFocusRestore(
     }
   };
   const rememberFocus = (): void => {
+    target.releaseTransientInput?.();
     restoreOnActivation = targetWasFocused || target.hasFocus();
   };
   const restoreFocus = (): void => {

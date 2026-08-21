@@ -83,15 +83,16 @@ pub fn run() {
             .expect("CCSM main window is missing from the Tauri configuration");
         windows.remove(main_window_index)
     });
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
-        .plugin(tauri_plugin_updater::Builder::new().build());
+    let builder = tauri::Builder::default();
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(feature = "e2e")]
     let builder = builder
         .plugin(tauri_plugin_wdio::init())

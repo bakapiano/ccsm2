@@ -176,7 +176,13 @@ export class WindowsConptyInputCompatibility {
   reset(): void {
     this.#parserState = "ground";
     this.#csiBody = "";
-    this.#setWin32InputMode(false);
+    this.#win32InputMode = false;
+    this.releaseTransientKeys();
+  }
+
+  releaseTransientKeys(): void {
+    this.#pressedModifiers.clear();
+    this.#encodedKeyups.clear();
   }
 
   encodeKeyDown(
@@ -355,8 +361,7 @@ export class WindowsConptyInputCompatibility {
   #setWin32InputMode(enabled: boolean): void {
     if (this.#win32InputMode === enabled) return;
     this.#win32InputMode = enabled;
-    this.#pressedModifiers.clear();
-    this.#encodedKeyups.clear();
+    this.releaseTransientKeys();
   }
 }
 
