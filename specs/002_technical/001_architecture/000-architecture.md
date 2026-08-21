@@ -14,7 +14,7 @@ ccsm.exe
    └─ native child WebViews
 ```
 
-桌面首版创建一个Tauri进程、一个window和一个TypeScript renderer，并在其中切换active Space。第二次启动通过single-instance routing聚焦已有窗口。
+桌面首版创建一个Tauri进程、一个window和一个TypeScript renderer，并在其中切换active Space。release构建的第二次启动通过single-instance routing聚焦已有窗口；debug构建可与已安装release实例并行运行。
 
 `ccsm-desktop`依赖`ccsm-core + ccsm-platform`。`ccsm-core`的dependency graph保持Tauri-free。未来`ccsm-web-server`复用相同core/platform crates。
 
