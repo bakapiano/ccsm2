@@ -850,11 +850,11 @@ async function verifyWindowsCodexModifiedEnter(runId: string): Promise<void> {
   const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
   await terminalInput.waitForExist({ timeout: 20_000 });
   await terminalInput.click();
-  for (const character of lines[0]) await browser.keys(character);
+  await typeAndConfirmCodexLine(lines[0]);
   await pressModifiedEnter("Control");
-  for (const character of lines[1]) await browser.keys(character);
+  await typeAndConfirmCodexLine(lines[1]);
   await pressModifiedEnter("Shift");
-  for (const character of lines[2]) await browser.keys(character);
+  await typeAndConfirmCodexLine(lines[2]);
   await browser.keys("Enter");
   expect(await waitForModelRequest("codex", prompt, 15_000)).toBe(true);
 
@@ -864,6 +864,11 @@ async function verifyWindowsCodexModifiedEnter(runId: string): Promise<void> {
       snapshot.text.includes(responseMarker) &&
       terminalPromptReady("codex", snapshot.text),
   );
+}
+
+async function typeAndConfirmCodexLine(line: string): Promise<void> {
+  await browser.keys(line);
+  await waitForProvider("codex", (snapshot) => snapshot.text.includes(line));
 }
 
 async function pressModifiedEnter(

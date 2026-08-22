@@ -157,6 +157,7 @@ export class Terminal implements ITerminalCore {
   // Lifecycle state
   private isOpen = false;
   private isDisposed = false;
+  private renderActive = true;
   private animationFrameId?: number;
 
   // Addons
@@ -260,6 +261,9 @@ export class Terminal implements ITerminalCore {
         if (this.renderer) {
           this.renderer.setCursorStyle(this.options.cursorStyle);
           this.renderer.setCursorBlink(this.options.cursorBlink);
+          if (this.wasmTerm) {
+            this.renderer.render(this.wasmTerm, true, this.viewportY, this);
+          }
         }
         break;
 
@@ -919,6 +923,29 @@ export class Terminal implements ITerminalCore {
     this.updateScrollbarView();
   }
 
+  /** Pause retained terminals while their panel is detached or hidden. */
+  setRenderActive(active: boolean): void {
+    if (this.renderActive === active) {
+      if (active) this.startRenderLoop();
+      return;
+    }
+    this.renderActive = active;
+    if (!active) {
+      if (this.animationFrameId !== undefined) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = undefined;
+      }
+      return;
+    }
+    if (!this.isOpen || this.isDisposed) return;
+    this.redraw();
+    this.startRenderLoop();
+  }
+
+  get isRenderActive(): boolean {
+    return this.renderActive;
+  }
+
   /** Copy the currently presented Canvas frame without mutating VT state. */
   createFrameSnapshot(): HTMLCanvasElement | null {
     this.assertOpen();
@@ -1507,7 +1534,7 @@ export class Terminal implements ITerminalCore {
     this.isOpen = false;
 
     // Stop render loop
-    if (this.animationFrameId) {
+    if (this.animationFrameId !== undefined) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = undefined;
     }
@@ -1556,8 +1583,17 @@ export class Terminal implements ITerminalCore {
    * Start the render loop
    */
   private startRenderLoop(): void {
+    if (
+      !this.renderActive ||
+      this.isDisposed ||
+      !this.isOpen ||
+      this.animationFrameId !== undefined
+    ) {
+      return;
+    }
     const loop = () => {
-      if (!this.isDisposed && this.isOpen) {
+      this.animationFrameId = undefined;
+      if (this.renderActive && !this.isDisposed && this.isOpen) {
         // Render using WASM's native dirty tracking
         // The render() method:
         // 1. Calls update() once to sync state and check dirty flags
@@ -1590,10 +1626,12 @@ export class Terminal implements ITerminalCore {
         // to avoid performance issues. For now, consumers can use requestAnimationFrame
         // if they need frame-by-frame updates.
 
-        this.animationFrameId = requestAnimationFrame(loop);
+        if (this.renderActive && !this.isDisposed && this.isOpen) {
+          this.animationFrameId = requestAnimationFrame(loop);
+        }
       }
     };
-    loop();
+    this.animationFrameId = requestAnimationFrame(loop);
   }
 
   /**

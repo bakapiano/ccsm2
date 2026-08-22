@@ -31,6 +31,7 @@ on:
           - sidebar
           - settings
           - terminal
+          - renderer
 
 permissions:
   contents: read

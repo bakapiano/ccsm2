@@ -39,6 +39,10 @@ const scenarioIds = new Map([
     "copies and pastes terminal text and interrupts with Control-C",
     "terminal-clipboard-interrupt",
   ],
+  [
+    "keeps retained terminal rendering bounded across Space switches",
+    "terminal-render-lifecycle",
+  ],
 ]);
 const scenarioTitles: Record<string, string> = {
   claude: "creates a Space and resumes Claude",
@@ -48,11 +52,12 @@ const scenarioTitles: Record<string, string> = {
   sidebar: "collapses and expands the sidebar",
   settings: "opens Settings and checks updates",
   terminal: "copies and pastes terminal text and interrupts with Control-C",
+  renderer: "keeps retained terminal rendering bounded across Space switches",
 };
 const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
 if (selectedScenario !== "all" && !scenarioTitles[selectedScenario]) {
   throw new Error(
-    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar, settings, terminal; received ${selectedScenario}`,
+    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar, settings, terminal, renderer; received ${selectedScenario}`,
   );
 }
 

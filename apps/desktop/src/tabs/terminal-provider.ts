@@ -281,8 +281,15 @@ class TerminalPanel implements IContentRenderer {
   }
 
   onShow(): void {
+    this.#terminal?.setRenderActive(true);
     this.#syncInputState();
     this.#scheduleFit(true);
+  }
+
+  onHide(): void {
+    this.#windowsInput.releaseTransientKeys();
+    this.#terminal?.setRenderActive(false);
+    this.#syncInputState();
   }
 
   focus(): void {
@@ -301,6 +308,7 @@ class TerminalPanel implements IContentRenderer {
 
   dispose(): void {
     this.#attached = false;
+    this.#terminal?.setRenderActive(false);
     this.#windowsInput.releaseTransientKeys();
     if (this.#terminal) this.#terminal.options.disableStdin = true;
     this.#terminal?.textarea?.blur();
@@ -387,6 +395,7 @@ class TerminalPanel implements IContentRenderer {
       ({ isVisible }) => {
         if (!isVisible) this.#windowsInput.releaseTransientKeys();
         this.#syncInputState();
+        this.#syncRenderState();
         if (isVisible) {
           this.#scheduleFit(true);
           void this.#maybeAutoStart();
@@ -408,6 +417,12 @@ class TerminalPanel implements IContentRenderer {
     const enabled = Boolean(this.#attached && this.#panelApi?.isVisible);
     this.#terminal.options.disableStdin = !enabled;
     if (!enabled) this.#terminal.textarea?.blur();
+  }
+
+  #syncRenderState(): void {
+    this.#terminal?.setRenderActive(
+      Boolean(this.#attached && this.#panelApi?.isVisible),
+    );
   }
 
   async #initialize(): Promise<void> {
@@ -435,6 +450,7 @@ class TerminalPanel implements IContentRenderer {
       });
       this.#terminal.loadAddon(this.#fitAddon);
       this.#terminal.open(this.#host);
+      this.#syncRenderState();
       this.#terminal.registerLinkProvider(
         new FilePathLinkProvider(this.#terminal, (reference) =>
           this.#openTerminalFile(reference),
@@ -1235,6 +1251,7 @@ class TerminalPanel implements IContentRenderer {
       repaintCaptureActive: Boolean(this.#repaintCapture),
       attached: this.#attached,
       inputEnabled: terminal ? !terminal.options.disableStdin : false,
+      renderActive: terminal?.isRenderActive ?? false,
       inputEnqueuedEvents: input.enqueuedEvents,
       inputWriteBatches: input.writeBatches,
       pendingInputEvents: input.pendingEvents,

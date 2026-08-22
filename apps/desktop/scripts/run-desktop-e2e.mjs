@@ -595,6 +595,7 @@ function expectedScenarioIds(selected, cliArguments) {
       "sidebar-collapse",
       "settings-update",
       "terminal-clipboard-interrupt",
+      "terminal-render-lifecycle",
     ],
     claude: ["claude-resume"],
     codex: ["codex-resume"],
@@ -603,6 +604,7 @@ function expectedScenarioIds(selected, cliArguments) {
     sidebar: ["sidebar-collapse"],
     settings: ["settings-update"],
     terminal: ["terminal-clipboard-interrupt"],
+    renderer: ["terminal-render-lifecycle"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
   const requestedSpecs = [];
@@ -636,6 +638,9 @@ function expectedScenarioIds(selected, cliArguments) {
     }
     if (normalized.includes("terminal-clipboard.spec")) {
       specScenarioIds.add("terminal-clipboard-interrupt");
+    }
+    if (normalized.includes("terminal-render-lifecycle.spec")) {
+      specScenarioIds.add("terminal-render-lifecycle");
     }
   }
   if (specScenarioIds.size === 0) return selectedScenarioIds;
