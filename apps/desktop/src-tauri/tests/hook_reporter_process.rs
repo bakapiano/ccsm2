@@ -19,7 +19,7 @@ fn powershell_hook_command(reporter: &Path) -> String {
 
 #[test]
 fn powershell_launches_the_real_reporter_and_delivers_to_the_named_pipe() {
-    let (report_tx, report_rx) = mpsc::sync_channel(1);
+    let (report_tx, report_rx) = mpsc::channel();
     let sink: HookReportSink = Arc::new(move |report| {
         report_tx.send(report).unwrap();
     });

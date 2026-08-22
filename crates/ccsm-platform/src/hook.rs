@@ -24,29 +24,58 @@ pub type HookReportSink = Arc<dyn Fn(HookReport) + Send + Sync + 'static>;
 pub struct LocalHookEndpoint {
     address: String,
     stop: Arc<AtomicBool>,
-    thread: Mutex<Option<thread::JoinHandle<()>>>,
+    listener_thread: Mutex<Option<thread::JoinHandle<()>>>,
+    consumer_thread: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl LocalHookEndpoint {
     pub fn start(sink: HookReportSink) -> BackendResult<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let address = endpoint_address();
-        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let (report_tx, report_rx) = mpsc::channel();
+        let consumer = thread::Builder::new()
+            .name("ccsm-hook-consumer".into())
+            .spawn(move || consume_hook_reports(report_rx, sink))
+            .map_err(|error| {
+                BackendError::Platform(format!("start Hook consumer failed: {error}"))
+            })?;
+        let (ready_tx, ready_rx) = mpsc::channel();
         let worker_stop = Arc::clone(&stop);
         let worker_address = address.clone();
-        let worker = thread::Builder::new()
+        let listener = match thread::Builder::new()
             .name("ccsm-hook-endpoint".into())
-            .spawn(move || run_server(worker_address, worker_stop, sink, ready_tx))
-            .map_err(|error| {
-                BackendError::Platform(format!("start HookEndpoint failed: {error}"))
-            })?;
-        ready_rx
-            .recv_timeout(Duration::from_secs(5))
-            .map_err(|_| BackendError::Platform("HookEndpoint startup timed out".into()))??;
+            .spawn(move || run_server(worker_address, worker_stop, report_tx, ready_tx))
+        {
+            Ok(listener) => listener,
+            Err(error) => {
+                let _ = consumer.join();
+                return Err(BackendError::Platform(format!(
+                    "start HookEndpoint failed: {error}"
+                )));
+            }
+        };
+        let ready = match ready_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(ready) => ready,
+            Err(_) => {
+                stop.store(true, Ordering::SeqCst);
+                let _ = write_endpoint(&address, &[]);
+                let _ = listener.join();
+                let _ = consumer.join();
+                return Err(BackendError::Platform(
+                    "HookEndpoint startup timed out".into(),
+                ));
+            }
+        };
+        if let Err(error) = ready {
+            let _ = listener.join();
+            let _ = consumer.join();
+            return Err(error);
+        }
         Ok(Self {
             address,
             stop,
-            thread: Mutex::new(Some(worker)),
+            listener_thread: Mutex::new(Some(listener)),
+            consumer_thread: Mutex::new(Some(consumer)),
         })
     }
 
@@ -59,10 +88,15 @@ impl LocalHookEndpoint {
             return;
         }
         let _ = write_endpoint(&self.address, &[]);
-        if let Ok(mut worker) = self.thread.lock()
-            && let Some(worker) = worker.take()
+        if let Ok(mut listener) = self.listener_thread.lock()
+            && let Some(listener) = listener.take()
         {
-            let _ = worker.join();
+            let _ = listener.join();
+        }
+        if let Ok(mut consumer) = self.consumer_thread.lock()
+            && let Some(consumer) = consumer.take()
+        {
+            let _ = consumer.join();
         }
         #[cfg(unix)]
         {
@@ -194,11 +228,17 @@ fn parse_provider(value: &str) -> BackendResult<ProviderKind> {
     }
 }
 
-fn handle_message(bytes: Vec<u8>, sink: &HookReportSink) {
+fn enqueue_message(bytes: Vec<u8>, queue: &mpsc::Sender<HookReport>) {
     if bytes.is_empty() || bytes.len() as u64 > MAX_HOOK_MESSAGE_BYTES {
         return;
     }
     if let Ok(report) = serde_json::from_slice::<HookReport>(&bytes) {
+        let _ = queue.send(report);
+    }
+}
+
+fn consume_hook_reports(queue: mpsc::Receiver<HookReport>, sink: HookReportSink) {
+    for report in queue {
         sink(report);
     }
 }
@@ -263,8 +303,8 @@ fn connect_named_pipe(
 fn run_server(
     address: String,
     stop: Arc<AtomicBool>,
-    sink: HookReportSink,
-    ready: mpsc::SyncSender<BackendResult<()>>,
+    queue: mpsc::Sender<HookReport>,
+    ready: mpsc::Sender<BackendResult<()>>,
 ) {
     use std::{fs::File, os::windows::io::FromRawHandle};
 
@@ -320,7 +360,7 @@ fn run_server(
             .read_to_end(&mut bytes);
         drop(file);
         if !stop.load(Ordering::SeqCst) {
-            handle_message(bytes, &sink);
+            enqueue_message(bytes, &queue);
         }
     }
 }
@@ -329,8 +369,8 @@ fn run_server(
 fn run_server(
     address: String,
     stop: Arc<AtomicBool>,
-    sink: HookReportSink,
-    ready: mpsc::SyncSender<BackendResult<()>>,
+    queue: mpsc::Sender<HookReport>,
+    ready: mpsc::Sender<BackendResult<()>>,
 ) {
     use std::os::unix::net::UnixListener;
 
@@ -354,7 +394,7 @@ fn run_server(
             .take(MAX_HOOK_MESSAGE_BYTES + 1)
             .read_to_end(&mut bytes);
         if !stop.load(Ordering::SeqCst) {
-            handle_message(bytes, &sink);
+            enqueue_message(bytes, &queue);
         }
     }
 }
@@ -403,7 +443,7 @@ fn write_endpoint(address: &str, bytes: &[u8]) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
+    use std::sync::{Condvar, mpsc};
 
     use super::*;
 
@@ -484,7 +524,7 @@ mod tests {
 
     #[test]
     fn endpoint_delivers_a_complete_report() {
-        let (tx, rx) = mpsc::sync_channel(1);
+        let (tx, rx) = mpsc::channel();
         let endpoint = LocalHookEndpoint::start(Arc::new(move |report| {
             let _ = tx.send(report);
         }))
@@ -511,6 +551,80 @@ mod tests {
             .expect("receive report");
         assert_eq!(received.runtime_id, report.runtime_id);
         assert_eq!(received.native_session_id, report.native_session_id);
+        endpoint.shutdown();
+    }
+
+    #[test]
+    fn endpoint_accepts_reports_while_the_consumer_is_busy() {
+        let (consumer_started_tx, consumer_started_rx) = mpsc::channel();
+        let release_consumer = Arc::new((Mutex::new(false), Condvar::new()));
+        let consumer_release = Arc::clone(&release_consumer);
+        let (delivered_tx, delivered_rx) = mpsc::channel();
+        let endpoint = LocalHookEndpoint::start(Arc::new(move |report| {
+            delivered_tx
+                .send(report.native_session_id.clone())
+                .expect("record delivered report");
+            if report.native_session_id == "native-slow" {
+                consumer_started_tx.send(()).expect("signal slow consumer");
+                let (released, wake) = &*consumer_release;
+                let mut released = released.lock().expect("lock consumer release");
+                while !*released {
+                    released = wake.wait(released).expect("wait for consumer release");
+                }
+            }
+        }))
+        .expect("start endpoint");
+        let report = |native_session_id: &str| HookReport {
+            provider: ProviderKind::Codex,
+            cli_session_id: "session-queue".into(),
+            runtime_id: "runtime-queue".into(),
+            token: "secret".into(),
+            native_session_id: native_session_id.into(),
+            hook_event_name: "SessionStart".into(),
+            transcript_path: None,
+            source: Some("startup".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
+        };
+
+        write_endpoint(
+            endpoint.address(),
+            &serde_json::to_vec(&report("native-slow")).expect("serialize slow report"),
+        )
+        .expect("send slow report");
+        consumer_started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("slow consumer starts");
+
+        let second_address = endpoint.address().to_owned();
+        let second_payload =
+            serde_json::to_vec(&report("native-fast")).expect("serialize queued report");
+        let (write_finished_tx, write_finished_rx) = mpsc::channel();
+        let writer = thread::spawn(move || {
+            let _ = write_finished_tx.send(write_endpoint(&second_address, &second_payload));
+        });
+        let second_result = write_finished_rx.recv_timeout(Duration::from_secs(3));
+
+        let (released, wake) = &*release_consumer;
+        *released.lock().expect("lock consumer release") = true;
+        wake.notify_all();
+        writer.join().expect("join queued report writer");
+
+        second_result
+            .expect("queued report completes while consumer is busy")
+            .expect("send queued report");
+        assert_eq!(
+            delivered_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("receive slow report"),
+            "native-slow"
+        );
+        assert_eq!(
+            delivered_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("receive queued report"),
+            "native-fast"
+        );
         endpoint.shutdown();
     }
 
@@ -580,11 +694,8 @@ mod tests {
             .read_to_end(&mut bytes)
             .expect("read buffered named-pipe report");
 
-        let (tx, rx) = mpsc::sync_channel(1);
-        let sink: HookReportSink = Arc::new(move |received| {
-            let _ = tx.send(received);
-        });
-        handle_message(bytes, &sink);
+        let (tx, rx) = mpsc::channel();
+        enqueue_message(bytes, &tx);
         let received = rx
             .recv_timeout(Duration::from_secs(1))
             .expect("deliver buffered named-pipe report");
