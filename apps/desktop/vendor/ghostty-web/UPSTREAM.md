@@ -35,5 +35,8 @@ Local changes:
   source passes the production TypeScript strict check without changing runtime behavior.
 - reconstruct soft-wrapped logical lines for plain-text URL detection and map
   multi-row matches back to their terminal buffer cells.
+- pause the animation-frame render loop while a retained terminal is hidden,
+  and redraw cursor/scrollback Canvas content only when presentation state
+  changes instead of on every display refresh.
 
 The checked-in WASM binary is the matching npm `ghostty-web@0.4.0` artifact.

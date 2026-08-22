@@ -232,6 +232,7 @@ export class CanvasRenderer {
   private cursorVisible: boolean = true;
   private cursorBlinkInterval?: number;
   private lastCursorPosition: { x: number; y: number } = { x: 0, y: 0 };
+  private lastPresentedCursorVisible: boolean = true;
 
   // Viewport tracking (for scrolling)
   private lastViewportY: number = 0;
@@ -446,11 +447,18 @@ export class CanvasRenderer {
       this.lastViewportY = viewportY;
     }
 
-    // Check if cursor position changed or if blinking (need to redraw cursor line)
+    const presentedCursorVisible =
+      viewportY === 0 && cursor.visible && this.cursorVisible;
+
+    // Redraw the cursor line only when its presentation changes. The blink
+    // timer flips cursorVisible every 530ms; cursorBlink itself remains true
+    // for the lifetime of the terminal and must not force work every frame.
     const cursorMoved =
       cursor.x !== this.lastCursorPosition.x ||
       cursor.y !== this.lastCursorPosition.y;
-    if (cursorMoved || this.cursorBlink) {
+    const cursorVisibilityChanged =
+      presentedCursorVisible !== this.lastPresentedCursorVisible;
+    if (cursorMoved || cursorVisibilityChanged) {
       // Mark cursor lines as needing redraw
       if (!forceAll && !buffer.isRowDirty(cursor.y)) {
         // Need to redraw cursor line
@@ -583,14 +591,11 @@ export class CanvasRenderer {
     // adjacent rows' visual space.
     const rowsToRender = new Set<number>();
     for (let y = 0; y < dims.rows; y++) {
-      // When scrolled, always force render all lines since we're showing scrollback
       const needsRender =
-        viewportY > 0
-          ? true
-          : forceAll ||
-            buffer.isRowDirty(y) ||
-            selectionRows.has(y) ||
-            hyperlinkRows.has(y);
+        forceAll ||
+        buffer.isRowDirty(y) ||
+        selectionRows.has(y) ||
+        hyperlinkRows.has(y);
 
       if (needsRender) {
         rowsToRender.add(y);
@@ -642,13 +647,18 @@ export class CanvasRenderer {
 
     // Link underlines are drawn during cell rendering (see renderCell)
 
-    // Render cursor (only if we're at the bottom, not scrolled)
-    if (viewportY === 0 && cursor.visible && this.cursorVisible) {
+    // Preserve an unchanged cursor already present on the Canvas. Draw it
+    // again only when this pass changed pixels or its presentation state.
+    if (
+      presentedCursorVisible &&
+      (forceAll || anyLinesRendered || cursorMoved || cursorVisibilityChanged)
+    ) {
       this.renderCursor(cursor.x, cursor.y);
     }
 
     // Update last cursor position
     this.lastCursorPosition = { x: cursor.x, y: cursor.y };
+    this.lastPresentedCursorVisible = presentedCursorVisible;
 
     // ALWAYS clear dirty flags after rendering, regardless of forceAll.
     // This is critical - if we don't clear after a full redraw, the dirty

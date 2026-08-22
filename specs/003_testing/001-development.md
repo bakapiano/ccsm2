@@ -133,7 +133,7 @@ Tauri composition root 在 `e2e` feature 下注册两个插件和对应 capabili
 pnpm test:desktop:build                 build current-platform E2E executable
 pnpm test:desktop                       run all current-platform Desktop Scenarios
 pnpm test:desktop -- --spec <file>      run one spec file
-CCSM_E2E_SCENARIO=<scenario> pnpm test:desktop run claude/codex/ghcp/markdown/sidebar/settings/terminal scenario
+CCSM_E2E_SCENARIO=<scenario> pnpm test:desktop run claude/codex/ghcp/markdown/sidebar/settings/terminal/renderer scenario
 pnpm test:desktop:debug -- --spec <file> run one spec with debug logging
 pnpm test:desktop:evidence -- --spec <file> run one spec in evidence mode
 pnpm test:provider-cli-contract             download and verify pinned real CLIs

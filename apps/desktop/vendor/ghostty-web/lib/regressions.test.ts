@@ -4,6 +4,7 @@ import { Ghostty } from "./ghostty";
 import { calculateInputAnchor } from "./input-anchor";
 import {
   applyFontCellOverrides,
+  CanvasRenderer,
   calculateLinkUnderlineY,
   calculateFontMetrics,
   createThemeColorRemap,
@@ -38,7 +39,125 @@ function selectionManagerForLine(
   return manager;
 }
 
+function idleRendererHarness(viewportY: number) {
+  const renderedRows: number[] = [];
+  let renderedCursors = 0;
+  let clearedDirty = 0;
+  const renderer = Object.create(CanvasRenderer.prototype) as any;
+  Object.assign(renderer, {
+    canvas: { width: 4, height: 3 },
+    metrics: { width: 1, height: 1 },
+    devicePixelRatio: 1,
+    cursorBlink: true,
+    cursorVisible: true,
+    lastPresentedCursorVisible: viewportY === 0,
+    lastCursorPosition: { x: 0, y: 0 },
+    lastViewportY: viewportY,
+    selectionManager: undefined,
+    hoveredHyperlinkId: 0,
+    previousHoveredHyperlinkId: 0,
+    hoveredLinkRange: null,
+    previousHoveredLinkRange: null,
+    renderLine: (_line: unknown, row: number) => renderedRows.push(row),
+    renderCursor: () => {
+      renderedCursors += 1;
+    },
+  });
+  const line = [cell(32), cell(32), cell(32), cell(32)];
+  const buffer = {
+    getCursor: () => ({ x: 0, y: 0, visible: true }),
+    getDimensions: () => ({ cols: 4, rows: 3 }),
+    needsFullRedraw: () => false,
+    isRowDirty: () => false,
+    getLine: () => line,
+    clearDirty: () => {
+      clearedDirty += 1;
+    },
+  } as any;
+  const scrollback = {
+    getScrollbackLength: () => 20,
+    getScrollbackLine: () => line,
+  } as any;
+  return {
+    renderer,
+    buffer,
+    scrollback,
+    renderedRows,
+    renderedCursors: () => renderedCursors,
+    clearedDirty: () => clearedDirty,
+  };
+}
+
 describe("local ghostty-web regressions", () => {
+  test("keeps an unchanged scrolled viewport idle between animation frames", () => {
+    const harness = idleRendererHarness(4);
+
+    harness.renderer.render(harness.buffer, false, 4, harness.scrollback);
+
+    expect(harness.renderedRows).toEqual([]);
+    expect(harness.renderedCursors()).toBe(0);
+    expect(harness.clearedDirty()).toBe(1);
+  });
+
+  test("redraws a blinking cursor only when its presented phase changes", () => {
+    const harness = idleRendererHarness(0);
+
+    harness.renderer.render(harness.buffer, false, 0, harness.scrollback);
+    expect(harness.renderedRows).toEqual([]);
+    expect(harness.renderedCursors()).toBe(0);
+
+    harness.renderer.cursorVisible = false;
+    harness.renderer.render(harness.buffer, false, 0, harness.scrollback);
+    expect(harness.renderedRows).toEqual([0]);
+    expect(harness.renderedCursors()).toBe(0);
+
+    harness.renderer.cursorVisible = true;
+    harness.renderer.render(harness.buffer, false, 0, harness.scrollback);
+    expect(harness.renderedRows).toEqual([0, 0]);
+    expect(harness.renderedCursors()).toBe(1);
+  });
+
+  test("pauses and resumes a retained terminal render loop", () => {
+    const terminal = Object.create(Terminal.prototype) as any;
+    terminal.isOpen = true;
+    terminal.isDisposed = false;
+    terminal.renderActive = true;
+    terminal.animationFrameId = 17;
+    terminal.viewportY = 0;
+    terminal.wasmTerm = {};
+    let fullRenders = 0;
+    terminal.renderer = {
+      render: (_buffer: unknown, forceAll: boolean) => {
+        if (forceAll) fullRenders += 1;
+      },
+    };
+    terminal.syncInputPosition = () => {};
+    terminal.updateScrollbarView = () => {};
+    const originalCancel = globalThis.cancelAnimationFrame;
+    const originalRequest = globalThis.requestAnimationFrame;
+    let canceled: number | undefined;
+    let scheduled = 0;
+    globalThis.cancelAnimationFrame = (handle) => {
+      canceled = handle;
+    };
+    globalThis.requestAnimationFrame = () => ++scheduled;
+    try {
+      terminal.setRenderActive(false);
+      expect(terminal.isRenderActive).toBe(false);
+      expect(canceled).toBe(17);
+      expect(terminal.animationFrameId).toBeUndefined();
+
+      terminal.setRenderActive(true);
+      expect(terminal.isRenderActive).toBe(true);
+      expect(fullRenders).toBe(1);
+      expect(scheduled).toBe(1);
+      expect(terminal.animationFrameId).toBe(1);
+    } finally {
+      globalThis.cancelAnimationFrame = originalCancel;
+      globalThis.requestAnimationFrame = originalRequest;
+    }
+  });
+
   test("a fresh terminal synchronizes cleared cells before its first viewport read", async () => {
     const ghostty = await Ghostty.load();
     const first = ghostty.createTerminal(80, 24);
@@ -106,9 +225,7 @@ describe("local ghostty-web regressions", () => {
   });
 
   test("encodes SGR mouse clicks, releases, motion, and wheel input", () => {
-    expect(encodeSgrMouse({ button: 0, col: 4, row: 2 })).toBe(
-      "\x1b[<0;5;3M",
-    );
+    expect(encodeSgrMouse({ button: 0, col: 4, row: 2 })).toBe("\x1b[<0;5;3M");
     expect(
       encodeSgrMouse({
         button: 0,
@@ -118,9 +235,9 @@ describe("local ghostty-web regressions", () => {
         ctrl: true,
       }),
     ).toBe("\x1b[<16;5;3m");
-    expect(
-      encodeSgrMouse({ button: 3, col: 0, row: 0, motion: true }),
-    ).toBe("\x1b[<35;1;1M");
+    expect(encodeSgrMouse({ button: 3, col: 0, row: 0, motion: true })).toBe(
+      "\x1b[<35;1;1M",
+    );
     expect(encodeSgrMouse({ button: 64, col: 7, row: 9 })).toBe(
       "\x1b[<64;8;10M",
     );
