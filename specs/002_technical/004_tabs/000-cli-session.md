@@ -94,7 +94,7 @@ CCSM_HOOK_PIPE
 CCSM_HOOK_TOKEN
 ```
 
-AppBackend校验token、provider、session、runtime ID和payload ID。Hook命令读取stdin、异步转发并立即返回。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
+HookEndpoint读取并反序列化报告后立即写入进程内无界队列。独立消费者按接收顺序调用AppBackend完成token、provider、session、runtime ID和payload ID校验与状态更新。Hook命令完成endpoint写入后立即返回空JSON响应。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
 
 Hook reporter同时归一化provider的会话谱系字段：Codex使用`forked_from_id/forkedFromId + ephemeral`，Claude使用`parent_session_id/parentSessionId + is_sidechain/isSidechain`，Copilot接受相同snake_case/camelCase组合。带父身份的ephemeral Hook更新runtime activity，并让`CliSession.native_session_id`保持当前可恢复父会话。
 
