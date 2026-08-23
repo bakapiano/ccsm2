@@ -26,6 +26,22 @@ interface TerminalSnapshot {
   lastOutputRuntimeId: string | null;
   text: string;
   win32InputMode: boolean;
+  cols: number | null;
+  rows: number | null;
+  cursorX: number | null;
+  cursorY: number | null;
+  cellWidth: number | null;
+  cellHeight: number | null;
+  theme: "light" | "dark";
+}
+
+interface ComposerPixelObservation {
+  provider: Provider;
+  theme: "light" | "dark";
+  rgb: [number, number, number];
+  count: number;
+  sampledPixels: number;
+  cursorRow: number;
 }
 
 interface TerminalInputTiming {
@@ -62,6 +78,23 @@ const providerCases: ProviderCase[] = [
   { provider: "codex", label: "Codex", scenarioId: "codex-resume" },
   { provider: "copilot", label: "GHCP", scenarioId: "ghcp-resume" },
 ];
+const composerPixels: Record<
+  Provider,
+  Record<"light" | "dark", [number, number, number]>
+> = {
+  claude: {
+    dark: [30, 30, 30],
+    light: [255, 255, 255],
+  },
+  codex: {
+    dark: [57, 57, 57],
+    light: [244, 244, 244],
+  },
+  copilot: {
+    dark: [30, 30, 30],
+    light: [255, 255, 255],
+  },
+};
 
 describe("real provider CLI with stubbed model API", () => {
   before(() => {
@@ -403,6 +436,114 @@ describe("real provider CLI with stubbed model API", () => {
       if (primaryError) throw primaryError;
     });
   }
+
+  it("switches running CLI composer surfaces with the application theme", async () => {
+    const scenarioId = "cli-theme-switch";
+    const evidence = new ScenarioEvidence(scenarioId);
+    const observations: ComposerPixelObservation[] = [];
+    let activeProvider: Provider | null = null;
+    let primaryError: unknown;
+    let currentStep = "create-provider-space";
+
+    try {
+      for (const { provider, label } of providerCases) {
+        currentStep = `${provider}-create-space`;
+        const spaceRoot = join(spaceRootBase, provider, "theme-switch");
+        mkdirSync(spaceRoot, { recursive: true });
+        await createSpace(`E2E ${label} Theme ${runId}`, spaceRoot);
+
+        currentStep = `${provider}-set-dark-theme`;
+        await selectApplicationTheme("dark");
+
+        currentStep = `${provider}-start-cli`;
+        await openProviderTab(provider);
+        activeProvider = provider;
+        await acknowledgeProviderStartup(provider);
+        const started = await waitForProvider(provider, (snapshot) =>
+          Boolean(
+            snapshot.runtimeId &&
+              snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
+              snapshot.inputEnabled &&
+              terminalPromptReady(provider, snapshot.text),
+          ),
+        );
+        await waitForStablePrompt(provider, started.runtimeId!);
+        const dark = await terminalComposerPixel(provider);
+        observations.push(dark);
+        expect(dark.theme).toBe("dark");
+        expect(dark.rgb).toEqual(composerPixels[provider].dark);
+        expect(dark.count).toBeGreaterThan(dark.sampledPixels * 0.95);
+        await evidence.checkpoint(`${provider}-dark`);
+
+        currentStep = `${provider}-set-light-theme`;
+        await selectApplicationTheme("light");
+        let light: ComposerPixelObservation | null = null;
+        await browser.waitUntil(
+          async () => {
+            light = await terminalComposerPixel(provider);
+            return (
+              light.theme === "light" &&
+              light.rgb.join(",") === composerPixels[provider].light.join(",")
+            );
+          },
+          {
+            timeoutMsg: `${label} composer pixels did not change with the light theme`,
+          },
+        );
+        observations.push(light!);
+        expect(light!.rgb).toEqual(composerPixels[provider].light);
+        expect(light!.count).toBeGreaterThan(light!.sampledPixels * 0.95);
+        await evidence.checkpoint(`${provider}-light`);
+
+        currentStep = `${provider}-stop-cli`;
+        await clickRuntimeAction(provider);
+        await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
+        activeProvider = null;
+      }
+    } catch (error) {
+      primaryError = error;
+      writeFileSync(
+        join(artifactDirectory, `${scenarioId}-failure-context.json`),
+        `${JSON.stringify(
+          {
+            scenarioId,
+            failureStep: currentStep,
+            observations,
+            error: String(error),
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } finally {
+      writeFileSync(
+        join(artifactDirectory, `${scenarioId}-pixels.json`),
+        `${JSON.stringify(observations, null, 2)}\n`,
+      );
+      if (activeProvider) {
+        try {
+          const snapshot = await terminalSnapshot(activeProvider);
+          if (snapshot?.runtimeId) await clickRuntimeAction(activeProvider);
+        } catch (error) {
+          primaryError ??= error;
+        }
+      }
+      try {
+        await evidence.checkpoint(
+          primaryError ? `failed-${currentStep}` : "final-state",
+        );
+      } catch (error) {
+        primaryError ??= error;
+      }
+      try {
+        evidence.finalize();
+      } catch (error) {
+        primaryError ??= error;
+      }
+    }
+
+    if (primaryError) throw primaryError;
+  });
 });
 
 function terminalResponse(marker: string): string {
@@ -413,6 +554,93 @@ function terminalResponse(marker: string): string {
     .repeat(Math.ceil(payloadLength / pattern.length))
     .slice(0, payloadLength);
   return `${payload}\n${marker}`;
+}
+
+async function selectApplicationTheme(theme: "light" | "dark"): Promise<void> {
+  const current = await browser.execute(
+    () => document.documentElement.dataset.theme ?? "light",
+  );
+  if (current === theme) return;
+  const settingsButton = await $('[data-testid="settings-button"]');
+  await settingsButton.waitForDisplayed();
+  await settingsButton.click();
+  const dialog = await $(".settings-dialog");
+  await dialog.waitForDisplayed();
+  await $(`[data-theme-choice="${theme}"]`).click();
+  await browser.waitUntil(
+    async () =>
+      (await browser.execute(() => document.documentElement.dataset.theme)) ===
+      theme,
+    { timeoutMsg: `Theme did not change to ${theme}` },
+  );
+  await $('[data-settings-action="close"]').click();
+  await dialog.waitForDisplayed({ reverse: true });
+}
+
+async function terminalComposerPixel(
+  provider: Provider,
+): Promise<ComposerPixelObservation> {
+  const serialized = await browser.execute((selectedProvider) => {
+    const panel = document.querySelector<HTMLElement>(
+      `.terminal-panel[data-provider="${CSS.escape(selectedProvider)}"]`,
+    );
+    const snapshot = (
+      panel as HTMLElement & {
+        __CCSM_TERMINAL_DEBUG__?: () => TerminalSnapshot;
+      }
+    )?.__CCSM_TERMINAL_DEBUG__?.();
+    const canvas = panel?.querySelector<HTMLCanvasElement>("canvas");
+    const context = canvas?.getContext("2d", { willReadFrequently: true });
+    if (
+      !snapshot ||
+      !canvas ||
+      !context ||
+      snapshot.cursorY === null ||
+      !snapshot.rows ||
+      !snapshot.cellHeight
+    ) {
+      return JSON.stringify({ error: "terminal composer pixels unavailable" });
+    }
+
+    const scaleY = canvas.height / (snapshot.rows * snapshot.cellHeight);
+    const rowStart = Math.max(
+      0,
+      Math.floor(snapshot.cursorY * snapshot.cellHeight * scaleY),
+    );
+    const rowEnd = Math.min(
+      canvas.height,
+      Math.ceil((snapshot.cursorY + 1) * snapshot.cellHeight * scaleY),
+    );
+    const columnStart = Math.floor(canvas.width / 2);
+    const pixels = context.getImageData(
+      columnStart,
+      rowStart,
+      canvas.width - columnStart,
+      Math.max(1, rowEnd - rowStart),
+    ).data;
+    const colors = new Map<string, number>();
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      if (pixels[offset + 3] === 0) continue;
+      const key = `${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]}`;
+      colors.set(key, (colors.get(key) ?? 0) + 1);
+    }
+    const [dominant, count] = [...colors.entries()].sort(
+      (left, right) => right[1] - left[1],
+    )[0] ?? ["0,0,0", 0];
+    return JSON.stringify({
+      provider: selectedProvider,
+      theme: snapshot.theme,
+      rgb: dominant.split(",").map(Number),
+      count,
+      sampledPixels: pixels.length / 4,
+      cursorRow: snapshot.cursorY,
+    });
+  }, provider);
+  const observation = JSON.parse(serialized) as
+    | ComposerPixelObservation
+    | { error: string };
+  if ("error" in observation) throw new Error(observation.error);
+  return observation;
 }
 
 async function measureTerminalInputLatency(
@@ -741,6 +969,13 @@ async function terminalSnapshot(
         lastOutputRuntimeId: snapshot.lastOutputRuntimeId ?? null,
         text: String(snapshot.text ?? ""),
         win32InputMode: Boolean(snapshot.win32InputMode),
+        cols: snapshot.cols ?? null,
+        rows: snapshot.rows ?? null,
+        cursorX: snapshot.cursorX ?? null,
+        cursorY: snapshot.cursorY ?? null,
+        cellWidth: snapshot.cellWidth ?? null,
+        cellHeight: snapshot.cellHeight ?? null,
+        theme: snapshot.theme,
       };
     }
   }, provider);

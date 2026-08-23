@@ -381,7 +381,7 @@ describe("local ghostty-web regressions", () => {
     expect(row).toBe(10);
   });
 
-  test("theme redraw remaps terminal palette colors and preserves true RGB", () => {
+  test("theme redraw remaps declared buffer colors and preserves other true RGB", () => {
     const remap = createThemeColorRemap(
       {
         foreground: "#cccccc",
@@ -392,12 +392,27 @@ describe("local ghostty-web regressions", () => {
         foreground: "#333333",
         background: "#ffffff",
         red: "#aa0000",
+        bufferColorRemap: {
+          "#393939": "#f4f4f4",
+        },
       },
     );
 
     expect(remap.get(0xcccccc)).toBe("#333333");
     expect(remap.get(0x1e1e1e)).toBe("#ffffff");
     expect(remap.get(0xcd3131)).toBe("#aa0000");
+    expect(remap.get(0x393939)).toBe("#f4f4f4");
     expect(remap.has(0x123456)).toBe(false);
+
+    const reverseRemap = createThemeColorRemap(
+      { background: "#ffffff" },
+      {
+        background: "#1e1e1e",
+        bufferColorRemap: {
+          "#f4f4f4": "#393939",
+        },
+      },
+    );
+    expect(reverseRemap.get(0xf4f4f4)).toBe("#393939");
   });
 });
