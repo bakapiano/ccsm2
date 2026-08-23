@@ -201,7 +201,7 @@ Create、Rename、Move、Delete和layout save等用户mutation返回committed DT
 
 ## Future Web product boundary
 
-未来`ccsm-web-server`复用ccsm-core DTOs和service ports，并增加：
+未来`ccsm-web-server`复用ccsm-core DTOs和service ports，并按照[Remote Agent Host](../002_runtime/004-remote-agent-host.md)增加：
 
 ```text
 CONTROL_JSON   WebSocket text message

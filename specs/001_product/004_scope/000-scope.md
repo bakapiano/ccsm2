@@ -10,7 +10,7 @@
 
 ## 独立后续产品
 
-Web frontend、WebSocket server、远程设备和cloud relay作为独立版本设计。独立Web frontend通过`ccsm-web-server`复用`ccsm-core + ccsm-platform`。
+Web frontend、WebSocket server、远程设备和cloud relay作为独立版本设计。独立Web frontend通过`ccsm-web-server`复用`ccsm-core + ccsm-platform`。远程PTY、浏览器接入和Agent生命周期遵循[Remote Agent Host](../../002_technical/002_runtime/004-remote-agent-host.md)协议。
 
 ## v2 删除项
 
