@@ -132,7 +132,9 @@ export function calculateLinkUnderlineY(
 // Default Theme
 // ============================================================================
 
-export const DEFAULT_THEME: Required<ITheme> = {
+type ResolvedTheme = Required<Omit<ITheme, "bufferColorRemap">>;
+
+export const DEFAULT_THEME: ResolvedTheme = {
   foreground: "#d4d4d4",
   background: "#1e1e1e",
   cursor: "#ffffff",
@@ -180,6 +182,11 @@ const THEME_BUFFER_COLOR_KEYS = [
   "brightWhite",
 ] as const;
 
+function resolveTheme(theme: ITheme): ResolvedTheme {
+  const { bufferColorRemap: _bufferColorRemap, ...colors } = theme;
+  return { ...DEFAULT_THEME, ...colors };
+}
+
 function colorKey(color: string): number | null {
   const hex = color.match(/^#([0-9a-f]{6})$/i)?.[1];
   if (hex) return Number.parseInt(hex, 16);
@@ -196,14 +203,20 @@ export function createThemeColorRemap(
   source: ITheme,
   target: ITheme,
 ): ReadonlyMap<number, string> {
-  const sourceTheme = { ...DEFAULT_THEME, ...source };
-  const targetTheme = { ...DEFAULT_THEME, ...target };
+  const sourceTheme = resolveTheme(source);
+  const targetTheme = resolveTheme(target);
   const remap = new Map<number, string>();
   for (const key of THEME_BUFFER_COLOR_KEYS) {
     const sourceColor = colorKey(sourceTheme[key]);
     if (sourceColor !== null && !remap.has(sourceColor)) {
       remap.set(sourceColor, targetTheme[key]);
     }
+  }
+  for (const [sourceColorValue, targetColor] of Object.entries(
+    target.bufferColorRemap ?? {},
+  )) {
+    const sourceColor = colorKey(sourceColorValue);
+    if (sourceColor !== null) remap.set(sourceColor, targetColor);
   }
   return remap;
 }
@@ -221,8 +234,8 @@ export class CanvasRenderer {
   private fontCellHeight?: number;
   private cursorStyle: "block" | "underline" | "bar";
   private cursorBlink: boolean;
-  private sourceTheme: Required<ITheme>;
-  private theme: Required<ITheme>;
+  private sourceTheme: ResolvedTheme;
+  private theme: ResolvedTheme;
   private devicePixelRatio: number;
   private metrics: FontMetrics;
   private palette: string[];
@@ -283,9 +296,12 @@ export class CanvasRenderer {
     this.fontCellHeight = options.fontCellHeight;
     this.cursorStyle = options.cursorStyle ?? "block";
     this.cursorBlink = options.cursorBlink ?? false;
-    this.sourceTheme = { ...DEFAULT_THEME, ...options.theme };
+    this.sourceTheme = resolveTheme(options.theme ?? {});
     this.theme = this.sourceTheme;
-    this.themeColorRemap = createThemeColorRemap(this.sourceTheme, this.theme);
+    this.themeColorRemap = createThemeColorRemap(
+      this.sourceTheme,
+      options.theme ?? {},
+    );
     this.devicePixelRatio =
       options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
 
@@ -998,8 +1014,8 @@ export class CanvasRenderer {
    * Update theme colors
    */
   public setTheme(theme: ITheme): void {
-    this.theme = { ...DEFAULT_THEME, ...theme };
-    this.themeColorRemap = createThemeColorRemap(this.sourceTheme, this.theme);
+    this.theme = resolveTheme(theme);
+    this.themeColorRemap = createThemeColorRemap(this.sourceTheme, theme);
 
     // Rebuild palette
     this.palette = [

@@ -32,6 +32,7 @@ portable-pty platform backend
 - Runtime output进入容量为64的有界事件channel，并受512 KiB byte-credit gate约束。前端在ghostty-web完成对应write callback后按byte数确认消费；丢弃、捕获和清理路径同样归还credit。Runtime stop与shutdown关闭gate并唤醒等待中的reader。
 - 前端fit、resize和每批最多8 KiB的output消费通过animation-frame scheduler执行；WebView暂停animation frame时由100ms watchdog推进同一个有界slice。等待绘制完成的异步路径使用相同的100ms上限继续检查状态。
 - ghostty-web 是终端实现；ANSI 解析和兼容修复集中在其 WASM/TypeScript 层。
+- 运行中切换应用主题时，renderer重映射标准终端主题色与Provider声明的语义buffer颜色；Codex composer的启动期深色/浅色RGB都映射到当前主题，其他24位RGB保持应用原色。
 - 使用 vendored ghostty-web fork，保留 CJK spacer、单字符 selection、行边界 hysteresis、IME anchor 和 box drawing 修复。
 - Box-drawing的整格水平线与垂直线使用单个连续Canvas shape，cell中心和边界不产生重复alpha接缝。
 - scrollback 使用 64 MiB byte budget。

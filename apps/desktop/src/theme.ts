@@ -55,6 +55,24 @@ export const TERMINAL_THEMES: Record<ThemeMode, ITheme> = {
   },
 };
 
+// Codex derives its composer surface once from the OSC 11 startup response:
+// 12% white over a dark background and 4% black over a light background.
+// Its terminal palette is process-cached, so live CCSM theme changes remap
+// both possible buffer values to the active presentation color.
+export const CODEX_TERMINAL_BUFFER_COLOR_REMAP: Record<
+  ThemeMode,
+  Readonly<Record<string, string>>
+> = {
+  light: {
+    "#393939": "#f4f4f4",
+    "#f4f4f4": "#f4f4f4",
+  },
+  dark: {
+    "#393939": "#393939",
+    "#f4f4f4": "#393939",
+  },
+};
+
 interface ThemeStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;

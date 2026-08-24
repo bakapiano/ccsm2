@@ -57,6 +57,13 @@ export interface ITheme {
   brightMagenta?: string;
   brightCyan?: string;
   brightWhite?: string;
+
+  /**
+   * Additional VT-buffer colors whose meaning follows the host theme.
+   * Keys are source RGB colors already stored in terminal cells; values are
+   * the colors the renderer should present for this theme.
+   */
+  bufferColorRemap?: Readonly<Record<string, string>>;
 }
 
 export interface IDisposable {

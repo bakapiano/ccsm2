@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 
 import {
+  CODEX_TERMINAL_BUFFER_COLOR_REMAP,
   nextTheme,
   storedTheme,
   THEME_STORAGE_KEY,
@@ -14,6 +15,17 @@ describe("application theme", () => {
     expect(storedTheme("dark")).toBe("dark");
     expect(nextTheme("light")).toBe("dark");
     expect(nextTheme("dark")).toBe("light");
+  });
+
+  test("maps both cached Codex composer colors to the active theme", () => {
+    expect(CODEX_TERMINAL_BUFFER_COLOR_REMAP.light).toEqual({
+      "#393939": "#f4f4f4",
+      "#f4f4f4": "#f4f4f4",
+    });
+    expect(CODEX_TERMINAL_BUFFER_COLOR_REMAP.dark).toEqual({
+      "#393939": "#393939",
+      "#f4f4f4": "#393939",
+    });
   });
 
   test("persists and broadcasts a committed toggle", () => {

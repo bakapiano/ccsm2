@@ -41,7 +41,11 @@ import {
   shouldRunClaudeHistoryRepaint,
   shouldSettleResizePresentation,
 } from "../terminal-repaint";
-import { TERMINAL_THEMES, type ThemeMode } from "../theme";
+import {
+  CODEX_TERMINAL_BUFFER_COLOR_REMAP,
+  TERMINAL_THEMES,
+  type ThemeMode,
+} from "../theme";
 import {
   FilePathLinkProvider,
   classifyTerminalUri,
@@ -57,6 +61,7 @@ import {
   FitAddon,
   Ghostty,
   Terminal,
+  type ITheme,
 } from "../../vendor/ghostty-web/lib/index.ts";
 import ghosttyWasmUrl from "../../vendor/ghostty-web/ghostty-vt.wasm?url";
 import {
@@ -301,9 +306,21 @@ class TerminalPanel implements IContentRenderer {
 
   setTheme(theme: ThemeMode): void {
     this.theme = theme;
-    if (this.#terminal) {
-      this.#terminal.options.theme = { ...TERMINAL_THEMES[theme] };
-    }
+    this.#applyTerminalTheme();
+  }
+
+  #applyTerminalTheme(): void {
+    if (!this.#terminal) return;
+    this.#terminal.options.theme = this.#resolvedTerminalTheme();
+  }
+
+  #resolvedTerminalTheme(): ITheme {
+    const theme = { ...TERMINAL_THEMES[this.theme] };
+    if (this.#session?.provider !== "codex") return theme;
+    return {
+      ...theme,
+      bufferColorRemap: CODEX_TERMINAL_BUFFER_COLOR_REMAP[this.theme],
+    };
   }
 
   dispose(): void {
@@ -533,6 +550,7 @@ class TerminalPanel implements IContentRenderer {
       if (!sessionId) throw new Error("CLI Tab is missing resourceId");
       this.#session = await this.#client.backend.getCliSession(sessionId);
       this.element.dataset.provider = this.#session.provider;
+      this.#applyTerminalTheme();
       const attemptedStart = await this.#maybeAutoStart();
       if (!attemptedStart && !this.#starting && !this.#runtimeId)
         this.#renderRuntimeStatus();
@@ -1215,6 +1233,8 @@ class TerminalPanel implements IContentRenderer {
       nativeSessionId: this.#session?.nativeSessionId ?? null,
       cols: terminal?.cols ?? null,
       rows: terminal?.rows ?? null,
+      cursorX: terminal?.buffer.active.cursorX ?? null,
+      cursorY: terminal?.buffer.active.cursorY ?? null,
       bufferLength: terminal?.buffer.active.length ?? null,
       cellWidth: terminal?.renderer?.charWidth ?? null,
       cellHeight: terminal?.renderer?.charHeight ?? null,

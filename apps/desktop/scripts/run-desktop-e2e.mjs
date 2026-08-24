@@ -43,6 +43,7 @@ const providerScenarioIds = new Set([
   "claude-resume",
   "codex-resume",
   "ghcp-resume",
+  "cli-theme-switch",
 ]);
 const usesProviderHarness = plannedScenarioIds.some((scenarioId) =>
   providerScenarioIds.has(scenarioId),
@@ -594,6 +595,7 @@ function expectedScenarioIds(selected, cliArguments) {
       "markdown-edit-preview",
       "sidebar-collapse",
       "settings-update",
+      "cli-theme-switch",
       "terminal-clipboard-interrupt",
       "terminal-render-lifecycle",
     ],
@@ -603,6 +605,7 @@ function expectedScenarioIds(selected, cliArguments) {
     markdown: ["markdown-edit-preview"],
     sidebar: ["sidebar-collapse"],
     settings: ["settings-update"],
+    theme: ["cli-theme-switch"],
     terminal: ["terminal-clipboard-interrupt"],
     renderer: ["terminal-render-lifecycle"],
   };
@@ -629,6 +632,7 @@ function expectedScenarioIds(selected, cliArguments) {
       specScenarioIds.add("claude-resume");
       specScenarioIds.add("codex-resume");
       specScenarioIds.add("ghcp-resume");
+      specScenarioIds.add("cli-theme-switch");
     }
     if (normalized.includes("sidebar-collapse.spec")) {
       specScenarioIds.add("sidebar-collapse");
