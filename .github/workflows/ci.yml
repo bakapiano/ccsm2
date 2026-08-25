@@ -33,6 +33,7 @@ on:
           - theme
           - terminal
           - renderer
+          - links
 
 permissions:
   contents: read

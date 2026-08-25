@@ -48,7 +48,11 @@ const scenarioIds = new Map([
     "terminal-render-lifecycle",
   ],
   [
-    "opens soft-wrapped Markdown URL and file links with Control-click",
+    "renders wrapped link and file path output from provider Markdown",
+    "provider-markdown-links",
+  ],
+  [
+    "opens wrapped link and file path output with Control-click",
     "terminal-links",
   ],
 ]);
@@ -62,7 +66,7 @@ const scenarioTitles: Record<string, string> = {
   theme: "switches running CLI composer surfaces with the application theme",
   terminal: "copies and pastes terminal text and interrupts with Control-C",
   renderer: "keeps retained terminal rendering bounded across Space switches",
-  links: "opens soft-wrapped Markdown URL and file links with Control-click",
+  links: "wrapped link and file path output",
 };
 const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
 if (selectedScenario !== "all" && !scenarioTitles[selectedScenario]) {

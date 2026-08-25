@@ -44,6 +44,7 @@ const providerScenarioIds = new Set([
   "codex-resume",
   "ghcp-resume",
   "cli-theme-switch",
+  "provider-markdown-links",
 ]);
 const usesProviderHarness = plannedScenarioIds.some((scenarioId) =>
   providerScenarioIds.has(scenarioId),
@@ -599,6 +600,7 @@ function expectedScenarioIds(selected, cliArguments) {
       "cli-theme-switch",
       "terminal-clipboard-interrupt",
       "terminal-render-lifecycle",
+      "provider-markdown-links",
       "terminal-links",
     ],
     claude: ["claude-resume"],
@@ -610,7 +612,7 @@ function expectedScenarioIds(selected, cliArguments) {
     theme: ["cli-theme-switch"],
     terminal: ["terminal-clipboard-interrupt"],
     renderer: ["terminal-render-lifecycle"],
-    links: ["terminal-links"],
+    links: ["provider-markdown-links", "terminal-links"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
   const requestedSpecs = [];
@@ -650,6 +652,7 @@ function expectedScenarioIds(selected, cliArguments) {
       specScenarioIds.add("terminal-render-lifecycle");
     }
     if (normalized.includes("terminal-links.spec")) {
+      specScenarioIds.add("provider-markdown-links");
       specScenarioIds.add("terminal-links");
     }
   }
