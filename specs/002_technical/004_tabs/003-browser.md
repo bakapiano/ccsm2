@@ -33,7 +33,7 @@ Browser Provider根据当前HTTP/HTTPS URL生成同源`/favicon.ico`地址并发
 
 `window.open`和`target="_blank"`由native WebView的new-window callback拦截。desktop host拒绝系统窗口并发送`source_surface_id + URL`；前端创建持久Browser Tab并加入右侧Dockview group。来源组已位于右侧时复用来源组，单组布局以`direction='right'`切分。
 
-CLI Terminal输出中的HTTP/HTTPS与OSC 8 Web链接通过Terminal link handler进入同一Browser Tab创建流程，并使用来源CLI Panel解析右侧Dockview group。Terminal renderer不直接调用系统`window.open`。Browser Tab URL白名单继续由AppBackend验证。
+CLI Terminal输出中的HTTP/HTTPS/FTP与OSC 8 Web链接通过Terminal link handler进入同一Browser Tab创建流程，并使用来源CLI Panel解析右侧Dockview group。Terminal renderer不直接调用系统`window.open`。Browser Tab URL白名单继续由AppBackend验证。
 
 ## Live lifecycle
 

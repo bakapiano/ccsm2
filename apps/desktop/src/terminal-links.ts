@@ -75,7 +75,7 @@ export function classifyTerminalUri(
   } catch {
     return null;
   }
-  if (["http:", "https:", "about:"].includes(parsed.protocol)) {
+  if (["http:", "https:", "ftp:", "about:"].includes(parsed.protocol)) {
     return { kind: "web", url: parsed.href };
   }
   if (parsed.protocol !== "file:") return null;

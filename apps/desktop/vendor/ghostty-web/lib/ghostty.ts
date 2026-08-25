@@ -749,9 +749,40 @@ export class GhosttyTerminal {
     return this.exports.ghostty_terminal_is_row_wrapped(this.handle, row) !== 0;
   }
 
-  /** Hyperlink URI not yet exposed in simplified API */
-  getHyperlinkUri(_id: number): string | null {
-    return null; // TODO: Add hyperlink support
+  /** Get the OSC 8 URI stored at an absolute buffer position. */
+  getHyperlinkUriAtBufferPosition(row: number, col: number): string | null {
+    if (row < 0 || col < 0 || col >= this._cols) return null;
+    const scrollbackLength = this.getScrollbackLength();
+    const history = row < scrollbackLength;
+    const targetRow = history ? row : row - scrollbackLength;
+    if (targetRow < 0 || (!history && targetRow >= this._rows)) return null;
+
+    const length = this.exports.ghostty_terminal_get_hyperlink_uri(
+      this.handle,
+      history,
+      targetRow,
+      col,
+      0,
+      0
+    );
+    if (length <= 0) return null;
+
+    const ptr = this.exports.ghostty_wasm_alloc_u8_array(length);
+    if (ptr === 0) return null;
+    try {
+      const written = this.exports.ghostty_terminal_get_hyperlink_uri(
+        this.handle,
+        history,
+        targetRow,
+        col,
+        ptr,
+        length
+      );
+      if (written !== length) return null;
+      return new TextDecoder().decode(new Uint8Array(this.memory.buffer, ptr, written));
+    } finally {
+      this.exports.ghostty_wasm_free_u8_array(ptr, length);
+    }
   }
 
   /**

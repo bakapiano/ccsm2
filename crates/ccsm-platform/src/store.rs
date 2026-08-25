@@ -619,6 +619,7 @@ impl StateStore for SqliteStateStore {
         if request.url.len() > 8192
             || !(request.url.starts_with("https://")
                 || request.url.starts_with("http://")
+                || request.url.starts_with("ftp://")
                 || request.url.starts_with("about:"))
         {
             return Err(BackendError::Invalid("Browser URL is not allowed".into()));

@@ -90,6 +90,7 @@ for (const provider of ["claude", "codex", "copilot", "markdown"]) {
   mkdirSync(join(spacesDirectory, provider), { recursive: true });
 }
 mkdirSync(join(spacesDirectory, "terminal"), { recursive: true });
+mkdirSync(join(spacesDirectory, "links"), { recursive: true });
 const baselineSourceProcessIds = new Set(
   listSourceBinaryProcesses().map((entry) => entry.ProcessId),
 );
@@ -598,6 +599,7 @@ function expectedScenarioIds(selected, cliArguments) {
       "cli-theme-switch",
       "terminal-clipboard-interrupt",
       "terminal-render-lifecycle",
+      "terminal-links",
     ],
     claude: ["claude-resume"],
     codex: ["codex-resume"],
@@ -608,6 +610,7 @@ function expectedScenarioIds(selected, cliArguments) {
     theme: ["cli-theme-switch"],
     terminal: ["terminal-clipboard-interrupt"],
     renderer: ["terminal-render-lifecycle"],
+    links: ["terminal-links"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
   const requestedSpecs = [];
@@ -645,6 +648,9 @@ function expectedScenarioIds(selected, cliArguments) {
     }
     if (normalized.includes("terminal-render-lifecycle.spec")) {
       specScenarioIds.add("terminal-render-lifecycle");
+    }
+    if (normalized.includes("terminal-links.spec")) {
+      specScenarioIds.add("terminal-links");
     }
   }
   if (specScenarioIds.size === 0) return selectedScenarioIds;

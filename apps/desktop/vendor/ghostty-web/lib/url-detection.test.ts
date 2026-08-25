@@ -12,9 +12,7 @@ import type { ILink } from './types';
 /**
  * Mock terminal for testing
  */
-function createMockTerminal(
-  input: string | Array<{ text: string; isWrapped?: boolean }>,
-) {
+function createMockTerminal(input: string | Array<{ text: string; isWrapped?: boolean }>) {
   const rows = typeof input === 'string' ? [{ text: input }] : input;
   const lines = rows.map(({ text, isWrapped = false }) => {
     const cells = Array.from(text).map((char) => ({
@@ -41,7 +39,7 @@ function createMockTerminal(
  */
 function getLinks(
   input: string | Array<{ text: string; isWrapped?: boolean }>,
-  y = 0,
+  y = 0
 ): Promise<ILink[] | undefined> {
   const terminal = createMockTerminal(input) as any;
   const provider = new UrlRegexProvider(terminal);
@@ -69,25 +67,10 @@ describe('URL Detection', () => {
     expect(links?.[0].text).toBe('http://example.com');
   });
 
-  test('detects mailto: links', async () => {
-    const links = await getLinks('Email: mailto:test@example.com');
-    expect(links).toBeDefined();
-    expect(links?.length).toBe(1);
-    expect(links?.[0].text).toBe('mailto:test@example.com');
-  });
-
-  test('detects ssh:// URLs', async () => {
-    const links = await getLinks('Connect via ssh://user@server.com');
-    expect(links).toBeDefined();
-    expect(links?.length).toBe(1);
-    expect(links?.[0].text).toBe('ssh://user@server.com');
-  });
-
-  test('detects git:// URLs', async () => {
-    const links = await getLinks('Clone git://github.com/repo.git');
-    expect(links).toBeDefined();
-    expect(links?.length).toBe(1);
-    expect(links?.[0].text).toBe('git://github.com/repo.git');
+  test('detects file URLs', async () => {
+    const links = await getLinks('Open file:///D:/repo/src/main.rs');
+    expect(links).toHaveLength(1);
+    expect(links?.[0].text).toBe('file:///D:/repo/src/main.rs');
   });
 
   test('detects ftp:// URLs', async () => {
@@ -95,6 +78,20 @@ describe('URL Detection', () => {
     expect(links).toBeDefined();
     expect(links?.length).toBe(1);
     expect(links?.[0].text).toBe('ftp://files.example.com/file');
+  });
+
+  test('uses the Windows Terminal boundary and casing rules', async () => {
+    expect(await getLinks('abchttps://example.com')).toBeUndefined();
+    expect(await getLinks('HTTPS://example.com')).toBeUndefined();
+    expect((await getLinks('Open http://a'))?.[0].text).toBe('http://a');
+  });
+
+  test('keeps schemes outside the Windows Terminal pattern as text', async () => {
+    expect(await getLinks('mailto:test@example.com')).toBeUndefined();
+    expect(await getLinks('ssh://user@server.com')).toBeUndefined();
+    expect(await getLinks('git://github.com/repo.git')).toBeUndefined();
+    expect(await getLinks('tel:+1234567890')).toBeUndefined();
+    expect(await getLinks('magnet:?xt=urn:btih:abc123')).toBeUndefined();
   });
 
   test('strips trailing period', async () => {
@@ -164,11 +161,8 @@ describe('URL Detection', () => {
   test('reconstructs URLs split by terminal soft wrapping', async () => {
     const secondRow = 'com/docs?view=full';
     const links = await getLinks(
-      [
-        { text: 'Visit https://example.' },
-        { text: secondRow, isWrapped: true },
-      ],
-      1,
+      [{ text: 'Visit https://example.' }, { text: secondRow, isWrapped: true }],
+      1
     );
 
     expect(links).toHaveLength(1);
@@ -182,10 +176,7 @@ describe('URL Detection', () => {
   });
 
   test('does not join URL fragments across hard line breaks', async () => {
-    const links = await getLinks(
-      [{ text: 'Visit https://' }, { text: 'example.com/docs' }],
-      0,
-    );
+    const links = await getLinks([{ text: 'Visit https://' }, { text: 'example.com/docs' }], 0);
 
     expect(links).toBeUndefined();
   });
@@ -207,31 +198,16 @@ describe('URL Detection', () => {
     expect(typeof links?.[0].activate).toBe('function');
   });
 
-  test('routes plain-click activation through the embedder link handler', async () => {
+  test('routes activation through the embedder link handler', async () => {
     const opened: string[] = [];
-    const provider = new UrlRegexProvider(
-      createMockTerminal('https://example.com') as any,
-      (uri) => opened.push(uri),
+    const provider = new UrlRegexProvider(createMockTerminal('https://example.com') as any, (uri) =>
+      opened.push(uri)
     );
     const links = await new Promise<ILink[] | undefined>((resolve) =>
-      provider.provideLinks(0, resolve),
+      provider.provideLinks(0, resolve)
     );
 
-    links?.[0].activate({ ctrlKey: false, metaKey: false } as MouseEvent);
+    links?.[0].activate({ ctrlKey: true, metaKey: false } as MouseEvent);
     expect(opened).toEqual(['https://example.com']);
-  });
-
-  test('detects tel: URLs', async () => {
-    const links = await getLinks('Call tel:+1234567890');
-    expect(links).toBeDefined();
-    expect(links?.length).toBe(1);
-    expect(links?.[0].text).toBe('tel:+1234567890');
-  });
-
-  test('detects magnet: URLs', async () => {
-    const links = await getLinks('Download magnet:?xt=urn:btih:abc123');
-    expect(links).toBeDefined();
-    expect(links?.length).toBe(1);
-    expect(links?.[0].text).toContain('magnet:?xt=urn:btih:abc123');
   });
 });

@@ -120,14 +120,15 @@ export class LinkDetector {
         // Fallback: cache by position range
         const { start: s, end: e } = link.range;
         const cacheKey = `r${s.y}:${s.x}-${e.x}`;
-        this.linkCache.set(cacheKey, link);
+        if (!this.linkCache.has(cacheKey)) this.linkCache.set(cacheKey, link);
         return;
       }
       const hyperlinkId = cell.getHyperlinkId();
 
       if (hyperlinkId > 0) {
         // Cache by hyperlink_id (best case - stable across rows)
-        this.linkCache.set(`h${hyperlinkId}`, link);
+        const cacheKey = `h${hyperlinkId}`;
+        if (!this.linkCache.has(cacheKey)) this.linkCache.set(cacheKey, link);
         return;
       }
     }
@@ -136,7 +137,7 @@ export class LinkDetector {
     // Format: r${row}:${startX}-${endX}
     const { start: s, end: e } = link.range;
     const cacheKey = `r${s.y}:${s.x}-${e.x}`;
-    this.linkCache.set(cacheKey, link);
+    if (!this.linkCache.has(cacheKey)) this.linkCache.set(cacheKey, link);
   }
 
   /**

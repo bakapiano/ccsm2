@@ -25,7 +25,7 @@ portable-pty platform backend
 ## 所有权与约束
 
 - ghostty-web 是唯一 VT、cursor、mode、viewport、selection 和 scrollback 所有者。
-- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。已识别链接的hover和普通左键点击由CCSM保留，不发送给PTY；非链接区域继续遵循应用mouse mode。链接hover使用位于cell内部的可见下划线。
+- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。链接hover继续报告应用mouse motion；`Ctrl+左键`命中链接时由CCSM保留并优先于应用mouse mode。普通URL和文件引用在hover时使用主题色实线下划线与目标tooltip；OSC 8链接静止时使用主题色点线并在hover时切换实线。
 - Rust 管理 PTY/process、byte transport、resize 和 shutdown。
 - PTY output 有序且只写入 ghostty-web 一次；input/query reply 原样回传。
 - 前端input writer在空闲时立即发送首个输入；一次`write_runtime`在途期间按runtime合并后续输入事件，并以原始事件顺序写入PTY。runtime切换等待input writer排空。
@@ -60,7 +60,7 @@ portable-pty platform backend
 - 每个retained Terminal renderer持有独立Ghostty WASM实例；WASM module下载可缓存，allocator和RenderState arena不跨Tab共享，关闭后新建Tab不能观察已释放VT的cells。
 - Windows ConPTY输入兼容层跨PTY output chunk跟踪`CSI ?9001h/l` Win32 Input Mode；普通文本、`Ctrl+C`与独立modifier保留Ghostty/raw VT路径，修饰组合和功能键编码为`CSI Vk;Sc;Uc;Kd;Cs;Rc_` KEY_EVENT_RECORD序列。目标键record中的control state保留左右Ctrl/Alt、Shift、lock与enhanced-key状态。窗口失焦、Terminal Tab失活和renderer释放会清空浏览器侧临时按键状态并保留已协商的Win32 Input Mode；document级keyup完成终端外释放事件的配对。Codex默认keymap使用`Shift+Enter`插入换行，因此Windows Codex profile把`Ctrl+Enter`规范化为Shift+Enter record，并原样保留`Shift+Enter`；模式协商前继续使用Provider legacy `Alt+Enter`（`ESC CR`）fallback。真实Codex回归以Ctrl+Enter、Shift+Enter和普通Enter输入三行prompt，并验证模型端收到两个换行。终端输入回归集同时验证9001分片协商、Win32 key record、窗口失焦期间丢失modifier keyup后的状态恢复、Codex multiline、Claude所需的`Shift+Enter`不退化为CR，以及默认DEC Alt ESC prefix下`Alt+V`产生`ESC v`。
 - CLI Provider层读取SelectionManager选区，并通过desktop clipboard transport写入系统剪贴板；有选区时消费`Ctrl/Cmd+C`，空选区时`Ctrl+C`进入Ghostty key encoder并产生ETX（`0x03`）。`Ctrl/Cmd+V`通过同一transport读取文本，再交给Terminal paste保留bracketed-paste语义。Windows clipboard瞬时占用使用有界重试。
-- ghostty-web LinkProvider在VT buffer完成ANSI解析后识别普通URL、OSC 8 URL和文件引用。HTTP/HTTPS/`about:`交给CCSM创建内置Browser Tab；文件引用先由platform adapter canonicalize并验证Space containment，再创建或聚焦File Editor Tab。链接路由不改写PTY byte stream。
+- ghostty-web LinkProvider在VT buffer完成ANSI解析后识别普通URL、OSC 8 URL和文件引用。普通URL使用Windows Terminal的边界、scheme和尾部标点规则识别HTTP/HTTPS/FTP/`file://`，并恢复terminal soft-wrap形成的逻辑行。WASM按buffer cell公开OSC 8 URI，显式OSC 8链接优先于同范围正则结果。HTTP/HTTPS/FTP/`about:`交给CCSM创建内置Browser Tab；文件引用先由platform adapter canonicalize并验证Space containment，再创建或聚焦File Editor Tab。链接路由不改写PTY byte stream；terminal resize/reflow使LinkProvider cache失效。
 
 ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `WindowsPtyBackend`；Unix fd、process group 和 signal 属于 macOS/Linux backend。ghostty-web byte contract 对三平台完全相同。
 
