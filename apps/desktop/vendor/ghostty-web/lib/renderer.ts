@@ -876,19 +876,22 @@ export class CanvasRenderer {
       this.ctx.stroke();
     }
 
-    // Link underlines are visible while hovering the detected link.
-    if (
-      cell.hyperlink_id > 0 &&
-      cell.hyperlink_id === this.hoveredHyperlinkId
-    ) {
-      this.drawLinkUnderline(cellX, cellY, cellWidth);
+    // Match Windows Terminal: explicit OSC 8 links use a dotted underline at
+    // rest and switch to a solid underline while hovered.
+    if (cell.hyperlink_id > 0) {
+      this.drawLinkUnderline(
+        cellX,
+        cellY,
+        cellWidth,
+        cell.hyperlink_id !== this.hoveredHyperlinkId,
+      );
     }
 
     const hasHoveredLink =
       this.hoveredLinkRange !== null &&
       this.isCellInLinkRange(x, y, this.hoveredLinkRange);
     if (cell.hyperlink_id === 0 && hasHoveredLink) {
-      this.drawLinkUnderline(cellX, cellY, cellWidth);
+      this.drawLinkUnderline(cellX, cellY, cellWidth, false);
     }
   }
 
@@ -917,14 +920,18 @@ export class CanvasRenderer {
     cellX: number,
     cellY: number,
     cellWidth: number,
+    dotted: boolean,
   ): void {
     const underlineY = calculateLinkUnderlineY(cellY, this.metrics);
-    this.ctx.strokeStyle = "#4A90E2";
-    this.ctx.lineWidth = 2;
+    this.ctx.save();
+    this.ctx.strokeStyle = this.ctx.fillStyle;
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash(dotted ? [1, 2] : []);
     this.ctx.beginPath();
     this.ctx.moveTo(cellX, underlineY);
     this.ctx.lineTo(cellX + cellWidth, underlineY);
     this.ctx.stroke();
+    this.ctx.restore();
   }
 
   /**

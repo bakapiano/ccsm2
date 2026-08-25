@@ -259,7 +259,7 @@ PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短�
 https://<owner>.github.io/<repository>/e2e/pr/<number>/
 ```
 
-报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar、Settings、CLI Theme、Terminal Clipboard和Terminal Renderer场景的acceptance GIF与checkpoint PNG。新提交更新相同PR目录与同一条PR评论。
+报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar、Settings、CLI Theme、Terminal Clipboard、Terminal Renderer和Terminal Links场景的acceptance GIF与checkpoint PNG。Terminal Links从真实Shell输出跨soft-wrap的Markdown URL与文件引用，通过可见hover、普通点击和`Ctrl+左键`验证tooltip、Browser Tab、File Editor Tab及行列跳转。新提交更新相同PR目录与同一条PR评论。
 
 `gh-pages`保存当前active PR报告集合，并通过串行concurrency group发布单一orphan snapshot commit。`pull_request_target: closed`从默认分支执行对应目录清理；每日prune以GitHub API返回的open PR集合刷新站点。报告发布job提供人工验收导航，四个原生required checks继续提供合并结论。
 

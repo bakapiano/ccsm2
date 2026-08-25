@@ -1,8 +1,7 @@
 /**
  * URL Regex Link Provider
  *
- * Detects plain text URLs using regex pattern matching.
- * Supports common protocols but excludes file paths.
+ * Detects plain text URLs using the Windows Terminal automatic URL pattern.
  *
  * This provider runs after OSC8LinkProvider, so explicit hyperlinks
  * take precedence over regex-detected URLs.
@@ -20,27 +19,16 @@ import {
  * Detects plain text URLs on a logical line using regex.
  * Supports terminal soft wrapping but excludes file paths.
  *
- * Supported protocols:
- * - https://, http://
- * - mailto:
- * - ftp://, ssh://, git://
- * - tel:, magnet:
- * - gemini://, gopher://, news:
+ * Supported protocols: http://, https://, ftp:// and file://.
  */
 export class UrlRegexProvider implements ILinkProvider {
   /**
    * URL regex pattern
-   * Matches common protocols followed by valid URL characters
-   * Excludes file paths (no ./ or ../ or bare /)
+   * Ported from microsoft/terminal Terminal::_getPatterns.
+   * Keep this case-sensitive and boundary-aware to preserve its behavior.
    */
   private static readonly URL_REGEX =
-    /(?:https?:\/\/|mailto:|ftp:\/\/|ssh:\/\/|git:\/\/|tel:|magnet:|gemini:\/\/|gopher:\/\/|news:)[\w\-.~:\/?#@!$&*+,;=%]+/gi;
-
-  /**
-   * Characters to strip from end of URLs
-   * Common punctuation that's unlikely to be part of the URL
-   */
-  private static readonly TRAILING_PUNCTUATION = /[.,;!?)\]]+$/;
+    /\b(?:https?|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|$!:,.;]*[A-Za-z0-9+&@#/%=~_|$]/g;
 
   constructor(
     private terminal: ITerminalForUrlProvider,
@@ -73,28 +61,17 @@ export class UrlRegexProvider implements ILinkProvider {
       extracted.text,
     );
     while (match !== null) {
-      let url = match[0];
+      const url = match[0];
       const startIndex = match.index;
-      let endIndex = match.index + url.length - 1;
-
-      // Strip trailing punctuation
-      const stripped = url.replace(UrlRegexProvider.TRAILING_PUNCTUATION, "");
-      if (stripped.length < url.length) {
-        url = stripped;
-        endIndex = startIndex + url.length - 1;
-      }
-
-      // Skip if URL is too short (e.g., just "http://")
-      if (url.length > 8) {
-        const start = extracted.positions[startIndex];
-        const end = extracted.positions[endIndex];
-        if (start && end) {
-          links.push({
-            text: url,
-            range: { start, end },
-            activate: (event) => this.linkHandler(url, event),
-          });
-        }
+      const endIndex = match.index + url.length - 1;
+      const start = extracted.positions[startIndex];
+      const end = extracted.positions[endIndex];
+      if (start && end) {
+        links.push({
+          text: url,
+          range: { start, end },
+          activate: (event) => this.linkHandler(url, event),
+        });
       }
 
       // Get next match

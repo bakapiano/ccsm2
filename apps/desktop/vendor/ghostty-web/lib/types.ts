@@ -462,6 +462,14 @@ export interface GhosttyWasmExports extends WebAssembly.Exports {
     bufLen: number
   ): number; // Returns codepoint count or -1 on error
   ghostty_terminal_is_row_wrapped(terminal: TerminalHandle, row: number): number;
+  ghostty_terminal_get_hyperlink_uri(
+    terminal: TerminalHandle,
+    history: boolean,
+    row: number,
+    col: number,
+    bufPtr: number,
+    bufLen: number
+  ): number; // Returns UTF-8 byte length, 0 for no link, or -1 on error
 
   // Response API (for DSR and other terminal queries)
   ghostty_terminal_has_response(terminal: TerminalHandle): boolean;

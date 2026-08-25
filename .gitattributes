@@ -8,3 +8,4 @@
 *.sh text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+*.patch text eol=lf whitespace=-trailing-space

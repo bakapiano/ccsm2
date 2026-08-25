@@ -111,6 +111,7 @@ export class Terminal implements ITerminalCore {
   private selectionManager?: SelectionManager;
   private canvas?: HTMLCanvasElement;
   private compositionView?: HTMLDivElement;
+  private linkTooltip?: HTMLDivElement;
   private compositionActive: boolean = false;
   private compositionText: string = "";
   private lastInputAnchorKey?: string;
@@ -122,6 +123,8 @@ export class Terminal implements ITerminalCore {
   private currentHoveredLink?: ILink;
   private mouseMoveThrottleTimeout?: number;
   private pendingMouseMove?: MouseEvent;
+  private linkHoverRequest = 0;
+  private linkControlKeyDown = false;
   private linkPointerDown = false;
   private resolvingTrackedMouseDown = false;
   private queuedTrackedMouseUp?: MouseEvent;
@@ -517,6 +520,24 @@ export class Terminal implements ITerminalCore {
       this.compositionView.style.zIndex = "2";
       parent.appendChild(this.compositionView);
 
+      this.linkTooltip = document.createElement("div");
+      this.linkTooltip.setAttribute("data-ghostty-link-tooltip", "");
+      this.linkTooltip.setAttribute("role", "tooltip");
+      this.linkTooltip.setAttribute("contenteditable", "false");
+      this.linkTooltip.hidden = true;
+      Object.assign(this.linkTooltip.style, {
+        position: "absolute",
+        zIndex: "4",
+        maxWidth: "min(720px, calc(100% - 16px))",
+        padding: "4px 7px",
+        borderRadius: "4px",
+        overflowWrap: "anywhere",
+        pointerEvents: "none",
+        font: "12px/1.35 system-ui, sans-serif",
+        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.28)",
+      });
+      parent.appendChild(this.linkTooltip);
+
       // Focus textarea on interaction - preventDefault before focus
       const textarea = this.textarea;
       // Desktop: mousedown
@@ -668,7 +689,9 @@ export class Terminal implements ITerminalCore {
         capture: true,
       });
       parent.addEventListener("mouseleave", this.handleMouseLeave);
-      parent.addEventListener("click", this.handleClick);
+      parent.addEventListener("keydown", this.handleLinkModifierKeyDown, true);
+      parent.addEventListener("keyup", this.handleLinkModifierKeyUp, true);
+      window.addEventListener("blur", this.releaseLinkModifiers);
       parent.addEventListener("contextmenu", this.handleContextMenu, {
         capture: true,
       });
@@ -895,6 +918,7 @@ export class Terminal implements ITerminalCore {
 
     // Resize WASM terminal
     this.wasmTerm!.resize(cols, rows);
+    this.linkDetector?.invalidateCache();
 
     // Resize renderer
     this.renderer!.resize(cols, rows);
@@ -1691,6 +1715,10 @@ export class Terminal implements ITerminalCore {
       this.compositionView.parentNode.removeChild(this.compositionView);
       this.compositionView = undefined;
     }
+    if (this.linkTooltip?.parentNode) {
+      this.linkTooltip.parentNode.removeChild(this.linkTooltip);
+    }
+    this.linkTooltip = undefined;
     this.compositionActive = false;
     this.compositionText = "";
 
@@ -1710,7 +1738,17 @@ export class Terminal implements ITerminalCore {
         capture: true,
       });
       this.element.removeEventListener("mouseleave", this.handleMouseLeave);
-      this.element.removeEventListener("click", this.handleClick);
+      this.element.removeEventListener(
+        "keydown",
+        this.handleLinkModifierKeyDown,
+        true,
+      );
+      this.element.removeEventListener(
+        "keyup",
+        this.handleLinkModifierKeyUp,
+        true,
+      );
+      window.removeEventListener("blur", this.releaseLinkModifiers);
       this.element.removeEventListener("contextmenu", this.handleContextMenu, {
         capture: true,
       });
@@ -1752,6 +1790,7 @@ export class Terminal implements ITerminalCore {
     this.element = undefined;
     this.textarea = undefined;
     this.compositionView = undefined;
+    this.linkTooltip = undefined;
   }
 
   /**
@@ -1801,11 +1840,7 @@ export class Terminal implements ITerminalCore {
       }, 16);
     }
 
-    if (
-      this.shouldReportMouseMotion(e) &&
-      !this.currentHoveredLink &&
-      !this.resolvingTrackedMouseDown
-    ) {
+    if (this.shouldReportMouseMotion(e) && !this.resolvingTrackedMouseDown) {
       const cell = this.mouseCell(e);
       if (cell) {
         const button = this.pressedMouseButton ?? 3;
@@ -1828,6 +1863,7 @@ export class Terminal implements ITerminalCore {
     const rect = this.canvas.getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left) / this.renderer.charWidth);
     const y = Math.floor((e.clientY - rect.top) / this.renderer.charHeight);
+    const hoverRequest = ++this.linkHoverRequest;
 
     // Get hyperlink_id directly from the cell at this position
     // Must account for viewportY (scrollback position)
@@ -1900,6 +1936,7 @@ export class Terminal implements ITerminalCore {
     this.linkDetector
       .getLinkAt(x, bufferRow)
       .then((link) => {
+        if (hoverRequest !== this.linkHoverRequest) return;
         // Update hover state for cursor changes and click handling
         if (link !== this.currentHoveredLink) {
           // Notify old link we're leaving
@@ -1951,6 +1988,7 @@ export class Terminal implements ITerminalCore {
             }
           }
         }
+        this.updateLinkTooltip(link, x, y);
       })
       .catch((err) => {
         console.warn("Link detection error:", err);
@@ -1961,6 +1999,7 @@ export class Terminal implements ITerminalCore {
    * Handle mouse leave to clear link hover
    */
   private handleMouseLeave = (): void => {
+    this.linkHoverRequest += 1;
     // Clear hyperlink underline
     if (this.renderer && this.wasmTerm) {
       const previousHyperlinkId =
@@ -1986,53 +2025,39 @@ export class Terminal implements ITerminalCore {
         this.element.style.cursor = "text";
       }
     }
+    this.updateLinkTooltip(undefined, 0, 0);
   };
 
-  /**
-   * Handle mouse click for link activation
-   */
-  private handleClick = async (e: MouseEvent): Promise<void> => {
-    // For more reliable clicking, detect the link at click time
-    // rather than relying on cached hover state (avoids async races)
-    if (!this.canvas || !this.renderer || !this.linkDetector || !this.wasmTerm)
+  private updateLinkTooltip(
+    link: ILink | undefined,
+    x: number,
+    y: number,
+  ): void {
+    const tooltip = this.linkTooltip;
+    if (!tooltip || !this.renderer) return;
+    if (!link) {
+      tooltip.hidden = true;
+      tooltip.dataset.visible = "false";
+      tooltip.textContent = "";
       return;
-    // Get click position
-    const rect = this.canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / this.renderer.charWidth);
-    const y = Math.floor((e.clientY - rect.top) / this.renderer.charHeight);
+    }
 
-    // Calculate buffer row (same logic as processMouseMove)
-    const viewportRow = y;
-    const scrollbackLength = this.wasmTerm.getScrollbackLength();
-    let bufferRow: number;
-
-    // Use floored viewportY for buffer mapping (must match renderer & selection)
-    const rawViewportYForClick = this.getViewportY();
-    const viewportYForClick = Math.max(0, Math.floor(rawViewportYForClick));
-
-    if (viewportYForClick > 0) {
-      if (viewportRow < viewportYForClick) {
-        bufferRow = scrollbackLength - viewportYForClick + viewportRow;
-      } else {
-        const screenRow = viewportRow - viewportYForClick;
-        bufferRow = scrollbackLength + screenRow;
-      }
+    tooltip.textContent = link.text;
+    const foreground = this.options.theme.foreground ?? "currentColor";
+    tooltip.style.color = foreground;
+    tooltip.style.background = this.options.theme.background ?? "#000000";
+    tooltip.style.border = `1px solid ${foreground}`;
+    tooltip.style.left = `${Math.max(0, x * this.renderer.charWidth)}px`;
+    if (y >= Math.floor(this.rows / 2)) {
+      tooltip.style.top = `${Math.max(0, y * this.renderer.charHeight - 4)}px`;
+      tooltip.style.transform = "translateY(-100%)";
     } else {
-      bufferRow = scrollbackLength + viewportRow;
+      tooltip.style.top = `${(y + 1) * this.renderer.charHeight + 4}px`;
+      tooltip.style.transform = "none";
     }
-
-    // Get the link at this position
-    const link = await this.linkDetector.getLinkAt(x, bufferRow);
-
-    if (link) {
-      // Activate link
-      link.activate(e);
-      this.linkPointerDown = false;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }
-  };
+    tooltip.hidden = false;
+    tooltip.dataset.visible = "true";
+  }
 
   /**
    * Handle wheel events for scrolling (Phase 2)
@@ -2115,10 +2140,16 @@ export class Terminal implements ITerminalCore {
       const cell = this.mouseCell(e);
       const button = mouseButtonCode(e.button);
       if (cell && button !== null) {
-        this.resolvingTrackedMouseDown = true;
-        this.queuedTrackedMouseUp = undefined;
-        const linkPosition = this.linkBufferPosition(e);
-        void this.resolveTrackedMouseDown(e, button, cell, linkPosition);
+        if (button === 0 && this.isLinkModifierPressed(e)) {
+          this.resolvingTrackedMouseDown = true;
+          this.queuedTrackedMouseUp = undefined;
+          const linkPosition = this.linkBufferPosition(e);
+          void this.resolveTrackedMouseDown(e, button, cell, linkPosition);
+        } else {
+          this.pressedMouseButton = button;
+          this.reportMouse(e, button, cell);
+          this.focus();
+        }
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -2126,7 +2157,12 @@ export class Terminal implements ITerminalCore {
       return;
     }
 
-    if (e.button === 0 && this.currentHoveredLink) {
+    if (
+      e.button === 0 &&
+      this.isLinkModifierPressed(e) &&
+      this.currentHoveredLink
+    ) {
+      this.currentHoveredLink.activate(e);
       this.linkPointerDown = true;
       e.preventDefault();
       e.stopPropagation();
@@ -2236,7 +2272,10 @@ export class Terminal implements ITerminalCore {
     let link: ILink | undefined;
     try {
       link =
-        button === 0 && linkPosition && this.linkDetector
+        button === 0 &&
+        this.isLinkModifierPressed(event) &&
+        linkPosition &&
+        this.linkDetector
           ? await this.linkDetector.getLinkAt(
               linkPosition.col,
               linkPosition.row,
@@ -2247,6 +2286,7 @@ export class Terminal implements ITerminalCore {
     }
     this.resolvingTrackedMouseDown = false;
     if (link) {
+      link.activate(event);
       this.linkPointerDown = true;
       this.queuedTrackedMouseUp = undefined;
       return;
@@ -2262,6 +2302,22 @@ export class Terminal implements ITerminalCore {
       this.reportMouse(queuedMouseUp, button, releaseCell, true);
       this.pressedMouseButton = null;
     }
+  }
+
+  private readonly handleLinkModifierKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Control") this.linkControlKeyDown = true;
+  };
+
+  private readonly handleLinkModifierKeyUp = (event: KeyboardEvent): void => {
+    if (event.key === "Control") this.linkControlKeyDown = false;
+  };
+
+  private readonly releaseLinkModifiers = (): void => {
+    this.linkControlKeyDown = false;
+  };
+
+  private isLinkModifierPressed(event: MouseEvent): boolean {
+    return event.ctrlKey || this.linkControlKeyDown;
   }
 
   private handleContextMenu = (e: MouseEvent): void => {

@@ -74,6 +74,10 @@ describe("terminal links", () => {
       kind: "web",
       url: "https://example.com/docs",
     });
+    expect(classifyTerminalUri("ftp://files.example.com/release")).toEqual({
+      kind: "web",
+      url: "ftp://files.example.com/release",
+    });
     expect(
       classifyTerminalUri("file:///D:/repo/src/main.rs#L9C4", "windows"),
     ).toEqual({
@@ -101,7 +105,7 @@ describe("terminal links", () => {
     expect(linuxReference?.path).toBe("/workspace/bad*name?.ts");
   });
 
-  test("maps text offsets to terminal columns and activates on a plain click", async () => {
+  test("maps text offsets to terminal columns and activates the reference", async () => {
     const text = "中文 specs/README.md:3:4";
     const activated: string[] = [];
     const provider = new FilePathLinkProvider(
@@ -113,7 +117,7 @@ describe("terminal links", () => {
     >((resolve) => provider.provideLinks(0, resolve));
 
     expect(links?.[0].range.start.x).toBe(3);
-    links?.[0].activate({ ctrlKey: false, metaKey: false } as MouseEvent);
+    links?.[0].activate({ ctrlKey: true, metaKey: false } as MouseEvent);
     expect(activated).toEqual(["specs/README.md"]);
   });
 
@@ -136,6 +140,30 @@ describe("terminal links", () => {
       text: "specs/very/long/directory/file.ts:42:7",
       range: {
         start: { x: 5, y: 0 },
+        end: { x: secondRow.length - 1, y: 1 },
+      },
+    });
+  });
+
+  test("reconstructs a Markdown file reference split by terminal soft wrapping", async () => {
+    const firstRow = "- `docs/e2e/wrapped/terminal/";
+    const secondRow = "markdown/file/path/target.md:42:7`";
+    const provider = new FilePathLinkProvider(
+      createMockTerminal([
+        { text: firstRow },
+        { text: secondRow, isWrapped: true },
+      ]),
+      () => {},
+    );
+    const links = await new Promise<
+      Parameters<Parameters<typeof provider.provideLinks>[1]>[0]
+    >((resolve) => provider.provideLinks(1, resolve));
+
+    expect(links).toHaveLength(1);
+    expect(links?.[0]).toMatchObject({
+      text: "`docs/e2e/wrapped/terminal/markdown/file/path/target.md:42:7`",
+      range: {
+        start: { x: 2, y: 0 },
         end: { x: secondRow.length - 1, y: 1 },
       },
     });

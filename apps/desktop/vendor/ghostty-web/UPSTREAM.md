@@ -35,8 +35,24 @@ Local changes:
   source passes the production TypeScript strict check without changing runtime behavior.
 - reconstruct soft-wrapped logical lines for plain-text URL detection and map
   multi-row matches back to their terminal buffer cells.
+- expose OSC 8 URIs by buffer position, assign page-stable hyperlink identities
+  across Ghostty pages, and preserve the corresponding WASM source patch under
+  `patches/ccsm-hyperlink-uri.patch`.
 - pause the animation-frame render loop while a retained terminal is hidden,
   and redraw cursor/scrollback Canvas content only when presentation state
   changes instead of on every display refresh.
 
-The checked-in WASM binary is the matching npm `ghostty-web@0.4.0` artifact.
+The checked-in WASM binary is rebuilt from the pinned source and
+`ccsm-hyperlink-uri.patch`; its SHA-256 is
+`7f526983d0e7f67c06dbb880943311b93b969d6cf97eb53a222e45c8f6c17e1f`.
+
+To reproduce it, clone the pinned `coder/ghostty-web` commit, initialize its
+Ghostty submodule, apply upstream `patches/ghostty-wasm-api.patch` inside that
+submodule, then apply the CCSM patch and run:
+
+```sh
+zig build lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall
+```
+
+Copy `ghostty/zig-out/bin/ghostty-vt.wasm` to this directory and verify the
+SHA-256 above.

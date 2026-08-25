@@ -1,0 +1,132 @@
+diff --git a/include/ghostty/vt/terminal.h b/include/ghostty/vt/terminal.h
+index 298ad36..19d5c09 100644
+--- a/include/ghostty/vt/terminal.h
++++ b/include/ghostty/vt/terminal.h
+@@ -220,6 +220,20 @@ int ghostty_terminal_get_scrollback_grapheme(
+ /** Check if a row is a continuation from previous row (soft-wrapped) */
+ bool ghostty_terminal_is_row_wrapped(GhosttyTerminal term, int y);
+ 
++/**
++ * Get the OSC 8 URI for a cell. Pass NULL to query the UTF-8 byte length.
++ * @param history true for a scrollback row, false for an active-screen row
++ * @return URI byte length, 0 for a cell without a link, or -1 on error
++ */
++int ghostty_terminal_get_hyperlink_uri(
++    GhosttyTerminal term,
++    bool history,
++    int row,
++    int col,
++    uint8_t* out_buffer,
++    size_t buffer_size
++);
++
+ /* ============================================================================
+  * Response API - for DSR and other terminal queries
+  * ========================================================================= */
+diff --git a/src/lib_vt.zig b/src/lib_vt.zig
+index f07bbd7..5ee8242 100644
+--- a/src/lib_vt.zig
++++ b/src/lib_vt.zig
+@@ -171,6 +171,7 @@ comptime {
+         @export(&c.terminal_get_scrollback_line, .{ .name = "ghostty_terminal_get_scrollback_line" });
+         @export(&c.terminal_get_scrollback_grapheme, .{ .name = "ghostty_terminal_get_scrollback_grapheme" });
+         @export(&c.terminal_is_row_wrapped, .{ .name = "ghostty_terminal_is_row_wrapped" });
++        @export(&c.terminal_get_hyperlink_uri, .{ .name = "ghostty_terminal_get_hyperlink_uri" });
+ 
+         // Response API (for DSR and other queries)
+         @export(&c.terminal_has_response, .{ .name = "ghostty_terminal_has_response" });
+diff --git a/src/terminal/c/main.zig b/src/terminal/c/main.zig
+index 1850393..f913c7f 100644
+--- a/src/terminal/c/main.zig
++++ b/src/terminal/c/main.zig
+@@ -84,6 +84,7 @@ pub const terminal_get_scrollback_length = terminal.getScrollbackLength;
+ pub const terminal_get_scrollback_line = terminal.getScrollbackLine;
+ pub const terminal_get_scrollback_grapheme = terminal.getScrollbackGrapheme;
+ pub const terminal_is_row_wrapped = terminal.isRowWrapped;
++pub const terminal_get_hyperlink_uri = terminal.getHyperlinkUri;
+ 
+ // Response API (for DSR and other queries)
+ pub const terminal_has_response = terminal.hasResponse;
+diff --git a/src/terminal/c/terminal.zig b/src/terminal/c/terminal.zig
+index d57b4e4..d8dc672 100644
+--- a/src/terminal/c/terminal.zig
++++ b/src/terminal/c/terminal.zig
+@@ -30,6 +30,18 @@ const device_status = @import("../device_status.zig");
+ 
+ const log = std.log.scoped(.terminal_c);
+ 
++/// Return a stable, non-zero identifier for a hyperlink URI. Ghostty's native
++/// hyperlink identifiers are page-local, while the web renderer compares cells
++/// from several pages at once. Hashing the URI gives the renderer one stable
++/// identity across viewport and scrollback pages while preserving explicit and
++/// implicit OSC 8 identities.
++fn cellHyperlinkId(page: anytype, cell: anytype) u16 {
++    const id = page.lookupHyperlink(cell) orelse return 0;
++    const link = page.hyperlink_set.get(page.memory, id);
++    const hash: u16 = @truncate(link.hash(page.memory));
++    return if (hash == 0) 1 else hash;
++}
++
+ /// Response handler that processes VT sequences and queues responses.
+ /// This extends the readonly stream handler to also handle queries.
+ const ResponseHandler = struct {
+@@ -671,7 +683,7 @@ pub fn renderStateGetViewport(
+                     .wide => 2,
+                     .spacer_tail, .spacer_head => 0,
+                 },
+-                .hyperlink_id = if (cell.hyperlink) 1 else 0,
++                .hyperlink_id = cellHyperlinkId(page, cell),
+                 .grapheme_len = grapheme_len,
+             };
+             idx += 1;
+@@ -863,13 +875,49 @@ pub fn getScrollbackLine(
+                 .wide => 2,
+                 .spacer_tail, .spacer_head => 0,
+             },
+-            .hyperlink_id = if (cell.hyperlink) 1 else 0,
++            .hyperlink_id = cellHyperlinkId(page, cell),
+             .grapheme_len = grapheme_len,
+         };
+     }
+     return @intCast(cols);
+ }
+ 
++/// Get the OSC 8 URI for one screen or scrollback cell. Passing a null output
++/// pointer returns the required UTF-8 byte length. A positive second call copies
++/// the URI into the caller-provided buffer.
++pub fn getHyperlinkUri(
++    ptr: ?*anyopaque,
++    history: bool,
++    row: c_int,
++    col: c_int,
++    out: ?[*]u8,
++    buf_size: usize,
++) callconv(.c) c_int {
++    const wrapper: *const TerminalWrapper = @ptrCast(@alignCast(ptr orelse return -1));
++    if (row < 0 or col < 0) return -1;
++
++    const pages = &wrapper.terminal.screens.active.pages;
++    const pin = if (history)
++        pages.pin(.{ .history = .{ .y = @intCast(row) } })
++    else
++        pages.pin(.{ .active = .{ .y = @intCast(row) } });
++    const resolved = pin orelse return -1;
++    const cells = resolved.cells(.all);
++    const x: usize = @intCast(col);
++    if (x >= cells.len) return -1;
++
++    const page = resolved.node.data;
++    const cell = &cells[x];
++    const id = page.lookupHyperlink(cell) orelse return 0;
++    const link = page.hyperlink_set.get(page.memory, id);
++    const uri = link.uri.slice(page.memory);
++    if (out) |buffer| {
++        if (buf_size < uri.len) return -1;
++        @memcpy(buffer[0..uri.len], uri);
++    }
++    return @intCast(uri.len);
++}
++
+ /// Get grapheme codepoints for a cell in the scrollback buffer.
+ /// Returns all codepoints (including the first one) as u32 values.
+ /// Returns the number of codepoints written, or -1 on error.

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { resolveScrollbarWidth } from "./addons/fit";
 import { Ghostty } from "./ghostty";
 import { calculateInputAnchor } from "./input-anchor";
+import { LinkDetector } from "./link-detector";
 import {
   applyFontCellOverrides,
   CanvasRenderer,
@@ -178,17 +179,92 @@ describe("local ghostty-web regressions", () => {
     }
   });
 
+  test("OSC 8 links retain their URI and identity across soft wrapping", async () => {
+    const ghostty = await Ghostty.load();
+    const terminal = ghostty.createTerminal(8, 4);
+    const firstUri = "https://example.com/wrapped";
+    const secondUri = "file:///D:/repo/target.md#L2C3";
+    terminal.write(
+      `\x1b]8;;${firstUri}\x1b\\ABCDEFGHIJK\x1b]8;;\x1b\\ ` +
+        `\x1b]8;;${secondUri}\x1b\\FILE\x1b]8;;\x1b\\`,
+    );
+    try {
+      const firstRow = terminal.getLine(0)!;
+      const secondRow = terminal.getLine(1)!;
+      expect(firstRow[0].hyperlink_id).toBeGreaterThan(0);
+      expect(secondRow[0].hyperlink_id).toBe(firstRow[0].hyperlink_id);
+      expect(secondRow[4].hyperlink_id).toBeGreaterThan(0);
+      expect(secondRow[4].hyperlink_id).not.toBe(firstRow[0].hyperlink_id);
+      expect(terminal.getHyperlinkUriAtBufferPosition(0, 0)).toBe(firstUri);
+      expect(terminal.getHyperlinkUriAtBufferPosition(1, 0)).toBe(firstUri);
+      expect(terminal.getHyperlinkUriAtBufferPosition(1, 4)).toBe(secondUri);
+    } finally {
+      terminal.free();
+    }
+  });
+
+  test("explicit OSC 8 providers retain priority over regex providers", async () => {
+    const line = {
+      length: 1,
+      getCell: () => ({ getHyperlinkId: () => 7 }),
+    };
+    const detector = new LinkDetector({
+      buffer: { active: { getLine: () => line } },
+    });
+    const activated: string[] = [];
+    const link = (kind: string) => ({
+      text: kind,
+      range: { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } },
+      activate: () => activated.push(kind),
+    });
+    detector.registerProvider({
+      provideLinks: (_row, done) => done([link("osc")]),
+    });
+    detector.registerProvider({
+      provideLinks: (_row, done) => done([link("regex")]),
+    });
+
+    (await detector.getLinkAt(0, 0))?.activate({} as MouseEvent);
+    expect(activated).toEqual(["osc"]);
+  });
+
   test("link underline stays visibly inside a fixed-height cell", () => {
     expect(calculateLinkUnderlineY(18, { height: 18, baseline: 18 })).toBe(34);
     expect(calculateLinkUnderlineY(0, { height: 18, baseline: 14 })).toBe(15);
   });
 
-  test("mouse tracking classifies links before reporting PTY clicks", async () => {
+  test("link underlines follow terminal text color and dotted hover state", () => {
+    const lineDashes: number[][] = [];
+    const renderer = Object.create(CanvasRenderer.prototype) as any;
+    renderer.metrics = { height: 18, baseline: 14 };
+    renderer.ctx = {
+      fillStyle: "#d0d0d0",
+      strokeStyle: "",
+      lineWidth: 0,
+      save: () => {},
+      restore: () => {},
+      setLineDash: (dash: number[]) => lineDashes.push(dash),
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      stroke: () => {},
+    };
+
+    renderer.drawLinkUnderline(0, 0, 10, true);
+    expect(renderer.ctx.strokeStyle).toBe("#d0d0d0");
+    expect(renderer.ctx.lineWidth).toBe(1);
+    expect(lineDashes).toEqual([[1, 2]]);
+  });
+
+  test("mouse tracking reserves Control-click links before reporting PTY clicks", async () => {
     const terminal = Object.create(Terminal.prototype) as any;
     const reports: Array<{ release: boolean }> = [];
+    const activated: string[] = [];
     terminal.resolvingTrackedMouseDown = true;
     terminal.queuedTrackedMouseUp = {} as MouseEvent;
-    terminal.linkDetector = { getLinkAt: async () => ({}) };
+    terminal.linkDetector = {
+      getLinkAt: async () => ({ activate: () => activated.push("opened") }),
+    };
     terminal.reportMouse = (
       _event: MouseEvent,
       _button: number,
@@ -199,24 +275,47 @@ describe("local ghostty-web regressions", () => {
     terminal.mouseCell = () => ({ col: 1, row: 1 });
 
     await terminal.resolveTrackedMouseDown(
-      {} as MouseEvent,
+      { ctrlKey: true } as MouseEvent,
       0,
       { col: 1, row: 1 },
       { col: 1, row: 1 },
     );
     expect(reports).toEqual([]);
+    expect(activated).toEqual(["opened"]);
     expect(terminal.linkPointerDown).toBe(true);
 
     terminal.resolvingTrackedMouseDown = true;
     terminal.queuedTrackedMouseUp = {} as MouseEvent;
     terminal.linkDetector = { getLinkAt: async () => undefined };
     await terminal.resolveTrackedMouseDown(
-      {} as MouseEvent,
+      { ctrlKey: true } as MouseEvent,
       0,
       { col: 1, row: 1 },
       { col: 1, row: 1 },
     );
     expect(reports).toEqual([{ release: false }, { release: true }]);
+  });
+
+  test("tracked Control-pointer press activates a hovered link exactly once", () => {
+    const terminal = new Terminal({ ghostty: {} as any }) as any;
+    const activated: string[] = [];
+    terminal.scrollbarView = {};
+    terminal.wasmTerm = { hasMouseTracking: () => false };
+    terminal.currentHoveredLink = {
+      activate: () => activated.push("opened"),
+    };
+    terminal.linkControlKeyDown = true;
+    const event = {
+      button: 0,
+      ctrlKey: false,
+      preventDefault: () => {},
+      stopPropagation: () => {},
+      stopImmediatePropagation: () => {},
+    } as unknown as MouseEvent;
+
+    terminal.handleMouseDown(event);
+    expect(activated).toEqual(["opened"]);
+    expect(terminal.linkPointerDown).toBe(true);
   });
 
   test("an explicit zero scrollbar reservation uses the full terminal width", () => {

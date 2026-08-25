@@ -632,8 +632,31 @@ fn parse_browser_url(value: &str) -> Result<tauri::Url, String> {
         .parse()
         .map_err(|error| format!("invalid browser URL: {error}"))?;
     match url.scheme() {
-        "http" | "https" | "about" => Ok(url),
+        "http" | "https" | "ftp" | "about" => Ok(url),
         scheme => Err(format!("browser URL scheme is not allowed: {scheme}")),
+    }
+}
+
+#[cfg(test)]
+mod browser_url_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_windows_terminal_web_schemes() {
+        for value in [
+            "http://example.com",
+            "https://example.com",
+            "ftp://files.example.com/release",
+            "about:blank",
+        ] {
+            assert!(parse_browser_url(value).is_ok(), "{value}");
+        }
+    }
+
+    #[test]
+    fn rejects_untrusted_browser_schemes() {
+        assert!(parse_browser_url("javascript:alert(1)").is_err());
+        assert!(parse_browser_url("file:///tmp/secret").is_err());
     }
 }
 

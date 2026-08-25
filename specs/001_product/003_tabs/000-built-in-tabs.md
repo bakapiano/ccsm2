@@ -24,7 +24,7 @@
 - 单独按下Ctrl、Shift、Alt、Cmd等修饰键时保留当前终端滚动位置。
 - 顶层窗口重新激活时，CLI Tab恢复窗口失活前的终端输入焦点；切回时点击的界面目标继续获得焦点。
 - CLI Tab在Dockview连续resize和原生窗口最小化/恢复期间保留最后一个完整终端画面；最终PTY resize与对应TUI repaint完成后一次性切换到新画面。
-- CLI Tab将Claude Code、Codex、GitHub Copilot及Shell输出中的Space内文件引用识别为链接；链接hover显示下划线，普通左键点击打开或聚焦内置File Editor Tab并跳到指定行列。HTTP/HTTPS链接通过相同手势打开同一Space内的内置Browser Tab。新建的链接目标Tab使用来源Dock右侧上沿对齐的最近Dock；来源位于右侧Dock时复用该组，单组布局从来源Dock向右切分。
+- CLI Tab将Claude Code、Codex、GitHub Copilot及Shell输出中的Space内文件引用识别为链接；链接hover显示主题色实线与目标tooltip，`Ctrl+左键`打开或聚焦内置File Editor Tab并跳到指定行列。HTTP/HTTPS/FTP与OSC 8链接通过相同手势打开同一Space内的内置Browser Tab；OSC 8链接静止时显示主题色点线。新建的链接目标Tab使用来源Dock右侧上沿对齐的最近Dock；来源位于右侧Dock时复用该组，单组布局从来源Dock向右切分。
 
 用户自定义 CLI Provider进入后续版本。
 
