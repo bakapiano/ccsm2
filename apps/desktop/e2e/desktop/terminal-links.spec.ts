@@ -39,7 +39,7 @@ const controlKey = "\uE009";
 const provider = "codex" as const;
 
 describe("Terminal links", () => {
-  it("renders wrapped link and file path output from provider Markdown", async () => {
+  it("opens wrapped link and file path output from provider Markdown and tables", async () => {
     const scenarioId = providerMarkdownScenarioId;
     const evidence = new ScenarioEvidence(scenarioId);
     const spaceName = `E2E Provider Markdown ${runId}`;
@@ -47,10 +47,15 @@ describe("Terminal links", () => {
     const prompt = `render-provider-markdown-links-${runId}`;
     const browserUrl =
       "https://example.com/ccsm/e2e/windows-terminal-compatible/markdown/soft-wrapped/browser/link/target?source=terminal";
+    const providerBrowserUrl = "https://example.com/p";
+    const tableBrowserUrl = "https://example.com/t";
     const relativeFilePath =
       "docs/e2e/windows-terminal-compatible/markdown/soft-wrapped/file/path/with/additional/review/context/target.md";
     const fileReference = `${relativeFilePath}:2:3`;
+    const providerFilePath = "provider-click-target.md";
+    const providerFileReference = `${providerFilePath}:2:3`;
     const heading = "Provider Markdown link regression";
+    const tableHeading = "Nested target";
     const responseMarker = "CCSM_PROVIDER_MARKDOWN_RENDERED";
     const markdownResponse = [
       `## ${heading}`,
@@ -59,18 +64,30 @@ describe("Terminal links", () => {
       "",
       `\`${fileReference}\``,
       "",
+      `[Open provider link](${providerBrowserUrl})`,
+      "",
+      `\`${providerFileReference}\``,
+      "",
+      `| ${tableHeading} | Link |`,
+      "| --- | --- |",
+      `| Table cell | [Open nested table link](${tableBrowserUrl}) |`,
+      "",
       responseMarker,
     ].join("\n");
     const targetPath = join(spaceRoot, ...relativeFilePath.split("/"));
     mkdirSync(dirname(targetPath), { recursive: true });
     writeFileSync(targetPath, "first line\nsecond line target\nthird line\n");
+    writeFileSync(
+      join(spaceRoot, providerFilePath),
+      "first line\nsecond line target\nthird line\n",
+    );
     setModelResponse(provider, prompt, markdownResponse);
 
     let currentStep = "create-space";
     let primaryError: unknown;
     try {
       await restoreScenarioUi();
-      await ensureRenderableWindow();
+      await ensureProviderMarkdownWindow();
       await createSpace(spaceName, spaceRoot);
       currentStep = "start-provider";
       await openProviderTab();
@@ -92,6 +109,14 @@ describe("Terminal links", () => {
         (snapshot) =>
           textWithoutWhitespace(snapshot.text).includes(browserUrl) &&
           textWithoutWhitespace(snapshot.text).includes(fileReference) &&
+          textWithoutWhitespace(snapshot.text).includes(providerBrowserUrl) &&
+          textWithoutWhitespace(snapshot.text).includes(tableBrowserUrl) &&
+          textWithoutWhitespace(snapshot.text).includes(
+            providerFileReference,
+          ) &&
+          textWithoutWhitespace(snapshot.text).includes(
+            textWithoutWhitespace(tableHeading),
+          ) &&
           textWithoutWhitespace(snapshot.text).includes(responseMarker) &&
           terminalPromptReady(snapshot.text),
       );
@@ -113,6 +138,13 @@ describe("Terminal links", () => {
       expect(renderedText).not.toContain(
         textWithoutWhitespace(`\`${fileReference}\``),
       );
+      expect(renderedText).not.toContain(
+        textWithoutWhitespace(`[Open provider link](${providerBrowserUrl})`),
+      );
+      expect(renderedText).not.toContain(
+        textWithoutWhitespace(`\`${providerFileReference}\``),
+      );
+      expect(renderedText).not.toContain("|---|---|");
       const viewport = await browser.execute(() => ({
         height: window.innerHeight,
         width: window.innerWidth,
@@ -125,6 +157,59 @@ describe("Terminal links", () => {
       const fileGeometry = await targetGeometry(fileReference, provider);
       expect(fileGeometry.endRow).toBeGreaterThan(fileGeometry.startRow);
       await evidence.checkpoint("provider-markdown-rendered-and-wrapped");
+
+      currentStep = "open-provider-markdown-url";
+      const providerBrowserTarget = await targetGeometry(
+        providerBrowserUrl,
+        provider,
+        "optional",
+      );
+      await movePointer(providerBrowserTarget);
+      await waitForLinkTooltip(providerBrowserUrl, provider);
+      await controlClick(providerBrowserTarget);
+      await waitForBrowserUrl(providerBrowserUrl);
+      await evidence.checkpoint("provider-markdown-url-opened");
+
+      currentStep = "open-provider-table-url";
+      await returnToProvider();
+      const tableBrowserTarget = await targetGeometry(
+        tableBrowserUrl,
+        provider,
+        "optional",
+      );
+      await movePointer(tableBrowserTarget);
+      await waitForLinkTooltip(tableBrowserUrl, provider);
+      await controlClick(tableBrowserTarget);
+      await waitForBrowserUrl(tableBrowserUrl);
+      await evidence.checkpoint("provider-table-url-opened");
+
+      currentStep = "open-provider-markdown-file";
+      await returnToProvider();
+      const providerFileTarget = await targetGeometry(
+        providerFileReference,
+        provider,
+        "optional",
+      );
+      await movePointer(providerFileTarget);
+      await waitForLinkTooltip(providerFileReference, provider);
+      await controlClick(providerFileTarget);
+      const providerFileTab = await waitForTab("file-editor", providerFilePath);
+      expect(await providerFileTab.getAttribute("title")).toBe(
+        providerFilePath,
+      );
+      const providerEditor = await $(".file-editor-panel");
+      await providerEditor.waitForDisplayed({ timeout: 30_000 });
+      const providerPosition = await providerEditor.$(".file-editor-position");
+      await browser.waitUntil(
+        async () => (await providerPosition.getText()) === "Ln 2, Col 3",
+        {
+          timeout: 30_000,
+          interval: 200,
+          timeoutMsg:
+            "Provider Markdown file link did not reveal line 2 column 3",
+        },
+      );
+      await evidence.checkpoint("provider-markdown-file-opened");
     } catch (error) {
       primaryError = error;
       writeFileSync(
@@ -327,9 +412,10 @@ function writeOutputScript(root: string, lines: string[]): string {
 async function targetGeometry(
   target: string,
   selectedProvider: TerminalSnapshot["provider"],
+  wrapping: "required" | "optional" = "required",
 ): Promise<TargetGeometry> {
   const serialized = await browser.execute(
-    (expected, requestedProvider) => {
+    (expected, requestedProvider, requestedWrapping) => {
       const panel = document.querySelector<HTMLElement>(
         `.terminal-panel[data-provider="${CSS.escape(requestedProvider)}"]`,
       );
@@ -374,15 +460,22 @@ async function targetGeometry(
           const wrapped = targetPositions.find(
             (position) => position.row > start.row,
           );
-          if (!start || !end || !wrapped) {
+          if (
+            !start ||
+            !end ||
+            (requestedWrapping === "required" && !wrapped)
+          ) {
             throw new Error(`Target ${expected} did not wrap`);
           }
+          const pointer =
+            wrapped ?? targetPositions[Math.floor(targetPositions.length / 2)];
+          if (!pointer) throw new Error(`Target ${expected} has no cells`);
 
           const firstBufferLine = Math.max(
             0,
             snapshot.bufferLength - lines.length,
           );
-          const absoluteRow = firstBufferLine + wrapped.row;
+          const absoluteRow = firstBufferLine + pointer.row;
           const viewportRow =
             absoluteRow -
             snapshot.scrollbackLength +
@@ -394,7 +487,7 @@ async function targetGeometry(
           return JSON.stringify({
             startRow: start.row,
             endRow: end.row,
-            x: Math.round(rect.left + (wrapped.col + 0.5) * snapshot.cellWidth),
+            x: Math.round(rect.left + (pointer.col + 0.5) * snapshot.cellWidth),
             y: Math.round(rect.top + (viewportRow + 0.5) * snapshot.cellHeight),
           });
         }
@@ -403,6 +496,7 @@ async function targetGeometry(
     },
     target,
     selectedProvider,
+    wrapping,
   );
   return JSON.parse(serialized) as TargetGeometry;
 }
@@ -687,6 +781,35 @@ async function clickTab(kind: string, label: string): Promise<void> {
   throw new Error(`${label} ${kind} tab is absent`);
 }
 
+async function returnToProvider(): Promise<void> {
+  await clickTab("cli-session", "Codex");
+  await $('.terminal-panel[data-provider="codex"]').waitForDisplayed({
+    timeout: 20_000,
+  });
+}
+
+async function waitForBrowserUrl(expected: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      for (const panel of await $$(".browser-panel")) {
+        const address = await panel.$(".browser-address");
+        if (
+          (await panel.isDisplayed()) &&
+          (await address.getValue()) === expected
+        ) {
+          return true;
+        }
+      }
+      return false;
+    },
+    {
+      timeout: 30_000,
+      interval: 200,
+      timeoutMsg: `Provider Markdown URL did not open ${expected}`,
+    },
+  );
+}
+
 async function waitForTab(kind: string, title: string) {
   let match: WebdriverIO.Element | undefined;
   await browser.waitUntil(
@@ -828,6 +951,20 @@ async function ensureRenderableWindow(): Promise<void> {
     if (viewport.width >= 900 && viewport.height >= 650) return;
   }
   throw new Error("Desktop viewport did not reach a renderable link-test size");
+}
+
+async function ensureProviderMarkdownWindow(): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await browser.maximizeWindow();
+    await browser.setWindowRect(20, 20, 1320, 850);
+    await browser.pause(200);
+    const viewport = await browser.execute(() => ({
+      height: window.innerHeight,
+      width: window.innerWidth,
+    }));
+    if (viewport.width >= 1_200 && viewport.height >= 740) return;
+  }
+  throw new Error("Desktop viewport did not reach the provider Markdown size");
 }
 
 async function createSpace(name: string, root: string): Promise<void> {
