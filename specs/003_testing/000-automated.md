@@ -168,7 +168,7 @@ Provider门禁包含三条独立场景：
 2. 创建 Space、创建 Codex CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 3. 创建 Space、创建 GitHub Copilot CLI、发送 prompt、Stop、Start、验证同一 native session resume，再发送第二轮 prompt。
 
-Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。Terminal Clipboard场景覆盖鼠标拖选、`Ctrl+C`复制、`Ctrl+V`回贴、窗口失焦时丢失modifier keyup后的Win32输入状态恢复和空选区`Ctrl+C`中断PTY任务。Terminal Renderer场景覆盖跨Space保留终端时的render loop数量上限与返回后的画面恢复。
+Markdown场景覆盖编辑、预览与保存。Sidebar场景覆盖折叠、刷新恢复与展开。Settings场景覆盖主题与Web链接打开位置的切换和弹窗重开恢复。Terminal Clipboard场景覆盖鼠标拖选、`Ctrl+C`复制、`Ctrl+V`回贴、窗口失焦时丢失modifier keyup后的Win32输入状态恢复和空选区`Ctrl+C`中断PTY任务。Terminal Renderer场景覆盖跨Space保留终端时的render loop数量上限与返回后的画面恢复。Terminal Links场景覆盖内置Browser Tab、Browser toolbar外部打开、Links偏好外部路由与File Editor跳转。
 
 Desktop E2E使用DOM Browser placeholder，保持embedded driver对主WebView的控制；Markdown场景显式创建Browser Tab并验证右侧Dock落位。native Browser child的bounds、visibility与lifecycle由独立平台套件验收。
 
@@ -184,6 +184,7 @@ Desktop E2E使用DOM Browser placeholder，保持embedded driver对主WebView的
 6. 三家固定版本真实 CLI 接受当前 resume 接口与生产 wrapper 参数。
 7. 应用退出后，本次测试 ownership root 下的进程与资源完成清理。
 8. 用户通过侧栏右下按钮折叠侧栏，40px窄栏仅显示展开按钮；再次点击后恢复展开宽度与导航内容。
+9. 用户从Browser toolbar显式打开当前URL，并通过Settings Links偏好将Terminal Web链接路由到操作系统默认浏览器。
 
 场景从用户可观察结果断言。内部诊断状态补充失败原因。
 
@@ -259,7 +260,7 @@ PNG、GIF 和 WebM 已经压缩，artifact 使用 `compression-level: 0` 缩短�
 https://<owner>.github.io/<repository>/e2e/pr/<number>/
 ```
 
-报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar、Settings、CLI Theme、Terminal Clipboard、Terminal Renderer和Terminal Links场景的acceptance GIF与checkpoint PNG。Terminal Links从真实Shell输出跨soft-wrap的Markdown URL与文件引用，通过可见hover、普通点击和`Ctrl+左键`验证tooltip、Browser Tab、File Editor Tab及行列跳转。新提交更新相同PR目录与同一条PR评论。
+报告首页汇总触发运行的全部GitHub Actions jobs及steps。平台区域展示workflow step outcomes、evidence health、固定CLI版本与integrity、全部provider contract checks、Desktop scenario状态与耗时，以及Claude、Codex、GHCP、Markdown、Sidebar、Settings、CLI Theme、Terminal Clipboard、Terminal Renderer和Terminal Links场景的acceptance GIF与checkpoint PNG。Terminal Links从真实Shell输出跨soft-wrap的Markdown URL与文件引用，通过可见hover、普通点击和`Ctrl+左键`验证tooltip、Browser Tab、Browser toolbar外部打开、Settings默认浏览器路由、File Editor Tab及行列跳转。新提交更新相同PR目录与同一条PR评论。
 
 `gh-pages`保存当前active PR报告集合，并通过串行concurrency group发布单一orphan snapshot commit。`pull_request_target: closed`从默认分支执行对应目录清理；每日prune以GitHub API返回的open PR集合刷新站点。报告发布job提供人工验收导航，四个原生required checks继续提供合并结论。
 
@@ -283,7 +284,7 @@ PR Pages评论与owner结论是人工验收记录；四个required status checks
 
 - Pull Request：运行两个必需平台 job。
 - `main` push：运行两个平台 job，验证合并结果。
-- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp/markdown/sidebar/settings/theme/terminal/renderer` 指定诊断范围，结果保留相同证据格式。
+- `workflow_dispatch`：通过 `platform = all/windows/linux` 和 `scenario = all/claude/codex/ghcp/markdown/sidebar/settings/theme/terminal/renderer/links/terminal-links` 指定诊断范围；`links`运行Provider Markdown与Shell两条链接场景，`terminal-links`独立运行Shell链接场景，结果保留相同证据格式。
 - 同一 PR 的旧 commit 运行通过 concurrency group 取消。
 - job 和单场景设置明确 timeout。
 - artifact 使用 7 天 retention，为 PR 审查和跨时区验收提供完整窗口。

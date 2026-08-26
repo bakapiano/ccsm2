@@ -14,7 +14,10 @@ import {
   presentBrowserSnapshot,
 } from "./browser-snapshot";
 import type { TabDto } from "./generated/TabDto";
-import { BrowserTabProvider } from "./tabs/browser-provider";
+import {
+  BrowserTabProvider,
+  canOpenInDefaultBrowser,
+} from "./tabs/browser-provider";
 import type { CcsmDesktopClient } from "./transport/desktop-client";
 
 const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
@@ -120,5 +123,50 @@ describe("native Browser snapshot placeholder", () => {
     );
     expect(create).not.toHaveBeenCalled();
     provider.destroy();
+  });
+
+  test("opens the current Browser URL in the system default browser", async () => {
+    const openExternal = mock(async (url: string) => url);
+    const client = {
+      browser: {
+        subscribeTitleChanged: async () => () => {},
+        openExternal,
+      },
+    } as unknown as CcsmDesktopClient;
+    const tab = {
+      id: "browser-tab",
+      spaceId: "space-1",
+      kind: "browser",
+      title: "Browser",
+      resourceId: "browser-tab",
+      stateVersion: 1,
+      state: { lastUrl: "https://example.com/docs", zoom: 1 },
+    } as TabDto;
+    const provider = new BrowserTabProvider(client, {
+      nativeSurfacesEnabled: false,
+    });
+    const renderer = provider.createRenderer(tab);
+    renderer.init({ api: {} } as never);
+
+    renderer.element
+      .querySelector<HTMLButtonElement>(".browser-open-external")
+      ?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(openExternal).toHaveBeenCalledWith("https://example.com/docs");
+    expect(renderer.element.querySelector(".browser-state")?.textContent).toBe(
+      "opened in default browser",
+    );
+    provider.destroy();
+  });
+
+  test("offers the default browser for external web schemes", () => {
+    expect(canOpenInDefaultBrowser("https://example.com/docs")).toBe(true);
+    expect(canOpenInDefaultBrowser("ftp://files.example.com/release")).toBe(
+      true,
+    );
+    expect(canOpenInDefaultBrowser("about:blank")).toBe(false);
+    expect(canOpenInDefaultBrowser("file:///tmp/secret")).toBe(false);
   });
 });

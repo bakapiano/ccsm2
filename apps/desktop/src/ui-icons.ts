@@ -6,6 +6,7 @@ export type UiIconName =
   | "find"
   | "git"
   | "goto-line"
+  | "open-external"
   | "play"
   | "refresh"
   | "replace"
@@ -31,6 +32,9 @@ const UI_ICONS: Record<UiIconName, string> = {
   ),
   "goto-line": icon(
     `<path d="M2.5 4h7M2.5 8h5M2.5 12h7"></path><path d="m10 9 3 3-3 3"></path>`,
+  ),
+  "open-external": icon(
+    `<path d="M9 2.5h4.5V7"></path><path d="m13.25 2.75-6 6"></path><path d="M7 4H3v9h9V9"></path>`,
   ),
   play: icon(`<path d="m5 3.5 7 4.5-7 4.5z"></path>`),
   refresh: icon(

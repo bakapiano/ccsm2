@@ -143,6 +143,9 @@ class BrowserPanel implements IContentRenderer {
           </button>
         </div>
         <span class="browser-state panel-status" data-state="starting">starting</span>
+        <button class="browser-open-external control-button control-button-icon" type="button" aria-label="Open in default browser" title="Open in default browser">
+          ${uiIcon("open-external")}
+        </button>
       </form>
       <div class="browser-anchor" data-snapshot-visible="false" aria-label="Native browser viewport">
         <img class="browser-snapshot" alt="" aria-hidden="true" hidden />
@@ -159,6 +162,12 @@ class BrowserPanel implements IContentRenderer {
     if (!this.#anchor || !this.#address)
       throw new Error("browser panel DOM is incomplete");
     this.#address.value = this.#currentUrl;
+    this.element
+      .querySelector<HTMLButtonElement>(".browser-open-external")
+      ?.addEventListener("click", () => {
+        void this.#openExternal();
+      });
+    this.#syncOpenExternalButton();
     if (!this.nativeSurfacesEnabled) {
       this.#address.disabled = true;
       this.#status!.dataset.state = "ready";
@@ -226,6 +235,7 @@ class BrowserPanel implements IContentRenderer {
     this.#tab.title = title;
     this.#panelApi?.setTitle(title);
     if (this.#address) this.#address.value = this.#currentUrl;
+    this.#syncOpenExternalButton();
     void this.#persistState();
   }
 
@@ -340,6 +350,7 @@ class BrowserPanel implements IContentRenderer {
         this.#currentUrl = info.url;
         this.faviconStore.setPageUrl(this.#tab.id, this.#currentUrl);
         this.#address!.value = info.url;
+        this.#syncOpenExternalButton();
         this.#lastBounds = bounds;
         this.#lastVisible = true;
         this.element.dataset.nativeVisible = "true";
@@ -425,6 +436,7 @@ class BrowserPanel implements IContentRenderer {
       }
       this.#address!.value = this.#currentUrl;
       this.faviconStore.setPageUrl(this.#tab.id, this.#currentUrl);
+      this.#syncOpenExternalButton();
       await this.#persistState();
       await this.#client.browser.focus(this.#surfaceId);
     } catch (error) {
@@ -445,6 +457,35 @@ class BrowserPanel implements IContentRenderer {
     } finally {
       this.#setBusy(false);
     }
+  }
+
+  async #openExternal(): Promise<void> {
+    if (!canOpenInDefaultBrowser(this.#currentUrl)) return;
+    const button = this.element.querySelector<HTMLButtonElement>(
+      ".browser-open-external",
+    );
+    button?.setAttribute("aria-busy", "true");
+    if (button) button.disabled = true;
+    this.#setStatus("starting", "opening default browser");
+    try {
+      this.#currentUrl = await this.#client.browser.openExternal(
+        this.#currentUrl,
+      );
+      if (this.#address) this.#address.value = this.#currentUrl;
+      this.#setStatus("running", "opened in default browser");
+    } catch (error) {
+      this.#setStatus("error", `open external · ${describeError(error)}`);
+    } finally {
+      button?.removeAttribute("aria-busy");
+      this.#syncOpenExternalButton();
+    }
+  }
+
+  #syncOpenExternalButton(): void {
+    const button = this.element.querySelector<HTMLButtonElement>(
+      ".browser-open-external",
+    );
+    if (button) button.disabled = !canOpenInDefaultBrowser(this.#currentUrl);
   }
 
   #setBusy(busy: boolean): void {
@@ -510,6 +551,14 @@ function normalizeBrowserInput(value: string): string {
     return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
   }
   return `https://${input}`;
+}
+
+export function canOpenInDefaultBrowser(value: string): boolean {
+  try {
+    return ["http:", "https:", "ftp:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
 }
 
 function boundsChanged(

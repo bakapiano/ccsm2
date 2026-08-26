@@ -613,6 +613,7 @@ function expectedScenarioIds(selected, cliArguments) {
     terminal: ["terminal-clipboard-interrupt"],
     renderer: ["terminal-render-lifecycle"],
     links: ["provider-markdown-links", "terminal-links"],
+    "terminal-links": ["terminal-links"],
   };
   const selectedScenarioIds = scenarios[selected] ?? scenarios.all;
   const requestedSpecs = [];

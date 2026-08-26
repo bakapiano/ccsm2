@@ -67,11 +67,13 @@ const scenarioTitles: Record<string, string> = {
   terminal: "copies and pastes terminal text and interrupts with Control-C",
   renderer: "keeps retained terminal rendering bounded across Space switches",
   links: "opens wrapped link and file path output",
+  "terminal-links":
+    "opens wrapped link and file path output with Control-click",
 };
 const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
 if (selectedScenario !== "all" && !scenarioTitles[selectedScenario]) {
   throw new Error(
-    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar, settings, theme, terminal, renderer, links; received ${selectedScenario}`,
+    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar, settings, theme, terminal, renderer, links, terminal-links; received ${selectedScenario}`,
   );
 }
 

@@ -10,6 +10,7 @@ import {
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 import type { UpdateInfoDto } from "./generated/UpdateInfoDto";
+import { LinkOpeningController } from "./link-opening";
 import { SettingsDialog } from "./settings-dialog";
 import { ThemeController } from "./theme";
 import type { DesktopUpdateClient } from "./transport/desktop-client";
@@ -36,6 +37,7 @@ describe("settings dialog", () => {
     const setModalVisible = mock(async (_visible: boolean) => {});
     const dialog = new SettingsDialog({
       theme,
+      linkOpening: createLinkOpening(),
       updates: currentUpdateClient(),
       currentVersion: "0.1.0-beta.6",
       setModalVisible,
@@ -58,6 +60,33 @@ describe("settings dialog", () => {
     expect(document.activeElement).toBe(trigger);
     expect(setModalVisible).toHaveBeenNthCalledWith(1, true);
     expect(setModalVisible).toHaveBeenNthCalledWith(2, false);
+  });
+
+  test("persists default-browser link routing from the switch", async () => {
+    const values = new Map<string, string>();
+    const linkOpening = createLinkOpening(values);
+    const dialog = new SettingsDialog({
+      theme: createTheme(),
+      linkOpening,
+      updates: currentUpdateClient(),
+      currentVersion: "0.1.0-beta.6",
+      setModalVisible: async () => {},
+      prepareInstall: async () => true,
+    });
+
+    await dialog.open();
+    const toggle = requiredElement<HTMLButtonElement>(
+      '[data-settings-action="toggle-default-browser"]',
+    );
+    expect(toggle.getAttribute("role")).toBe("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+    toggle.click();
+
+    expect(linkOpening.openInDefaultBrowser).toBe(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await dialog.close();
+    expect(createLinkOpening(values).openInDefaultBrowser).toBe(true);
   });
 
   test("checks, downloads, prepares, and installs an update", async () => {
@@ -83,6 +112,7 @@ describe("settings dialog", () => {
     const availability = mock((_available: boolean) => {});
     const dialog = new SettingsDialog({
       theme: createTheme(),
+      linkOpening: createLinkOpening(),
       updates: { check, download, install },
       currentVersion: "0.1.0-beta.6",
       setModalVisible: async () => {},
@@ -113,6 +143,7 @@ describe("settings dialog", () => {
   test("reports the installed version as current", async () => {
     const dialog = new SettingsDialog({
       theme: createTheme(),
+      linkOpening: createLinkOpening(),
       updates: currentUpdateClient(),
       currentVersion: "0.1.0-beta.6",
       setModalVisible: async () => {},
@@ -139,6 +170,15 @@ function createTheme(): ThemeController {
     },
     () => {},
   );
+}
+
+function createLinkOpening(
+  values = new Map<string, string>(),
+): LinkOpeningController {
+  return new LinkOpeningController({
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  });
 }
 
 function currentUpdateClient(): DesktopUpdateClient {

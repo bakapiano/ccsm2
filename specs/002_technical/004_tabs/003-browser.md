@@ -23,7 +23,7 @@ Windows build由`BrowserSurfaceManager`创建专用的WebView2 Environment，将
 
 ## Desktop host contract
 
-TypeScript Browser Provider通过`BrowserSurfaceClient`执行create、close、setBounds、setVisible、capture、focus、navigate和reload。`ccsm-desktop::browser::BrowserSurfaceManager`持有native handles并实现这些commands。
+TypeScript Browser Provider通过`BrowserSurfaceClient`执行create、close、setBounds、setVisible、capture、focus、navigate、reload和openExternal。`ccsm-desktop::browser::BrowserSurfaceManager`持有native handles并实现surface commands；desktop host校验HTTP/HTTPS/FTP scheme并通过操作系统默认应用执行openExternal。
 
 Navigation、title和load failure通过`BrowserSurfaceEvent`进入统一DesktopEventStream。Provider将`lastUrl/title/zoom`作为普通Tab state提交给`AppBackendClient.tabs`；AppBackend不接收native surface handle、bounds或focus数据。
 
@@ -33,7 +33,9 @@ Browser Provider根据当前HTTP/HTTPS URL生成同源`/favicon.ico`地址并发
 
 `window.open`和`target="_blank"`由native WebView的new-window callback拦截。desktop host拒绝系统窗口并发送`source_surface_id + URL`；前端创建持久Browser Tab并加入右侧Dockview group。来源组已位于右侧时复用来源组，单组布局以`direction='right'`切分。
 
-CLI Terminal输出中的HTTP/HTTPS/FTP与OSC 8 Web链接通过Terminal link handler进入同一Browser Tab创建流程，并使用来源CLI Panel解析右侧Dockview group。Terminal renderer不直接调用系统`window.open`。Browser Tab URL白名单继续由AppBackend验证。
+CLI Terminal输出中的HTTP/HTTPS/FTP与OSC 8 Web链接通过Terminal link handler进入统一链接路由。`LinkOpeningController`从main WebView localStorage恢复Links偏好；内置路由进入Browser Tab创建流程并使用来源CLI Panel解析右侧Dockview group，默认浏览器路由调用`BrowserSurfaceClient.openExternal`。Terminal renderer将激活请求交给应用层。Browser Tab URL白名单继续由AppBackend验证。
+
+Browser toolbar的Open in default browser按钮直接调用`BrowserSurfaceClient.openExternal`并传入当前URL；`about:`页面呈现禁用态。E2E feature记录已校验的外部打开请求并返回规范化URL，使共享Desktop Scenario保持在测试应用进程边界内。
 
 ## Live lifecycle
 

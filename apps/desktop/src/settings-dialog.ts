@@ -1,5 +1,6 @@
 import type { UpdateInfoDto } from "./generated/UpdateInfoDto";
 import type { UpdateProgressDto } from "./generated/UpdateProgressDto";
+import type { LinkOpeningController } from "./link-opening";
 import type { ThemeController, ThemeMode } from "./theme";
 import {
   describeError,
@@ -18,6 +19,7 @@ type UpdateViewState =
 
 export interface SettingsDialogOptions {
   theme: ThemeController;
+  linkOpening: LinkOpeningController;
   updates: DesktopUpdateClient;
   currentVersion: string;
   setModalVisible(visible: boolean): Promise<void> | void;
@@ -77,6 +79,21 @@ export class SettingsDialog {
           </section>
           <section class="settings-section">
             <div class="settings-section-title">
+              <h3>Links</h3>
+              <p>Choose where web links open.</p>
+            </div>
+            <div class="settings-section-content">
+              <button class="settings-toggle" type="button" role="switch" aria-checked="false" data-settings-action="toggle-default-browser">
+                <span class="settings-toggle-copy">
+                  <strong>Open web links in default browser</strong>
+                  <small>Use your operating system default browser for links opened from CCSM.</small>
+                </span>
+                <span class="settings-toggle-track" aria-hidden="true"><span></span></span>
+              </button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <div class="settings-section-title">
               <h3>Updates</h3>
               <p>Signed desktop releases.</p>
             </div>
@@ -106,6 +123,14 @@ export class SettingsDialog {
         this.#render();
       });
     }
+    backdrop
+      .querySelector<HTMLButtonElement>(
+        '[data-settings-action="toggle-default-browser"]',
+      )
+      ?.addEventListener("click", () => {
+        this.options.linkOpening.toggleOpenInDefaultBrowser();
+        this.#render();
+      });
     backdrop
       .querySelector<HTMLButtonElement>('[data-settings-action="check"]')
       ?.addEventListener("click", () => void this.checkForUpdates(true));
@@ -224,6 +249,13 @@ export class SettingsDialog {
         button.dataset.themeChoice === this.options.theme.current;
       button.setAttribute("aria-checked", String(selected));
     }
+    requiredElement<HTMLButtonElement>(
+      root,
+      '[data-settings-action="toggle-default-browser"]',
+    ).setAttribute(
+      "aria-checked",
+      String(this.options.linkOpening.openInDefaultBrowser),
+    );
     const status = requiredElement<HTMLElement>(
       root,
       ".settings-update-status",

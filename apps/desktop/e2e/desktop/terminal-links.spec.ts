@@ -88,6 +88,8 @@ describe("Terminal links", () => {
     try {
       await restoreScenarioUi();
       await ensureProviderMarkdownWindow();
+      currentStep = "reset-link-opening";
+      await setDefaultBrowserLinkOpening(false);
       await createSpace(spaceName, spaceRoot);
       currentStep = "start-provider";
       await openProviderTab();
@@ -269,6 +271,8 @@ describe("Terminal links", () => {
     try {
       await restoreScenarioUi();
       await ensureRenderableWindow();
+      currentStep = "reset-link-opening";
+      await setDefaultBrowserLinkOpening(false);
       await createSpace(spaceName, spaceRoot);
       await waitForShell((snapshot) =>
         Boolean(
@@ -307,10 +311,16 @@ describe("Terminal links", () => {
       await evidence.checkpoint("url-hover-tooltip");
 
       currentStep = "plain-click-keeps-link-closed";
-      const browserCount = (await $$(".browser-panel")).length;
+      const browserCount = await browser.execute(
+        () => document.querySelectorAll(".browser-panel").length,
+      );
       await plainClick(browserTarget);
       await browser.pause(300);
-      expect((await $$(".browser-panel")).length).toBe(browserCount);
+      expect(
+        await browser.execute(
+          () => document.querySelectorAll(".browser-panel").length,
+        ),
+      ).toBe(browserCount);
 
       currentStep = "control-click-wrapped-url";
       const settledBrowserTarget = await targetGeometry(browserUrl, "shell");
@@ -330,11 +340,59 @@ describe("Terminal links", () => {
       );
       await evidence.checkpoint("wrapped-url-opened");
 
+      currentStep = "open-browser-tab-url-externally";
+      const externalButton = await browserPanel.$(".browser-open-external");
+      expect(await externalButton.getAttribute("aria-label")).toBe(
+        "Open in default browser",
+      );
+      await externalButton.click();
+      await browser.waitUntil(
+        async () =>
+          (await browserPanel.$(".browser-state").getText()) ===
+          "opened in default browser",
+        {
+          timeout: 10_000,
+          timeoutMsg: "Browser toolbar did not open the URL externally",
+        },
+      );
+      await evidence.checkpoint("browser-url-opened-externally");
+
       currentStep = "return-to-shell";
       await clickTab("cli-session", "Shell");
       await $('.terminal-panel[data-provider="shell"]').waitForDisplayed({
         timeout: 20_000,
       });
+
+      currentStep = "route-terminal-url-to-default-browser";
+      await setDefaultBrowserLinkOpening(true);
+      await clickTab("cli-session", "Shell");
+      await focusTerminalInput("shell");
+      const externalBrowserTarget = await targetGeometry(browserUrl, "shell");
+      await movePointer(externalBrowserTarget);
+      await waitForLinkTooltip(browserUrl, "shell");
+      await controlClick(externalBrowserTarget);
+      await browser.waitUntil(
+        async () =>
+          (await browser.execute(
+            () => document.querySelector("#global-status")?.textContent,
+          )) === "opened link in default browser",
+        {
+          timeout: 10_000,
+          timeoutMsg: "Terminal URL did not open in the default browser",
+        },
+      );
+      expect(
+        await browser.execute(
+          () => document.querySelectorAll(".browser-panel").length,
+        ),
+      ).toBe(browserCount + 1);
+      await evidence.checkpoint("terminal-url-opened-externally");
+      await setDefaultBrowserLinkOpening(false);
+      await clickTab("cli-session", "Shell");
+      await $('.terminal-panel[data-provider="shell"]').waitForDisplayed({
+        timeout: 20_000,
+      });
+      await focusTerminalInput("shell");
 
       currentStep = "hover-wrapped-file";
       const fileTarget = await targetGeometry(fileReference, "shell");
@@ -375,6 +433,11 @@ describe("Terminal links", () => {
         await evidence.checkpoint(
           primaryError ? `failed-${currentStep}` : "final-state",
         );
+      } catch (error) {
+        primaryError ??= error;
+      }
+      try {
+        await setDefaultBrowserLinkOpening(false);
       } catch (error) {
         primaryError ??= error;
       }
@@ -508,7 +571,43 @@ async function movePointer(target: TargetGeometry): Promise<void> {
     .perform();
 }
 
-async function plainClick(target: TargetGeometry): Promise<void> {
+async function focusTerminalInput(
+  selectedProvider: TerminalSnapshot["provider"],
+): Promise<void> {
+  const point = await browser.execute((requestedProvider) => {
+    const panel = document.querySelector<HTMLElement>(
+      `.terminal-panel[data-provider="${CSS.escape(requestedProvider)}"]`,
+    );
+    const canvas = panel?.querySelector<HTMLCanvasElement>("canvas");
+    if (!canvas)
+      throw new Error(`Missing ${requestedProvider} terminal canvas`);
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.round(rect.right - 30),
+      y: Math.round(rect.bottom - 10),
+    };
+  }, selectedProvider);
+  await plainClick(point);
+  await browser.waitUntil(
+    () =>
+      browser.execute((requestedProvider) => {
+        const panel = document.querySelector<HTMLElement>(
+          `.terminal-panel[data-provider="${CSS.escape(requestedProvider)}"]`,
+        );
+        return Boolean(
+          panel?.querySelector("textarea") === document.activeElement,
+        );
+      }, selectedProvider),
+    {
+      timeout: 10_000,
+      timeoutMsg: `${selectedProvider} terminal input did not regain focus`,
+    },
+  );
+}
+
+async function plainClick(
+  target: Pick<TargetGeometry, "x" | "y">,
+): Promise<void> {
   await browser
     .action("pointer", { parameters: { pointerType: "mouse" } })
     .move({ duration: 0, origin: "viewport", x: target.x, y: target.y })
@@ -937,6 +1036,29 @@ async function restoreScenarioUi(): Promise<void> {
     await browser.keys("Escape");
     await browser.pause(100);
   }
+}
+
+async function setDefaultBrowserLinkOpening(enabled: boolean): Promise<void> {
+  const settingsButton = await $('[data-testid="settings-button"]');
+  await settingsButton.waitForClickable({ timeout: 20_000 });
+  await settingsButton.click();
+  const dialog = await $(".settings-dialog");
+  await dialog.waitForDisplayed({ timeout: 20_000 });
+  const toggle = await $('[data-settings-action="toggle-default-browser"]');
+  const current = (await toggle.getAttribute("aria-checked")) === "true";
+  if (current !== enabled) {
+    await toggle.click();
+    await browser.waitUntil(
+      async () =>
+        (await toggle.getAttribute("aria-checked")) === String(enabled),
+      {
+        timeout: 10_000,
+        timeoutMsg: `Default browser link setting did not become ${enabled}`,
+      },
+    );
+  }
+  await $('[data-settings-action="close"]').click();
+  await dialog.waitForDisplayed({ reverse: true, timeout: 20_000 });
 }
 
 async function ensureRenderableWindow(): Promise<void> {

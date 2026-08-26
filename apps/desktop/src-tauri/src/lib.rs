@@ -97,7 +97,13 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_wdio::init())
         .plugin(tauri_plugin_wdio_webdriver::init());
-    let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
+    let builder = builder
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        );
     let app = builder
         .setup(move |app| {
             app.manage(updates::UpdateState::from_app(app)?);
@@ -249,6 +255,7 @@ pub fn run() {
             commands::capture_browser,
             commands::focus_browser,
             commands::navigate_browser,
+            commands::open_external_url,
             commands::reload_browser,
             commands::close_browser,
             updates::check_update,

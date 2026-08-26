@@ -87,6 +87,7 @@ git_status_cache
 ## Filesystem stores
 
 - 显式 `--ccsm-data-dir` 或 `CCSM_DATA_DIR` 覆盖将主界面 WebView profile 放入同一数据目录的 `main-webview/`，使隔离实例可与正式实例并行运行。
+- `main-webview/`的localStorage保存Light/Dark与Web链接打开位置等renderer UI偏好。
 - `browser-profile/` 是全局持久 WebView profile，保存共享 cookies、账号登录、storage 和 HTTP cache。
 - 主界面和 Browser Tabs 使用不同的 WebView profile；启动隔离实例时不设置进程级 `WEBVIEW2_USER_DATA_FOLDER`。
 - `logs/` 保存AppBackend、desktop adapter和测试的非结构化可观测日志。

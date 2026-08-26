@@ -133,7 +133,7 @@ Tauri composition root 在 `e2e` feature 下注册两个插件和对应 capabili
 pnpm test:desktop:build                 build current-platform E2E executable
 pnpm test:desktop                       run all current-platform Desktop Scenarios
 pnpm test:desktop -- --spec <file>      run one spec file
-CCSM_E2E_SCENARIO=<scenario> pnpm test:desktop run claude/codex/ghcp/markdown/sidebar/settings/theme/terminal/renderer scenario
+CCSM_E2E_SCENARIO=<scenario> pnpm test:desktop run claude/codex/ghcp/markdown/sidebar/settings/theme/terminal/renderer/links/terminal-links scenario
 pnpm test:desktop:debug -- --spec <file> run one spec with debug logging
 pnpm test:desktop:evidence -- --spec <file> run one spec in evidence mode
 pnpm test:provider-cli-contract             download and verify pinned real CLIs
@@ -200,7 +200,9 @@ test-results/desktop/<run_id>/
 - Markdown场景使用独立合成Space，覆盖Preview、键盘编辑、Dirty、显式保存和磁盘结果。
 - Sidebar场景覆盖折叠、状态恢复、展开，以及折叠态可见元素集合。
 - Theme场景依次启动Claude、Codex和GHCP，在运行期完成深色到浅色切换，并断言光标输入行的主导Canvas像素颜色。
+- Settings场景切换主题与默认浏览器链接偏好，关闭并重开弹窗后验证持久值，再恢复初始偏好。
 - Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、窗口失焦期间modifier keyup丢失后的Win32输入状态恢复、软换行文本校验和PTY中断恢复。
+- Terminal Links场景从真实Shell输出激活Web与文件链接，验证Browser toolbar外部打开、默认浏览器偏好路由、Browser Tab数量与File Editor行列跳转。
 - 平台差异放入 screenshot、process 和 display adapter，业务步骤保持共享。
 
 ## 本地验收证据
