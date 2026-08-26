@@ -627,6 +627,24 @@ fn browser_engine() -> &'static str {
     "system WebView"
 }
 
+pub fn open_url_in_default_browser(app: &tauri::AppHandle, value: &str) -> Result<String, String> {
+    let url = parse_external_url(value)?;
+    #[cfg(feature = "e2e")]
+    {
+        let _ = app;
+        eprintln!("[CCSM:E2E] open in default browser: {url}");
+    }
+    #[cfg(not(feature = "e2e"))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+
+        app.opener()
+            .open_url(url.as_str(), None::<&str>)
+            .map_err(|error| format!("open URL in default browser failed: {error}"))?;
+    }
+    Ok(url.to_string())
+}
+
 fn parse_browser_url(value: &str) -> Result<tauri::Url, String> {
     let url: tauri::Url = value
         .parse()
@@ -634,6 +652,16 @@ fn parse_browser_url(value: &str) -> Result<tauri::Url, String> {
     match url.scheme() {
         "http" | "https" | "ftp" | "about" => Ok(url),
         scheme => Err(format!("browser URL scheme is not allowed: {scheme}")),
+    }
+}
+
+fn parse_external_url(value: &str) -> Result<tauri::Url, String> {
+    let url: tauri::Url = value
+        .parse()
+        .map_err(|error| format!("invalid external URL: {error}"))?;
+    match url.scheme() {
+        "http" | "https" | "ftp" => Ok(url),
+        scheme => Err(format!("external URL scheme is not allowed: {scheme}")),
     }
 }
 
@@ -657,6 +685,24 @@ mod browser_url_tests {
     fn rejects_untrusted_browser_schemes() {
         assert!(parse_browser_url("javascript:alert(1)").is_err());
         assert!(parse_browser_url("file:///tmp/secret").is_err());
+    }
+
+    #[test]
+    fn accepts_external_browser_schemes() {
+        for value in [
+            "http://example.com",
+            "https://example.com/docs",
+            "ftp://files.example.com/release",
+        ] {
+            assert!(parse_external_url(value).is_ok(), "{value}");
+        }
+    }
+
+    #[test]
+    fn rejects_local_and_embedded_external_browser_schemes() {
+        for value in ["about:blank", "javascript:alert(1)", "file:///tmp/secret"] {
+            assert!(parse_external_url(value).is_err(), "{value}");
+        }
     }
 }
 

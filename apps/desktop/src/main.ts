@@ -1,4 +1,5 @@
 import { CcsmApp } from "./app";
+import { LinkOpeningController } from "./link-opening";
 import "./style.css";
 import { applyDocumentTheme, ThemeController } from "./theme";
 
@@ -10,7 +11,8 @@ const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("missing #app root");
 
 const theme = new ThemeController(window.localStorage, applyDocumentTheme);
-const app = new CcsmApp(root, theme);
+const linkOpening = new LinkOpeningController(window.localStorage);
+const app = new CcsmApp(root, theme, linkOpening);
 
 declare global {
   interface Window {

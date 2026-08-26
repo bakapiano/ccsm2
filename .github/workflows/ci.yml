@@ -34,6 +34,7 @@ on:
           - terminal
           - renderer
           - links
+          - terminal-links
 
 permissions:
   contents: read

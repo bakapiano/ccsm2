@@ -532,6 +532,11 @@ pub fn navigate_browser(
 }
 
 #[tauri::command]
+pub fn open_external_url(app: AppHandle, url: String) -> Result<String, String> {
+    crate::browser::open_url_in_default_browser(&app, &url)
+}
+
+#[tauri::command]
 pub fn reload_browser(
     app: AppHandle,
     surface_id: String,

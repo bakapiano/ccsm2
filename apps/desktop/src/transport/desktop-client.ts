@@ -117,6 +117,7 @@ export interface BrowserSurfaceClient {
   capture(surfaceId: string): Promise<string>;
   focus(surfaceId: string): Promise<void>;
   navigate(surfaceId: string, url: string): Promise<string>;
+  openExternal(url: string): Promise<string>;
   reload(surfaceId: string): Promise<void>;
   close(surfaceId: string): Promise<void>;
   subscribeNewWindow(
@@ -367,6 +368,10 @@ class TauriBrowserSurfaceClient implements BrowserSurfaceClient {
 
   navigate(surfaceId: string, url: string): Promise<string> {
     return invoke("navigate_browser", { surfaceId, url });
+  }
+
+  openExternal(url: string): Promise<string> {
+    return invoke("open_external_url", { url });
   }
 
   reload(surfaceId: string): Promise<void> {

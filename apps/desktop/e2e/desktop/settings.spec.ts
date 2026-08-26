@@ -24,6 +24,12 @@ describe("Application settings", () => {
       expect(await $('[data-settings-action="upgrade"]').isDisplayed()).toBe(
         false,
       );
+      const linkOpening = await $(
+        '[data-settings-action="toggle-default-browser"]',
+      );
+      expect(await linkOpening.getAttribute("role")).toBe("switch");
+      const initialLinkOpening =
+        (await linkOpening.getAttribute("aria-checked")) === "true";
       await evidence.checkpoint("settings-open");
 
       currentStep = "change-theme";
@@ -45,6 +51,16 @@ describe("Application settings", () => {
         ),
       ).toBe("true");
       await evidence.checkpoint(`${nextTheme}-theme`);
+
+      currentStep = "change-link-opening";
+      await linkOpening.click();
+      await browser.waitUntil(
+        async () =>
+          (await linkOpening.getAttribute("aria-checked")) ===
+          String(!initialLinkOpening),
+        { timeoutMsg: "Default browser link setting did not change" },
+      );
+      await evidence.checkpoint("default-browser-links-changed");
 
       currentStep = "check-updates";
       await $('[data-settings-action="check"]').click();
@@ -70,7 +86,20 @@ describe("Application settings", () => {
           "aria-checked",
         ),
       ).toBe("true");
+      const restoredLinkOpening = await $(
+        '[data-settings-action="toggle-default-browser"]',
+      );
+      expect(await restoredLinkOpening.getAttribute("aria-checked")).toBe(
+        String(!initialLinkOpening),
+      );
       await evidence.checkpoint("settings-reopened");
+      await restoredLinkOpening.click();
+      await browser.waitUntil(
+        async () =>
+          (await restoredLinkOpening.getAttribute("aria-checked")) ===
+          String(initialLinkOpening),
+        { timeoutMsg: "Default browser link setting was not restored" },
+      );
       await $('[data-settings-action="close"]').click();
     } catch (error) {
       primaryError = error;

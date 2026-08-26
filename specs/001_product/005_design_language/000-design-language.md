@@ -97,7 +97,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 左侧 232px 区域显示 20px CCSM terminal mark 与品牌名。
 - 主区域显示当前 Space 名称和单行 root path。
 - 主顶栏保留当前Space、Settings入口和窗口控制；New Tab进入Dockview group header。
-- Settings Modal 的 Appearance 区域配置 Light/Dark，Updates 区域显示当前版本、检查结果、下载进度和“升级并重启”。
+- Settings Modal 的 Appearance 区域配置 Light/Dark，Links区域配置Web链接打开位置，Updates 区域显示当前版本、检查结果、下载进度和“升级并重启”。
 - 窗口控制按钮占满 40px 顶栏高度。
 - 关闭按钮 hover 使用系统可识别的红色表面。
 - 侧栏与主工作区从顶栏下沿延伸到窗口底部，全局运行反馈通过可访问状态播报承载。
@@ -139,6 +139,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - Browser toolbar 使用主纸面色与 1px 底边框。
 - 地址栏使用白色表面、等宽字体和 accent focus ring。
+- 工具栏最右侧使用外部打开图标提供Open in default browser操作，并以tooltip和accessible label表达完整名称。
 - native WebView 从工具栏下方开始铺满 panel viewport。
 - Light/Dark 切换同步设置native WebView preferred color scheme；网页通过`prefers-color-scheme`跟随CCSM主题。
 - Modal、New Tab菜单、Tab右键菜单和overflow菜单出现时，Browser viewport保持弹出前一瞬间的静态截图，不闪现空白占位；关闭浮层后恢复live页面。
@@ -177,6 +178,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 顶栏空白区域可拖动窗口，双击可切换最大化；frameless窗口顶边保留独立的native resize命中区。
 - 最小化、最大化和关闭按钮可以通过键盘与指针操作。
 - 右上角Settings按钮打开Modal；Light/Dark可往返切换，关闭Modal及重启后恢复上次选择。
+- Settings中的Links开关在弹窗重开和应用重启后恢复，并实时控制Web链接进入内置Browser Tab或操作系统默认浏览器。
 - Settings中的“检查更新”显示当前版本与检查结果；存在候选版本时提供“升级并重启”。
 - Terminal、Dockview Tab strip、Tab overflow scrollbar 与 Terminal scrollbar 同步切换。
 - Terminal Canvas的computed font family与原版CCSM保持一致，桌面字号为`13px`；Windows实测cell geometry为`7×18px`。

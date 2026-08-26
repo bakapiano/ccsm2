@@ -1167,8 +1167,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.terminal-status,
-.browser-state {
+.terminal-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1177,8 +1176,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.terminal-status::before,
-.browser-state::before {
+.terminal-status::before {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
@@ -2198,6 +2196,75 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   background: var(--accent-soft);
 }
 
+.settings-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 9px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.settings-toggle-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-toggle-copy strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.settings-toggle-copy small {
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.settings-toggle-track {
+  display: flex;
+  align-items: center;
+  width: 30px;
+  height: 16px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-elev);
+  transition:
+    border-color 130ms ease,
+    background 130ms ease;
+}
+
+.settings-toggle-track span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink-muted);
+  transition:
+    transform 130ms ease,
+    background 130ms ease;
+}
+
+.settings-toggle[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settings-toggle[aria-checked="true"] .settings-toggle-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.settings-toggle[aria-checked="true"] .settings-toggle-track span {
+  transform: translateX(14px);
+  background: #fff;
+}
+
 .settings-update-version,
 .settings-update-status,
 .settings-update-source {
@@ -2430,7 +2497,7 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 
 .browser-toolbar {
   display: grid;
-  grid-template-columns: var(--control-height) minmax(100px, 1fr) auto;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
   align-items: center;
   gap: var(--control-gap);
   min-width: 0;
@@ -2444,7 +2511,8 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
   min-width: 0;
 }
 
-.browser-reload {
+.browser-reload,
+.browser-open-external {
   width: var(--control-height);
 }
 
@@ -2490,24 +2558,6 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 .directory-create-form input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.browser-state {
-  max-width: 180px;
-  justify-self: end;
-}
-
-@container (max-width: 470px) {
-  .browser-state {
-    width: 8px;
-    gap: 0;
-    font-size: 0;
-  }
-
-  .browser-state::before {
-    width: 8px;
-    height: 8px;
-  }
 }
 
 .browser-anchor {

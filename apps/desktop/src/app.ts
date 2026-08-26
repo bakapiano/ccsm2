@@ -39,6 +39,7 @@ import {
 import type { ProviderKind } from "./generated/ProviderKind";
 import type { SpaceSnapshotDto } from "./generated/SpaceSnapshotDto";
 import type { TabDto } from "./generated/TabDto";
+import type { LinkOpeningController } from "./link-opening";
 import { NEW_TAB_ACTIONS, type NewTabAction } from "./new-tab-actions";
 import { FrameTaskScheduler } from "./frame-task-scheduler";
 import { SidebarLayoutController } from "./sidebar-layout";
@@ -52,7 +53,10 @@ import { SettingsDialog } from "./settings-dialog";
 import { createTabContextMenuItems } from "./tab-context-menu";
 import { CcsmTabRenderer } from "./tab-header";
 import { closeTabAfterApproval } from "./tab-close";
-import { BrowserTabProvider } from "./tabs/browser-provider";
+import {
+  BrowserTabProvider,
+  canOpenInDefaultBrowser,
+} from "./tabs/browser-provider";
 import { FileEditorTabProvider } from "./tabs/file-editor-provider";
 import { FileExplorerTabProvider } from "./tabs/file-explorer-provider";
 import { GitTabProvider } from "./tabs/git-provider";
@@ -114,6 +118,7 @@ export class CcsmApp {
   constructor(
     private readonly root: HTMLElement,
     private readonly theme: ThemeController,
+    private readonly linkOpening: LinkOpeningController,
   ) {
     bindWindowChrome(root, desktopClient.windowChrome, () => {
       void this.#requestWindowClose();
@@ -167,6 +172,7 @@ export class CcsmApp {
     );
     this.#settingsDialog = new SettingsDialog({
       theme,
+      linkOpening,
       updates: desktopClient.updates,
       currentVersion:
         import.meta.env.VITE_CCSM_VERSION?.trim() || desktopPackage.version,
@@ -830,6 +836,10 @@ export class CcsmApp {
     const snapshot = this.#activeSnapshot;
     if (!snapshot || snapshot.space.id !== request.spaceId) return;
     if (request.target.kind !== "web") return;
+    if (this.linkOpening.openInDefaultBrowser) {
+      await this.#openInDefaultBrowser(request.target.url);
+      return;
+    }
     this.#setGlobalStatus("starting", "opening Browser Tab");
     try {
       const tab = await desktopClient.backend.createBrowserTab({
@@ -1325,6 +1335,10 @@ export class CcsmApp {
     sourceSurfaceId: string,
     url: string,
   ): Promise<void> {
+    if (this.linkOpening.openInDefaultBrowser && canOpenInDefaultBrowser(url)) {
+      await this.#openInDefaultBrowser(url);
+      return;
+    }
     await this.#tabDeletionQueue;
     const snapshot = this.#activeSnapshot;
     if (!snapshot) return;
@@ -1347,6 +1361,19 @@ export class CcsmApp {
       this.#setGlobalStatus(
         "error",
         `open Browser Tab · ${describeError(error)}`,
+      );
+    }
+  }
+
+  async #openInDefaultBrowser(url: string): Promise<void> {
+    this.#setGlobalStatus("starting", "opening default browser");
+    try {
+      await desktopClient.browser.openExternal(url);
+      this.#setGlobalStatus("running", "opened link in default browser");
+    } catch (error) {
+      this.#setGlobalStatus(
+        "error",
+        `open default browser · ${describeError(error)}`,
       );
     }
   }
