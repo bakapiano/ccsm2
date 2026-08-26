@@ -1167,8 +1167,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.terminal-status,
-.browser-state {
+.terminal-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1177,8 +1176,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.terminal-status::before,
-.browser-state::before {
+.terminal-status::before {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
@@ -2499,9 +2497,7 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 
 .browser-toolbar {
   display: grid;
-  grid-template-columns:
-    var(--control-height) minmax(100px, 1fr) auto
-    var(--control-height);
+  grid-template-columns: auto minmax(100px, 1fr) auto;
   align-items: center;
   gap: var(--control-gap);
   min-width: 0;
@@ -2562,24 +2558,6 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 .directory-create-form input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.browser-state {
-  max-width: 180px;
-  justify-self: end;
-}
-
-@container (max-width: 470px) {
-  .browser-state {
-    width: 8px;
-    gap: 0;
-    font-size: 0;
-  }
-
-  .browser-state::before {
-    width: 8px;
-    height: 8px;
-  }
 }
 
 .browser-anchor {

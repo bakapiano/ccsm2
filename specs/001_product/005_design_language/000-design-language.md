@@ -139,7 +139,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 
 - Browser toolbar 使用主纸面色与 1px 底边框。
 - 地址栏使用白色表面、等宽字体和 accent focus ring。
-- 工具栏右侧使用外部打开图标提供Open in default browser操作，并以tooltip和accessible label表达完整名称。
+- 工具栏最右侧使用外部打开图标提供Open in default browser操作，并以tooltip和accessible label表达完整名称。
 - native WebView 从工具栏下方开始铺满 panel viewport。
 - Light/Dark 切换同步设置native WebView preferred color scheme；网页通过`prefers-color-scheme`跟随CCSM主题。
 - Modal、New Tab菜单、Tab右键菜单和overflow菜单出现时，Browser viewport保持弹出前一瞬间的静态截图，不闪现空白占位；关闭浮层后恢复live页面。

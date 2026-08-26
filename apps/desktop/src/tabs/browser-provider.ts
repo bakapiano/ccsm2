@@ -92,7 +92,6 @@ class BrowserPanel implements IContentRenderer {
   #anchor: HTMLElement | null = null;
   #address: HTMLInputElement | null = null;
   #snapshot: HTMLImageElement | null = null;
-  #status: HTMLElement | null = null;
   #resizeObserver: ResizeObserver | null = null;
   #visibilitySubscription: { dispose(): void } | null = null;
   #panelApi: GroupPanelPartInitParameters["api"] | null = null;
@@ -131,6 +130,8 @@ class BrowserPanel implements IContentRenderer {
     this.element.className = "browser-panel";
     this.element.dataset.nativeVisible = "false";
     this.element.dataset.busy = "false";
+    this.element.dataset.browserStatus = "starting";
+    this.element.dataset.browserStatusMessage = "starting";
     this.element.innerHTML = `
       <form class="browser-toolbar panel-toolbar" autocomplete="off">
         <button class="browser-reload control-button control-button-icon" type="button" aria-label="Reload page" title="Reload page">
@@ -142,7 +143,6 @@ class BrowserPanel implements IContentRenderer {
             ${uiIcon("arrow-right")}
           </button>
         </div>
-        <span class="browser-state panel-status" data-state="starting">starting</span>
         <button class="browser-open-external control-button control-button-icon" type="button" aria-label="Open in default browser" title="Open in default browser">
           ${uiIcon("open-external")}
         </button>
@@ -158,7 +158,6 @@ class BrowserPanel implements IContentRenderer {
     this.#anchor = this.element.querySelector(".browser-anchor");
     this.#address = this.element.querySelector(".browser-address");
     this.#snapshot = this.element.querySelector(".browser-snapshot");
-    this.#status = this.element.querySelector(".browser-state");
     if (!this.#anchor || !this.#address)
       throw new Error("browser panel DOM is incomplete");
     this.#address.value = this.#currentUrl;
@@ -170,8 +169,7 @@ class BrowserPanel implements IContentRenderer {
     this.#syncOpenExternalButton();
     if (!this.nativeSurfacesEnabled) {
       this.#address.disabled = true;
-      this.#status!.dataset.state = "ready";
-      this.#status!.textContent = "E2E Browser placeholder";
+      this.#setStatus("ready", "E2E Browser placeholder");
       this.#anchor.textContent = "Native Browser disabled for provider E2E";
       return;
     }
@@ -496,10 +494,8 @@ class BrowserPanel implements IContentRenderer {
   }
 
   #setStatus(state: string, text: string): void {
-    if (!this.#status) return;
-    this.#status.dataset.state = state;
-    this.#status.textContent = text;
-    this.#status.title = text;
+    this.element.dataset.browserStatus = state;
+    this.element.dataset.browserStatusMessage = text;
   }
 
   #persistState(): Promise<void> {

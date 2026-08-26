@@ -115,9 +115,11 @@ describe("native Browser snapshot placeholder", () => {
 
     renderer.init({ api: {} } as never);
 
-    expect(renderer.element.querySelector(".browser-state")?.textContent).toBe(
+    expect(renderer.element.dataset.browserStatus).toBe("ready");
+    expect(renderer.element.dataset.browserStatusMessage).toBe(
       "E2E Browser placeholder",
     );
+    expect(renderer.element.querySelector(".browser-state")).toBeNull();
     expect(renderer.element.textContent).toContain(
       "Native Browser disabled for provider E2E",
     );
@@ -155,7 +157,7 @@ describe("native Browser snapshot placeholder", () => {
     await Promise.resolve();
 
     expect(openExternal).toHaveBeenCalledWith("https://example.com/docs");
-    expect(renderer.element.querySelector(".browser-state")?.textContent).toBe(
+    expect(renderer.element.dataset.browserStatusMessage).toBe(
       "opened in default browser",
     );
     provider.destroy();

@@ -348,7 +348,7 @@ describe("Terminal links", () => {
       await externalButton.click();
       await browser.waitUntil(
         async () =>
-          (await browserPanel.$(".browser-state").getText()) ===
+          (await browserPanel.getAttribute("data-browser-status-message")) ===
           "opened in default browser",
         {
           timeout: 10_000,
