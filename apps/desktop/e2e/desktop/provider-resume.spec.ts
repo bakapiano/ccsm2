@@ -204,11 +204,22 @@ describe("real provider CLI with stubbed model API", () => {
             `/btw ${sidePrompt}`,
             sidePrompt,
           );
-          const sideChat = await waitForProvider(provider, (snapshot) =>
-            snapshot.text.includes(sideResponseMarker),
+          const sideChat = await waitForProvider(
+            provider,
+            (snapshot) =>
+              snapshot.text.includes(sideResponseMarker) &&
+              snapshot.text.includes("ctrl + / to switch"),
           );
           expect(sideChat.nativeSessionId).toBe(nativeSessionId);
-          await browser.keys(["Control", "c"]);
+          if (process.platform === "win32") {
+            expect(sideChat.win32InputMode).toBe(true);
+          }
+          await pressControlSlash(provider);
+          await waitForProvider(
+            provider,
+            (snapshot) => snapshot.text.includes("ctrl + / for side"),
+            15_000,
+          );
           await waitForStablePrompt(provider, firstRuntimeId);
           await evidence.checkpoint("ephemeral-side-chat-returned");
         }
@@ -1116,6 +1127,47 @@ async function pressModifiedEnter(
     .up(webdriverKey.Enter)
     .up(webdriverKey[modifier])
     .perform();
+}
+
+async function pressControlSlash(provider: Provider): Promise<void> {
+  const panel = await terminalPanel(provider);
+  const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
+  await terminalInput.waitForExist({ timeout: 20_000 });
+  await terminalInput.click();
+  await browser.execute((requestedProvider) => {
+    const panel = [
+      ...document.querySelectorAll<HTMLElement>(".terminal-panel"),
+    ].find((element) => element.dataset.provider === requestedProvider);
+    const input = panel?.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Terminal input"]',
+    );
+    if (!input)
+      throw new Error(`${requestedProvider} terminal input is unavailable`);
+
+    // Reproduce Chromium's physical slash event identity so this scenario
+    // covers CCSM's Win32 key-record translation.
+    const dispatch = (
+      type: "keydown" | "keyup",
+      init: KeyboardEventInit,
+    ): void => {
+      input.dispatchEvent(
+        new KeyboardEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          ...init,
+        }),
+      );
+    };
+    dispatch("keydown", {
+      code: "ControlLeft",
+      ctrlKey: true,
+      key: "Control",
+    });
+    dispatch("keydown", { code: "Slash", ctrlKey: true, key: "/" });
+    dispatch("keyup", { code: "Slash", ctrlKey: true, key: "/" });
+    dispatch("keyup", { code: "ControlLeft", key: "Control" });
+  }, provider);
 }
 
 async function waitForModelRequest(
