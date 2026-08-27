@@ -415,7 +415,7 @@ function win32UnicodeChar(event: KeyboardEvent, keyDown: boolean): number {
       BracketRight: 0x1d,
       Digit6: 0x1e,
       Minus: 0x1f,
-      Slash: 0x7f,
+      Slash: event.shiftKey ? 0x7f : 0x1f,
     };
     if (controlCharacters[event.code] !== undefined)
       return controlCharacters[event.code];

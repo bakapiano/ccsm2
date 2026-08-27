@@ -193,6 +193,30 @@ describe("WindowsConptyInputCompatibility", () => {
     ).toBe("\x1b[231;0;165;1;8;1_");
   });
 
+  test("distinguishes Ctrl+Slash from Ctrl+QuestionMark", () => {
+    const compatibility = activeCompatibility();
+
+    expect(
+      compatibility.encodeKeyDown(
+        keyEvent("Slash", "/", { ctrlKey: true, keyCode: 0xbf }),
+      ),
+    ).toBe("\x1b[191;53;31;1;8;1_");
+    expect(
+      compatibility.encodeKeyUp(
+        keyEvent("Slash", "/", { ctrlKey: true, keyCode: 0xbf }),
+      ),
+    ).toBe("\x1b[191;53;31;0;8;1_");
+    expect(
+      compatibility.encodeKeyDown(
+        keyEvent("Slash", "?", {
+          ctrlKey: true,
+          keyCode: 0xbf,
+          shiftKey: true,
+        }),
+      ),
+    ).toBe("\x1b[191;53;127;1;24;1_");
+  });
+
   test("encodes target-key releases and tracks modifier releases locally", () => {
     const compatibility = activeCompatibility();
     compatibility.encodeKeyDown(

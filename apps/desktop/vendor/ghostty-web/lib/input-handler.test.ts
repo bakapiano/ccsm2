@@ -608,6 +608,22 @@ describe('InputHandler', () => {
       expect(dataReceived[0].charCodeAt(0)).toBe(0x1a);
     });
 
+    test('distinguishes Ctrl+Slash from Ctrl+QuestionMark', () => {
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {
+          bellCalled = true;
+        }
+      );
+
+      simulateKey(container, createKeyEvent('Slash', '/', { ctrl: true }));
+      simulateKey(container, createKeyEvent('Slash', '?', { ctrl: true, shift: true }));
+
+      expect(dataReceived.map((data) => data.charCodeAt(0))).toEqual([0x1f, 0x7f]);
+    });
+
     test('Cmd+C allows copy (no data sent)', () => {
       const handler = new InputHandler(
         ghostty,
