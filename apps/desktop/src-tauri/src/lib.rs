@@ -329,11 +329,10 @@ mod tests {
 
     #[test]
     fn debug_data_directory_is_adjacent_to_the_executable() {
+        let debug_directory = PathBuf::from("workspace").join("target").join("debug");
         assert_eq!(
-            debug_data_dir(std::path::Path::new(
-                r"D:\workspace\target\debug\ccsm-desktop.exe"
-            )),
-            Some(PathBuf::from(r"D:\workspace\target\debug\ccsm-debug-data"))
+            debug_data_dir(&debug_directory.join("ccsm-desktop")),
+            Some(debug_directory.join("ccsm-debug-data"))
         );
     }
 }
