@@ -127,7 +127,7 @@ describe("Agents sidebar", () => {
       "now",
     );
     expect(root.querySelector(".agent-item-metadata")?.textContent).toBe(
-      "idlenow",
+      "idle·now",
     );
     view.dispose();
   });

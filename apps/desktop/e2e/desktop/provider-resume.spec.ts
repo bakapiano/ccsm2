@@ -1386,22 +1386,30 @@ async function waitForAgentMetadata(
           );
           const status =
             metadata?.querySelector<HTMLElement>(".agent-item-status");
+          const separator = metadata?.querySelector<HTMLElement>(
+            ".agent-item-metadata-separator",
+          );
           const activeTime = metadata?.querySelector<HTMLTimeElement>(
             ".agent-item-active-time",
           );
           const statusRect = status?.getBoundingClientRect();
+          const separatorRect = separator?.getBoundingClientRect();
           const activeTimeRect = activeTime?.getBoundingClientRect();
           return Boolean(
             row?.dataset.displayTitle &&
               row.dataset.displayTitle !== prompt &&
               Number(row.dataset.lastActiveAt) > 0 &&
               status?.textContent?.trim() &&
+              separator?.textContent === "·" &&
               activeTime?.textContent?.trim() &&
               activeTime.dateTime &&
               statusRect &&
+              separatorRect &&
               activeTimeRect &&
-              Math.abs(statusRect.top - activeTimeRect.top) < 2 &&
-              activeTimeRect.left >= statusRect.right,
+              Math.abs(statusRect.top - separatorRect.top) < 2 &&
+              Math.abs(separatorRect.top - activeTimeRect.top) < 2 &&
+              separatorRect.left >= statusRect.right &&
+              activeTimeRect.left >= separatorRect.right,
           );
         },
         cliSessionId,

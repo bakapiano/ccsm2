@@ -173,13 +173,17 @@ export class AgentListView {
     status.className = "agent-item-status";
     status.textContent = agent.activity;
     status.dataset.activity = agent.activity;
+    const separator = document.createElement("span");
+    separator.className = "agent-item-metadata-separator";
+    separator.textContent = "·";
+    separator.setAttribute("aria-hidden", "true");
     const activeTime = document.createElement("time");
     activeTime.className = "agent-item-active-time";
     activeTime.dateTime = lastActiveDate.toISOString();
     activeTime.dataset.lastActiveAt = String(agent.lastActiveAt);
     activeTime.title = `Last active ${exactLastActive}`;
     activeTime.textContent = lastActive;
-    metadata.append(status, activeTime);
+    metadata.append(status, separator, activeTime);
     button.append(icon, labels, metadata);
     button.addEventListener("click", () => void this.actions.focusAgent(agent));
     return button;
