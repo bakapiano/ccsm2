@@ -12,7 +12,7 @@ pub use filesystem::{
     HostDirectoryEntry, HostDirectoryListing, HostDirectoryStart, LocalFileSystemBackend,
 };
 pub use git::CommandGitBackend;
-pub use hook::{HookReportSink, LocalHookEndpoint, run_hook_reporter};
+pub use hook::{HookReportSink, LocalHookEndpoint, resolve_hook_display_title, run_hook_reporter};
 pub use pty::{PortablePtyBackend, cleanup_stale_runtime_shim_roots};
 pub use shim::{provider_from_environment, provider_from_executable, run_cli_shim};
 pub use store::SqliteStateStore;

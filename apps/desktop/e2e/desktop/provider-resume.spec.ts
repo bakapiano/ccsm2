@@ -194,6 +194,7 @@ describe("real provider CLI with stubbed model API", () => {
         });
         const nativeSessionId = firstTurn.nativeSessionId!;
         await waitForAgentActivity(firstTurn.cliSessionId!, "idle");
+        await waitForAgentMetadata(firstTurn.cliSessionId!, firstPrompt);
         await evidence.checkpoint("first-model-response");
 
         if (provider === "codex") {
@@ -243,6 +244,7 @@ describe("real provider CLI with stubbed model API", () => {
           });
           expect(followUpTurn.runtimeId).toBe(firstRuntimeId);
           await waitForAgentActivity(followUpTurn.cliSessionId!, "idle");
+          await waitForAgentMetadata(followUpTurn.cliSessionId!, secondPrompt);
           assertModelResponses(provider, [
             [firstPrompt, firstResponse],
             [secondPrompt, secondResponse],
@@ -280,6 +282,7 @@ describe("real provider CLI with stubbed model API", () => {
           expect(resumed.text).toContain(firstResponseMarker);
           await waitForStablePrompt(provider, resumed.runtimeId!);
           await waitForAgentActivity(resumed.cliSessionId!, "idle");
+          await waitForAgentMetadata(resumed.cliSessionId!, firstPrompt);
           await evidence.checkpoint("cli-resumed");
 
           currentStep = "resumed-prompt";
@@ -300,6 +303,7 @@ describe("real provider CLI with stubbed model API", () => {
           });
           expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
           await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
+          await waitForAgentMetadata(secondTurn.cliSessionId!, secondPrompt);
           assertModelResponses(provider, [
             [firstPrompt, firstResponse],
             [secondPrompt, secondResponse],
@@ -336,6 +340,7 @@ describe("real provider CLI with stubbed model API", () => {
             expect(forkSessionId).not.toBe(nativeSessionId);
             await waitForStablePrompt(provider, resumed.runtimeId!);
             await waitForAgentActivity(forked.cliSessionId!, "idle");
+            await waitForAgentMetadata(forked.cliSessionId!, forkPrompt);
             await evidence.checkpoint("persistent-fork-bound");
 
             currentStep = "clear-session";
@@ -360,6 +365,7 @@ describe("real provider CLI with stubbed model API", () => {
                 ),
             );
             expect(cleared.nativeSessionId).not.toBe(forkSessionId);
+            await waitForAgentMetadata(cleared.cliSessionId!, clearPrompt);
             await evidence.checkpoint("clear-session-bound");
           }
 
@@ -1360,6 +1366,38 @@ async function waitForAgentActivity(
       timeout: 30_000,
       interval: 200,
       timeoutMsg: `CLI session ${cliSessionId} did not become ${activity}`,
+    },
+  );
+}
+
+async function waitForAgentMetadata(
+  cliSessionId: string,
+  expectedTitle: string,
+): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (sessionId, title) => {
+          const row = document.querySelector<HTMLElement>(
+            `.agent-item[data-cli-session-id="${CSS.escape(sessionId)}"]`,
+          );
+          const activeTime = row?.querySelector<HTMLTimeElement>(
+            ".agent-item-active-time",
+          );
+          return Boolean(
+            row?.dataset.displayTitle === title &&
+              Number(row.dataset.lastActiveAt) > 0 &&
+              activeTime?.textContent?.trim() &&
+              activeTime.dateTime,
+          );
+        },
+        cliSessionId,
+        expectedTitle,
+      ),
+    {
+      timeout: 30_000,
+      interval: 200,
+      timeoutMsg: `CLI session ${cliSessionId} did not show title ${expectedTitle} and last-active time`,
     },
   );
 }

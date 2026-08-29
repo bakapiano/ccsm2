@@ -20,7 +20,7 @@ Space ID
 CliSession {
   id, space_id, provider, cwd, git_repository_id?, launch_spec,
   native_session_id?, native_binding_state, desired_state,
-  last_exit_summary?,
+  display_title?, last_exit_summary?,
   created_at, last_active_at
 }
 

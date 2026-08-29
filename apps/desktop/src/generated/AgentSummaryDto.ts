@@ -2,4 +2,4 @@
 import type { AgentActivity } from "./AgentActivity";
 import type { ProviderKind } from "./ProviderKind";
 
-export type AgentSummaryDto = { cliSessionId: string, spaceId: string, spaceName: string, tabId: string, tabTitle: string, provider: ProviderKind, activity: AgentActivity, runtimeId: string | null, };
+export type AgentSummaryDto = { cliSessionId: string, spaceId: string, spaceName: string, tabId: string, tabTitle: string, displayTitle: string, provider: ProviderKind, activity: AgentActivity, runtimeId: string | null, lastActiveAt: number, };

@@ -94,7 +94,9 @@ CCSM_HOOK_PIPE
 CCSM_HOOK_TOKEN
 ```
 
-HookEndpoint读取并反序列化报告后立即写入进程内无界队列。独立消费者按接收顺序调用AppBackend完成token、provider、session、runtime ID和payload ID校验与状态更新。Hook命令完成endpoint写入后立即返回空JSON响应。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
+HookEndpoint读取并反序列化报告后立即写入进程内无界队列。独立消费者按接收顺序调用AppBackend完成token、provider、session、runtime ID和payload ID校验，再通过platform resolver解析Provider Session metadata并提交状态更新。Hook命令完成endpoint写入后立即返回空JSON响应。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
+
+Hook reporter从`session_title/sessionTitle`和`prompt/initial_prompt`生成标题候选。消费者对认证Hook给出的Claude/Codex精确`transcript_path`执行有界JSONL读取，优先提取显式标题、Provider摘要和最近用户prompt；Codex同时按native Session ID读取相邻`session_index.jsonl`中的thread name。标题归一化后最多保存96个字符。GitHub Copilot使用Hook prompt候选。`cli_sessions.display_title`保存最近确认的标题，`last_active_at`以Unix毫秒记录每次有效Hook或runtime生命周期活动。
 
 Hook reporter同时归一化provider的会话谱系字段：Codex使用`forked_from_id/forkedFromId + ephemeral`，Claude使用`parent_session_id/parentSessionId + is_sidechain/isSidechain`，Copilot接受相同snake_case/camelCase组合。带父身份的ephemeral Hook更新runtime activity，并让`CliSession.native_session_id`保持当前可恢复父会话。
 
@@ -113,15 +115,15 @@ Copilot permission/elicitation notification → blocked
 PreToolUse         → working
 Stop               → idle，关闭turn
 StopFailure        → idle，关闭turn（Claude）
-SessionEnd         → stopped
+SessionEnd         → 保持当前activity、turn、binding和last-active状态
 ```
 
-关闭turn后到达的`PreToolUse`和`PermissionRequest`保持当前状态，下一次`UserPromptSubmit`开启新turn。PTY exit始终发布`stopped`。activity通过`agent.activityChanged`进入DesktopEventStream，并由`list_agents` snapshot完成启动和重连恢复。activity、turn和runtime ID保持在内存中。
+关闭turn后到达的`PreToolUse`和`PermissionRequest`保持当前状态，下一次`UserPromptSubmit`开启新turn。PTY exit始终发布`stopped`。有效Hook更新`last_active_at`并发布包含当前activity、display title和活跃时间的`agent.activityChanged`；同状态事件同样发布。`list_agents` snapshot完成启动和重连恢复。activity、turn和runtime ID保持在内存中。
 
 Codex与Copilot TUI在空提示符阶段尚未创建native session，首次prompt前不会发送`SessionStart`。因此两者成功spawn后仅将activity置为`idle`；native Session ID仍只接受后续认证HookReport。Claude由启动期`SessionStart`完成`starting → idle`。
 
 `CCSM_HOOK_TOKEN`按runtime随机生成，由RuntimeManager保存在内存中，通过子进程环境传递，并在runtime结束时失效。Token不写入`data.db`或logs。
 
-Hook尚未到达时显示`binding pending`，CLI和PTY继续运行。Runtime结束仍未绑定时进入`resume unavailable`；下一次恢复显示degraded并提供Start New/Replace。CCSM不扫描provider配置、transcript或mtime执行身份猜测。
+Hook尚未到达时显示`binding pending`，CLI和PTY继续运行。Runtime结束仍未绑定时进入`resume unavailable`；下一次恢复显示degraded并提供Start New/Replace。CCSM使用认证Hook完成身份绑定；Session metadata读取目标限定为该Hook给出的精确路径和native Session ID。
 
 当前 Windows-first 项是 `.exe/.cmd` 解析与 quoting；macOS/Linux 在宣称支持前必须用真实 npm/native CLI 安装分别验证 shim、resume 和 Hook stdin。

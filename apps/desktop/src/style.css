@@ -993,6 +993,19 @@ button:disabled {
   font-size: 10px;
 }
 
+.agent-item-metadata {
+  display: grid;
+  justify-items: end;
+  min-width: 48px;
+  line-height: 1.2;
+}
+
+.agent-item-active-time {
+  color: var(--ink-faint);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
 .agent-item-status::before {
   width: 7px;
   height: 7px;

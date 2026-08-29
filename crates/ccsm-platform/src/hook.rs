@@ -1,5 +1,7 @@
 use std::{
-    io::{Read, Write},
+    fs::File,
+    io::{Read, Seek, SeekFrom, Write},
+    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -17,6 +19,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 const MAX_HOOK_MESSAGE_BYTES: u64 = 1024 * 1024;
+const MAX_TRANSCRIPT_METADATA_BYTES: u64 = 512 * 1024;
+const MAX_AGENT_TITLE_CHARACTERS: usize = 96;
 const CONNECT_RETRIES: usize = 40;
 
 pub type HookReportSink = Arc<dyn Fn(HookReport) + Send + Sync + 'static>;
@@ -157,6 +161,7 @@ fn collect_hook_report() -> BackendResult<HookReport> {
         source: identity.source,
         parent_native_session_id: identity.parent_native_session_id,
         ephemeral: identity.ephemeral,
+        display_title: hook_display_title(&payload),
     })
 }
 
@@ -210,6 +215,31 @@ fn payload_bool(payload: &Value, keys: &[&str]) -> Option<bool> {
         .find_map(|key| payload.get(*key).and_then(Value::as_bool))
 }
 
+fn hook_display_title(payload: &Value) -> Option<String> {
+    payload_string(payload, &["session_title", "sessionTitle"])
+        .or_else(|| payload_string(payload, &["prompt", "initial_prompt", "initialPrompt"]))
+        .and_then(|title| normalize_agent_title(&title))
+}
+
+fn normalize_agent_title(title: &str) -> Option<String> {
+    let normalized = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty()
+        || normalized.starts_with("<environment_context>")
+        || normalized.starts_with("<permissions instructions>")
+    {
+        return None;
+    }
+    Some(if normalized.chars().count() > MAX_AGENT_TITLE_CHARACTERS {
+        let shortened = normalized
+            .chars()
+            .take(MAX_AGENT_TITLE_CHARACTERS - 3)
+            .collect::<String>();
+        format!("{shortened}...")
+    } else {
+        normalized
+    })
+}
+
 fn required_env(name: &str) -> BackendResult<String> {
     std::env::var(name)
         .ok()
@@ -241,6 +271,130 @@ fn consume_hook_reports(queue: mpsc::Receiver<HookReport>, sink: HookReportSink)
     for report in queue {
         sink(report);
     }
+}
+
+pub fn resolve_hook_display_title(report: &HookReport) -> Option<String> {
+    if !matches!(report.provider, ProviderKind::Claude | ProviderKind::Codex) {
+        return None;
+    }
+    let path = Path::new(report.transcript_path.as_deref()?);
+    let file_name = path.file_name()?.to_string_lossy();
+    if !file_name
+        .to_ascii_lowercase()
+        .contains(&report.native_session_id.to_ascii_lowercase())
+    {
+        return None;
+    }
+    if report.provider == ProviderKind::Codex
+        && let Some(title) = codex_thread_name(path, &report.native_session_id)
+    {
+        return Some(title);
+    }
+    let chunks = read_bounded_jsonl_chunks(path).ok()?;
+    transcript_title_from_chunks(report.provider, &chunks)
+}
+
+fn codex_thread_name(transcript_path: &Path, native_session_id: &str) -> Option<String> {
+    let index_path = transcript_path
+        .ancestors()
+        .take(8)
+        .map(|ancestor| ancestor.join("session_index.jsonl"))
+        .find(|candidate| candidate.is_file())?;
+    let chunks = read_bounded_jsonl_chunks(&index_path).ok()?;
+    chunks
+        .iter()
+        .flat_map(|chunk| chunk.lines())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|value| payload_string(value, &["id"]).as_deref() == Some(native_session_id))
+        .filter_map(|value| payload_string(&value, &["thread_name", "threadName"]))
+        .filter_map(|title| normalize_agent_title(&title))
+        .next_back()
+}
+
+fn transcript_title_from_chunks(provider: ProviderKind, chunks: &[String]) -> Option<String> {
+    let values = chunks
+        .iter()
+        .flat_map(|chunk| chunk.lines())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect::<Vec<_>>();
+    let mut explicit_title = None;
+    let mut summary = None;
+    let mut latest_prompt = None;
+    for value in &values {
+        let kind = payload_string(value, &["type"]);
+        if provider == ProviderKind::Claude {
+            if matches!(kind.as_deref(), Some("custom-title" | "custom_title")) {
+                explicit_title = payload_string(value, &["customTitle", "custom_title", "title"])
+                    .and_then(|title| normalize_agent_title(&title));
+            }
+            if kind.as_deref() == Some("summary") {
+                summary = payload_string(value, &["summary", "title"])
+                    .and_then(|title| normalize_agent_title(&title));
+            }
+        }
+        if let Some(prompt) = transcript_user_prompt(provider, value) {
+            latest_prompt = normalize_agent_title(&prompt);
+        }
+    }
+    explicit_title.or(summary).or(latest_prompt)
+}
+
+fn transcript_user_prompt(provider: ProviderKind, value: &Value) -> Option<String> {
+    let payload = value.get("payload").unwrap_or(value);
+    let message = payload.get("message").unwrap_or(payload);
+    if message.get("role").and_then(Value::as_str) != Some("user") {
+        return None;
+    }
+    if provider == ProviderKind::Claude && value.get("type").and_then(Value::as_str) != Some("user")
+    {
+        return None;
+    }
+    message_content_text(message.get("content")?)
+}
+
+fn message_content_text(content: &Value) -> Option<String> {
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+    let text = content
+        .as_array()?
+        .iter()
+        .filter(|part| {
+            matches!(
+                part.get("type").and_then(Value::as_str),
+                Some("text" | "input_text")
+            )
+        })
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!text.is_empty()).then_some(text)
+}
+
+fn read_bounded_jsonl_chunks(path: &Path) -> std::io::Result<Vec<String>> {
+    let mut file = File::open(path)?;
+    let length = file.metadata()?.len();
+    let half = MAX_TRANSCRIPT_METADATA_BYTES / 2;
+    let prefix_length = length.min(half);
+    let mut prefix = Vec::with_capacity(prefix_length as usize);
+    Read::by_ref(&mut file)
+        .take(prefix_length)
+        .read_to_end(&mut prefix)?;
+    let mut chunks = vec![String::from_utf8_lossy(&prefix).into_owned()];
+    if length > MAX_TRANSCRIPT_METADATA_BYTES {
+        file.seek(SeekFrom::Start(length - half))?;
+        let mut suffix = Vec::with_capacity(half as usize);
+        Read::by_ref(&mut file)
+            .take(half)
+            .read_to_end(&mut suffix)?;
+        let suffix = String::from_utf8_lossy(&suffix);
+        let complete_lines = suffix
+            .find('\n')
+            .map(|newline| &suffix[newline + 1..])
+            .unwrap_or_default();
+        chunks.push(complete_lines.to_string());
+    }
+    Ok(chunks)
 }
 
 #[cfg(windows)]
@@ -516,6 +670,104 @@ mod tests {
     }
 
     #[test]
+    fn hook_title_prefers_native_session_title_and_normalizes_prompt_fallback() {
+        assert_eq!(
+            hook_display_title(&serde_json::json!({
+                "session_title": "  Fix   authentication  ",
+                "prompt": "fallback prompt"
+            }))
+            .as_deref(),
+            Some("Fix authentication")
+        );
+        assert_eq!(
+            hook_display_title(&serde_json::json!({
+                "prompt": "Investigate\nrenderer latency"
+            }))
+            .as_deref(),
+            Some("Investigate renderer latency")
+        );
+    }
+
+    #[test]
+    fn claude_transcript_prefers_custom_title_over_summary_and_prompt() {
+        let directory = tempfile::tempdir().unwrap();
+        let native_session_id = "11111111-1111-1111-1111-111111111111";
+        let transcript = directory.path().join(format!("{native_session_id}.jsonl"));
+        std::fs::write(
+            &transcript,
+            concat!(
+                r#"{"type":"user","message":{"role":"user","content":"first prompt"}}"#,
+                "\n",
+                r#"{"type":"summary","summary":"Generated session summary"}"#,
+                "\n",
+                r#"{"type":"custom-title","customTitle":"Fix auth flow"}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let report = HookReport {
+            provider: ProviderKind::Claude,
+            cli_session_id: "cli-session".into(),
+            runtime_id: "runtime".into(),
+            token: "token".into(),
+            native_session_id: native_session_id.into(),
+            hook_event_name: "SessionStart".into(),
+            transcript_path: Some(transcript.to_string_lossy().into_owned()),
+            source: Some("resume".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
+            display_title: None,
+        };
+
+        assert_eq!(
+            resolve_hook_display_title(&report).as_deref(),
+            Some("Fix auth flow")
+        );
+    }
+
+    #[test]
+    fn codex_transcript_uses_the_authenticated_thread_name_index() {
+        let directory = tempfile::tempdir().unwrap();
+        let native_session_id = "22222222-2222-2222-2222-222222222222";
+        let sessions = directory.path().join("sessions").join("2026").join("08");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let transcript = sessions.join(format!("rollout-{native_session_id}.jsonl"));
+        std::fs::write(
+            &transcript,
+            concat!(
+                r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fallback prompt"}]}}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("session_index.jsonl"),
+            format!(
+                "{{\"id\":\"{native_session_id}\",\"thread_name\":\"Renderer recovery\",\"updated_at\":\"2026-08-29T00:00:00Z\"}}\n"
+            ),
+        )
+        .unwrap();
+        let report = HookReport {
+            provider: ProviderKind::Codex,
+            cli_session_id: "cli-session".into(),
+            runtime_id: "runtime".into(),
+            token: "token".into(),
+            native_session_id: native_session_id.into(),
+            hook_event_name: "SessionStart".into(),
+            transcript_path: Some(transcript.to_string_lossy().into_owned()),
+            source: Some("resume".into()),
+            parent_native_session_id: None,
+            ephemeral: false,
+            display_title: None,
+        };
+
+        assert_eq!(
+            resolve_hook_display_title(&report).as_deref(),
+            Some("Renderer recovery")
+        );
+    }
+
+    #[test]
     fn strict_reporter_propagates_delivery_failures() {
         assert_eq!(hook_reporter_exit_code(true, true), 1);
         assert_eq!(hook_reporter_exit_code(false, true), 0);
@@ -540,6 +792,7 @@ mod tests {
             source: Some("startup".into()),
             parent_native_session_id: None,
             ephemeral: false,
+            display_title: None,
         };
         write_endpoint(
             endpoint.address(),
@@ -585,6 +838,7 @@ mod tests {
             source: Some("startup".into()),
             parent_native_session_id: None,
             ephemeral: false,
+            display_title: None,
         };
 
         write_endpoint(
@@ -673,6 +927,7 @@ mod tests {
             source: Some("startup".into()),
             parent_native_session_id: None,
             ephemeral: false,
+            display_title: None,
         };
         let payload = serde_json::to_vec(&report).expect("serialize report");
         let client_address = address.clone();

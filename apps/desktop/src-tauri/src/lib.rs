@@ -17,7 +17,7 @@ use browser::BrowserSurfaceManager;
 use ccsm_core::{AppBackend, AppEventSink, HookTransportDescriptor};
 use ccsm_platform::{
     CommandGitBackend, HookReportSink, LocalFileSystemBackend, LocalHookEndpoint,
-    NotifyFileWatchBackend, PortablePtyBackend, SqliteStateStore,
+    NotifyFileWatchBackend, PortablePtyBackend, SqliteStateStore, resolve_hook_display_title,
 };
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -147,6 +147,9 @@ pub fn run() {
             });
             let backend =
                 AppBackend::new(store, pty, filesystem.clone(), git, file_watch, event_sink);
+            backend
+                .configure_session_title_resolver(Arc::new(resolve_hook_display_title))
+                .map_err(|error| error.to_string())?;
             let hook_backend = Arc::clone(&backend);
             let hook_sink: HookReportSink = Arc::new(move |report| {
                 if let Err(error) = hook_backend.report_hook(report) {

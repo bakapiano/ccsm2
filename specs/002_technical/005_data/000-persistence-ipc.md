@@ -42,7 +42,7 @@ git_status_cache
 - `settings`保存全局`last_active_space_id`和单窗口`window_state`，包括bounds、maximized和fullscreen。
 - `tabs` 对 `kind='cli-session'` 建立 active `resource_id` partial unique index；对 `kind='git'` 建立 active `space_id` partial unique index。
 - Browser Tab state保存`last_url/title/zoom`；global profile数据保存在filesystem store。
-- `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`和最后一次退出摘要。
+- `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`、Provider Session标题、毫秒级`last_active_at`和最后一次退出摘要。
 - `cli_sessions`对`{provider, native_session_id}`建立non-null partial unique index，确保一个原生身份映射到一个未删除的CLI Session。
 - Terminal runtime、runtime ID、PID、PTY handle、actual state和per-native-session resume mutex保存在AppBackend内存中。
 - TabRecord mutation和引用它的space_layout row在同一transaction提交。

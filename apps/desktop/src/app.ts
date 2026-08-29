@@ -326,6 +326,7 @@ export class CcsmApp {
       })
       .then((unlisten) => (this.#windowCloseUnlisten = unlisten));
     window.addEventListener("beforeunload", () => {
+      this.#agentList.dispose();
       this.#dockviewPopoverObserver?.disconnect();
       this.#eventUnlisten?.();
       this.#eventUnlisten = null;

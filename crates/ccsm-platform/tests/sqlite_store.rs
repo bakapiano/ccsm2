@@ -469,6 +469,75 @@ fn agents_list_resolves_every_cli_session_to_its_space_and_tab() {
 }
 
 #[test]
+fn agent_activity_metadata_persists_title_and_last_active_time() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("data.db");
+    let store = SqliteStateStore::open(&database).unwrap();
+    let state = store.bootstrap(directory.path()).unwrap();
+    let codex = store
+        .create_cli_tab(CreateCliTabRequest {
+            space_id: state.active_space_id,
+            provider: ProviderKind::Codex,
+        })
+        .unwrap();
+    let initial = store
+        .list_agents()
+        .unwrap()
+        .into_iter()
+        .find(|agent| agent.cli_session_id == codex.cli_session.id)
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+
+    let metadata = store
+        .record_session_activity(&codex.cli_session.id, Some("Fix renderer latency"))
+        .unwrap();
+
+    assert_eq!(metadata.display_title, "Fix renderer latency");
+    assert!(metadata.last_active_at > initial.last_active_at);
+    drop(store);
+    let reopened = SqliteStateStore::open(&database).unwrap();
+    let persisted = reopened
+        .list_agents()
+        .unwrap()
+        .into_iter()
+        .find(|agent| agent.cli_session_id == codex.cli_session.id)
+        .unwrap();
+    assert_eq!(persisted.display_title, "Fix renderer latency");
+    assert_eq!(persisted.last_active_at, metadata.last_active_at);
+}
+
+#[test]
+fn data_db_open_adds_agent_activity_columns_to_existing_sessions() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("data.db");
+    {
+        let store = SqliteStateStore::open(&database).unwrap();
+        store.bootstrap(directory.path()).unwrap();
+    }
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute("ALTER TABLE cli_sessions DROP COLUMN display_title", [])
+        .unwrap();
+    connection
+        .execute("ALTER TABLE cli_sessions DROP COLUMN last_active_at", [])
+        .unwrap();
+    drop(connection);
+
+    let reopened = SqliteStateStore::open(&database).unwrap();
+    let columns = rusqlite::Connection::open(&database)
+        .unwrap()
+        .prepare("PRAGMA table_info(cli_sessions)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(columns.iter().any(|column| column == "display_title"));
+    assert!(columns.iter().any(|column| column == "last_active_at"));
+    assert!(reopened.list_agents().unwrap().is_empty());
+}
+
+#[test]
 fn browser_popup_tab_is_committed_with_its_url() {
     let directory = tempfile::tempdir().unwrap();
     let store = SqliteStateStore::open(&directory.path().join("data.db")).unwrap();
