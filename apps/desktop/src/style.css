@@ -1003,7 +1003,7 @@ button:disabled {
 }
 
 .agent-item-active-time {
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   font-size: 10px;
   white-space: nowrap;
 }
