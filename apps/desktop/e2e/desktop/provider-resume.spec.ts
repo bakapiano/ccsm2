@@ -1372,32 +1372,45 @@ async function waitForAgentActivity(
 
 async function waitForAgentMetadata(
   cliSessionId: string,
-  expectedTitle: string,
+  userPrompt: string,
 ): Promise<void> {
   await browser.waitUntil(
     () =>
       browser.execute(
-        (sessionId, title) => {
+        (sessionId, prompt) => {
           const row = document.querySelector<HTMLElement>(
             `.agent-item[data-cli-session-id="${CSS.escape(sessionId)}"]`,
           );
-          const activeTime = row?.querySelector<HTMLTimeElement>(
+          const metadata = row?.querySelector<HTMLElement>(
+            ".agent-item-metadata",
+          );
+          const status =
+            metadata?.querySelector<HTMLElement>(".agent-item-status");
+          const activeTime = metadata?.querySelector<HTMLTimeElement>(
             ".agent-item-active-time",
           );
+          const statusRect = status?.getBoundingClientRect();
+          const activeTimeRect = activeTime?.getBoundingClientRect();
           return Boolean(
-            row?.dataset.displayTitle === title &&
+            row?.dataset.displayTitle &&
+              row.dataset.displayTitle !== prompt &&
               Number(row.dataset.lastActiveAt) > 0 &&
+              status?.textContent?.trim() &&
               activeTime?.textContent?.trim() &&
-              activeTime.dateTime,
+              activeTime.dateTime &&
+              statusRect &&
+              activeTimeRect &&
+              Math.abs(statusRect.top - activeTimeRect.top) < 2 &&
+              activeTimeRect.left >= statusRect.right,
           );
         },
         cliSessionId,
-        expectedTitle,
+        userPrompt,
       ),
     {
       timeout: 30_000,
       interval: 200,
-      timeoutMsg: `CLI session ${cliSessionId} did not show title ${expectedTitle} and last-active time`,
+      timeoutMsg: `CLI session ${cliSessionId} did not show native title and inline last-active metadata`,
     },
   );
 }

@@ -96,7 +96,7 @@ CCSM_HOOK_TOKEN
 
 HookEndpoint读取并反序列化报告后立即写入进程内无界队列。独立消费者按接收顺序调用AppBackend完成token、provider、session、runtime ID和payload ID校验，再通过platform resolver解析Provider Session metadata并提交状态更新。Hook命令完成endpoint写入后立即返回空JSON响应。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
 
-Hook reporter从`session_title/sessionTitle`和`prompt/initial_prompt`生成标题候选。消费者对认证Hook给出的Claude/Codex精确`transcript_path`执行有界JSONL读取，优先提取显式标题、Provider摘要和最近用户prompt；Codex同时按native Session ID读取相邻`session_index.jsonl`中的thread name。标题归一化后最多保存96个字符。GitHub Copilot使用Hook prompt候选。`cli_sessions.display_title`保存最近确认的标题，`last_active_at`以Unix毫秒记录每次有效Hook或runtime生命周期活动。
+Hook reporter从`session_title/sessionTitle`生成标题候选。消费者对认证Hook给出的Claude/Codex精确`transcript_path`执行有界JSONL读取，提取显式标题和Provider摘要；Codex同时按native Session ID读取相邻`session_index.jsonl`中的thread name。标题归一化后最多保存96个字符。缺少原生标题时，Agents使用Tab标题。用户prompt仅更新session activity和last-active时间。`cli_sessions.display_title`保存最近确认的原生标题，`last_active_at`以Unix毫秒记录每次有效Hook或runtime生命周期活动。
 
 Hook reporter同时归一化provider的会话谱系字段：Codex使用`forked_from_id/forkedFromId + ephemeral`，Claude使用`parent_session_id/parentSessionId + is_sidechain/isSidechain`，Copilot接受相同snake_case/camelCase组合。带父身份的ephemeral Hook更新runtime activity，并让`CliSession.native_session_id`保持当前可恢复父会话。
 

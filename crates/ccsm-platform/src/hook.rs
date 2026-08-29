@@ -217,7 +217,6 @@ fn payload_bool(payload: &Value, keys: &[&str]) -> Option<bool> {
 
 fn hook_display_title(payload: &Value) -> Option<String> {
     payload_string(payload, &["session_title", "sessionTitle"])
-        .or_else(|| payload_string(payload, &["prompt", "initial_prompt", "initialPrompt"]))
         .and_then(|title| normalize_agent_title(&title))
 }
 
@@ -319,7 +318,6 @@ fn transcript_title_from_chunks(provider: ProviderKind, chunks: &[String]) -> Op
         .collect::<Vec<_>>();
     let mut explicit_title = None;
     let mut summary = None;
-    let mut latest_prompt = None;
     for value in &values {
         let kind = payload_string(value, &["type"]);
         if provider == ProviderKind::Claude {
@@ -332,43 +330,8 @@ fn transcript_title_from_chunks(provider: ProviderKind, chunks: &[String]) -> Op
                     .and_then(|title| normalize_agent_title(&title));
             }
         }
-        if let Some(prompt) = transcript_user_prompt(provider, value) {
-            latest_prompt = normalize_agent_title(&prompt);
-        }
     }
-    explicit_title.or(summary).or(latest_prompt)
-}
-
-fn transcript_user_prompt(provider: ProviderKind, value: &Value) -> Option<String> {
-    let payload = value.get("payload").unwrap_or(value);
-    let message = payload.get("message").unwrap_or(payload);
-    if message.get("role").and_then(Value::as_str) != Some("user") {
-        return None;
-    }
-    if provider == ProviderKind::Claude && value.get("type").and_then(Value::as_str) != Some("user")
-    {
-        return None;
-    }
-    message_content_text(message.get("content")?)
-}
-
-fn message_content_text(content: &Value) -> Option<String> {
-    if let Some(text) = content.as_str() {
-        return Some(text.to_string());
-    }
-    let text = content
-        .as_array()?
-        .iter()
-        .filter(|part| {
-            matches!(
-                part.get("type").and_then(Value::as_str),
-                Some("text" | "input_text")
-            )
-        })
-        .filter_map(|part| part.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join(" ");
-    (!text.is_empty()).then_some(text)
+    explicit_title.or(summary)
 }
 
 fn read_bounded_jsonl_chunks(path: &Path) -> std::io::Result<Vec<String>> {
@@ -670,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn hook_title_prefers_native_session_title_and_normalizes_prompt_fallback() {
+    fn hook_title_accepts_only_native_session_titles() {
         assert_eq!(
             hook_display_title(&serde_json::json!({
                 "session_title": "  Fix   authentication  ",
@@ -680,16 +643,32 @@ mod tests {
             Some("Fix authentication")
         );
         assert_eq!(
-            hook_display_title(&serde_json::json!({
-                "prompt": "Investigate\nrenderer latency"
-            }))
-            .as_deref(),
-            Some("Investigate renderer latency")
+            hook_display_title(&serde_json::json!({ "prompt": "Investigate renderer latency" })),
+            None
         );
     }
 
     #[test]
-    fn claude_transcript_prefers_custom_title_over_summary_and_prompt() {
+    fn transcript_user_prompts_are_not_titles() {
+        let chunks = vec![concat!(
+            r#"{"type":"user","message":{"role":"user","content":"claude prompt"}}"#,
+            "\n",
+            r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"codex prompt"}]}}"#,
+            "\n"
+        )
+        .to_string()];
+        assert_eq!(
+            transcript_title_from_chunks(ProviderKind::Claude, &chunks),
+            None
+        );
+        assert_eq!(
+            transcript_title_from_chunks(ProviderKind::Codex, &chunks),
+            None
+        );
+    }
+
+    #[test]
+    fn claude_transcript_prefers_custom_title_over_summary() {
         let directory = tempfile::tempdir().unwrap();
         let native_session_id = "11111111-1111-1111-1111-111111111111";
         let transcript = directory.path().join(format!("{native_session_id}.jsonl"));

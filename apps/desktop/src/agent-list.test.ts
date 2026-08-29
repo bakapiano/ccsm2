@@ -126,6 +126,9 @@ describe("Agents sidebar", () => {
     expect(root.querySelector(".agent-item-active-time")?.textContent).toBe(
       "now",
     );
+    expect(root.querySelector(".agent-item-metadata")?.textContent).toBe(
+      "idlenow",
+    );
     view.dispose();
   });
 
