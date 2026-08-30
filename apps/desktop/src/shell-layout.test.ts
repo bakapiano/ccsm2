@@ -29,6 +29,18 @@ describe("application shell layout", () => {
     expect(cssRule(".agents-header")).toContain("padding: 0 8px");
   });
 
+  test("extends selected Spaces and Agents to both sidebar edges", () => {
+    const selectedSpace = cssRule('.space-row[data-active="true"]');
+    expect(selectedSpace).toContain("width: calc(100% + 8px)");
+    expect(selectedSpace).toContain("margin-inline: -4px");
+    expect(selectedSpace).toContain("border-radius: 0");
+
+    const selectedAgent = cssRule('.agent-item[data-foreground="true"]');
+    expect(selectedAgent).toContain("width: calc(100% + 16px)");
+    expect(selectedAgent).toContain("margin-inline: -8px");
+    expect(selectedAgent).toContain("border-radius: 0");
+  });
+
   test("keeps the sidebar toggle in the lower-right compact rail", () => {
     expect(html).toContain('data-testid="sidebar-toggle"');
     expect(html.match(/class="sidebar-toggle-icon"/g)).toHaveLength(1);
