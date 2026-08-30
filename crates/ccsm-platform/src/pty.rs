@@ -338,7 +338,7 @@ impl PtyBackend for PortablePtyBackend {
             command.env("CCSM_RUNTIME_ID", &hook.runtime_id);
             command.env("CCSM_HOOK_PIPE", &hook.endpoint);
             command.env("CCSM_HOOK_TOKEN", &hook.token);
-            command.env("CCSM_HOOK_REPORTER", &hook.reporter_path);
+            command.env("CCSM_HOOK_REPORTER", &runtime_shim.hook_executable);
             if let Some(plugin_dir) = runtime_shim.copilot_plugin_dir() {
                 command.env("CCSM_COPILOT_PLUGIN_DIR", plugin_dir);
             }

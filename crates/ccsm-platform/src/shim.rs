@@ -5,8 +5,6 @@ use std::{
     process::{Command, Stdio},
 };
 
-#[cfg(windows)]
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use ccsm_core::dto::ProviderKind;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -80,7 +78,7 @@ pub fn run_cli_shim(provider: ProviderKind) -> i32 {
         let native_session_id = env::var("CCSM_NATIVE_SESSION_ID")
             .ok()
             .filter(|value| !value.is_empty());
-        let hook_command = hook_command();
+        let hook_command = hook_command(provider);
         match provider {
             ProviderKind::Claude => build_claude_args(user_args, &hook_command, native_session_id),
             ProviderKind::Codex => build_codex_args(user_args, &hook_command, native_session_id),
@@ -108,30 +106,33 @@ fn has_hook_context() -> bool {
     .all(|name| env::var_os(name).is_some_and(|value| !value.is_empty()))
 }
 
-fn hook_command() -> String {
+fn hook_command(provider: ProviderKind) -> String {
     #[cfg(windows)]
     {
-        let reporter = env::var_os("CCSM_HOOK_REPORTER")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("ccsm-hook.exe"));
-        windows_hook_command(&reporter)
+        if provider == ProviderKind::Claude {
+            let reporter = env::var_os("CCSM_HOOK_REPORTER")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("ccsm-hook.exe"));
+            windows_absolute_hook_command(&reporter)
+        } else {
+            windows_codex_hook_command()
+        }
     }
     #[cfg(not(windows))]
     {
+        let _ = provider;
         "ccsm-hook hook report".into()
     }
 }
 
 #[cfg(windows)]
-fn windows_hook_command(reporter: &Path) -> String {
-    let reporter = reporter.to_string_lossy().replace('\'', "''");
-    let script = format!("& '{reporter}' hook report");
-    let utf16le = script
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .collect::<Vec<_>>();
-    let encoded = BASE64_STANDARD.encode(utf16le);
-    format!("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}")
+fn windows_codex_hook_command() -> String {
+    "ccsm-hook hook report".into()
+}
+
+#[cfg(windows)]
+fn windows_absolute_hook_command(reporter: &Path) -> String {
+    format!(r#""{}" hook report"#, reporter.to_string_lossy())
 }
 
 fn build_claude_args(
@@ -262,13 +263,14 @@ fn build_codex_args(
     hook_command: &str,
     native_session_id: Option<String>,
 ) -> Vec<OsString> {
-    let hook_command = hook_command.replace('\'', "");
+    let hook_command =
+        serde_json::to_string(hook_command).expect("serialize Codex Hook command as TOML string");
     let mut args = vec!["--enable".into(), "hooks".into()];
     for event in CODEX_HOOK_EVENTS {
         args.push("-c".into());
         args.push(
             format!(
-                "hooks.{event}=[{{hooks=[{{type='command',command='{hook_command}',timeout=10}}]}}]"
+                "hooks.{event}=[{{hooks=[{{type='command',command={hook_command},timeout=10}}]}}]"
             )
             .into(),
         );
@@ -853,54 +855,53 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_hook_command_uses_powershell_with_the_absolute_reporter_path() {
-        let reporter = Path::new(r"C:\Program Files\Owner's CCSM\ccsm-desktop.exe");
-        let command = windows_hook_command(reporter);
-        let encoded = command.split_whitespace().last().unwrap();
-        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
-        let script = String::from_utf16(
-            &bytes
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect::<Vec<_>>(),
-        )
-        .unwrap();
-        assert_eq!(
-            script,
-            r#"& 'C:\Program Files\Owner''s CCSM\ccsm-desktop.exe' hook report"#
-        );
-        assert!(command.contains(" -EncodedCommand "));
+    fn windows_codex_hook_command_uses_the_runtime_shim_directly() {
+        let command = windows_codex_hook_command();
+        assert_eq!(command, "ccsm-hook hook report");
         let codex_args = build_codex_args(Vec::new(), &command, None);
+        let encoded_command = serde_json::to_string(&command).unwrap();
         assert!(
             codex_args
                 .iter()
-                .any(|argument| argument.to_string_lossy().contains(&command))
+                .any(|argument| argument.to_string_lossy().contains(&encoded_command))
         );
     }
 
     #[cfg(windows)]
     #[test]
-    fn windows_hook_command_runs_from_powershell_and_preserves_stdin() {
+    fn windows_absolute_hook_command_quotes_the_claude_reporter() {
+        let reporter = Path::new(r"C:\Program Files\Owner's CCSM\ccsm-hook.exe");
+        assert_eq!(
+            windows_absolute_hook_command(reporter),
+            r#""C:\Program Files\Owner's CCSM\ccsm-hook.exe" hook report"#
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_codex_hook_command_runs_from_comspec_and_preserves_stdin() {
+        use std::os::windows::process::CommandExt;
         use std::{io::Write, process::Stdio};
 
         let directory = tempfile::tempdir().unwrap();
         let reporter_directory = directory.path().join("Owner's CCSM");
         std::fs::create_dir(&reporter_directory).unwrap();
-        let reporter = reporter_directory.join("ccsm hook.cmd");
+        let reporter = reporter_directory.join("ccsm-hook.cmd");
         std::fs::write(
             &reporter,
             "@echo off\r\nif not \"%~1\"==\"hook\" exit /b 11\r\nif not \"%~2\"==\"report\" exit /b 12\r\nset /p payload=\r\nif not \"%payload%\"==\"hook-payload\" exit /b 13\r\nexit /b 0\r\n",
         )
         .unwrap();
+        let path = env::join_paths(
+            std::iter::once(reporter_directory)
+                .chain(env::split_paths(&env::var_os("PATH").unwrap_or_default())),
+        )
+        .unwrap();
 
-        let mut child = Command::new("powershell.exe")
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &windows_hook_command(&reporter),
-            ])
+        let mut child = Command::new(env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into()))
+            .args(["/D", "/S", "/C"])
+            .raw_arg(format!("\"{}\"", windows_codex_hook_command()))
+            .env("PATH", path)
             .stdin(Stdio::piped())
             .spawn()
             .unwrap();

@@ -170,7 +170,6 @@ pub fn run() {
             backend
                 .configure_hook_transport(HookTransportDescriptor {
                     endpoint: hook_endpoint.address().to_string(),
-                    reporter_path: executable.to_string_lossy().into_owned(),
                 })
                 .map_err(|error| error.to_string())?;
             let browser = BrowserSurfaceManager::new(data_dir.join("browser-profile"))?;
