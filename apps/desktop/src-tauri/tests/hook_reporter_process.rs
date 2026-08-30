@@ -3,7 +3,7 @@
 use std::{
     env,
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Stdio},
     sync::{Arc, mpsc},
     time::Duration,
@@ -12,30 +12,26 @@ use std::{
 use ccsm_core::dto::ProviderKind;
 use ccsm_platform::{HookReportSink, LocalHookEndpoint};
 
-fn powershell_hook_command(reporter: &Path) -> String {
-    let reporter = reporter.to_string_lossy().replace('\'', "''");
-    format!("& '{reporter}' hook report")
-}
-
 #[test]
-fn powershell_launches_the_real_reporter_and_delivers_to_the_named_pipe() {
+fn direct_hook_shim_delivers_to_the_named_pipe() {
     let (report_tx, report_rx) = mpsc::channel();
     let sink: HookReportSink = Arc::new(move |report| {
         report_tx.send(report).unwrap();
     });
     let endpoint = LocalHookEndpoint::start(sink).unwrap();
-    let reporter = env::var_os("CCSM_SMOKE_REPORTER")
+    let source_reporter = env::var_os("CCSM_SMOKE_REPORTER")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_ccsm-desktop")));
+    let directory = tempfile::tempdir().unwrap();
+    let reporter_directory = directory.path().join("Owner's CCSM");
+    std::fs::create_dir(&reporter_directory).unwrap();
+    let reporter = reporter_directory.join("ccsm-hook.exe");
+    if std::fs::hard_link(&source_reporter, &reporter).is_err() {
+        std::fs::copy(&source_reporter, &reporter).unwrap();
+    }
 
-    let mut child = Command::new("powershell.exe")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &powershell_hook_command(&reporter),
-        ])
+    let mut child = Command::new(&reporter)
+        .args(["hook", "report"])
         .env("CCSM_PROVIDER", "codex")
         .env("CCSM_SESSION_ID", "smoke-cli-session")
         .env("CCSM_RUNTIME_ID", "smoke-runtime")

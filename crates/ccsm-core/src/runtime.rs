@@ -209,7 +209,6 @@ struct RuntimeState {
 #[derive(Debug, Clone)]
 pub struct HookTransportDescriptor {
     pub endpoint: String,
-    pub reporter_path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -292,7 +291,6 @@ impl RuntimeManager {
                 runtime_id: runtime_id.clone(),
                 endpoint: transport.endpoint,
                 token,
-                reporter_path: transport.reporter_path,
             })
         };
         {
@@ -800,7 +798,6 @@ mod tests {
                 24,
                 Some(HookTransportDescriptor {
                     endpoint: "test-endpoint".into(),
-                    reporter_path: "ccsm".into(),
                 }),
                 Arc::new(|_| {}),
             )
@@ -908,7 +905,6 @@ mod tests {
                 24,
                 Some(HookTransportDescriptor {
                     endpoint: "test-endpoint".into(),
-                    reporter_path: "ccsm".into(),
                 }),
                 Arc::new(|_| {}),
             )

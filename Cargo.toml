@@ -14,7 +14,6 @@ authors = ["CCSM contributors"]
 rust-version = "1.88"
 
 [workspace.dependencies]
-base64 = "0.22.1"
 ccsm-core = { path = "crates/ccsm-core" }
 ccsm-platform = { path = "crates/ccsm-platform" }
 crossbeam-channel = "0.5.16"

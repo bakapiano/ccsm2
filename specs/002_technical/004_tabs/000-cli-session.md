@@ -79,9 +79,9 @@ copilot --plugin-dir <per-runtime-plugin>
 copilot --plugin-dir <per-runtime-plugin> --resume=<id>
 ```
 
-per-runtime plugin包含`plugin.json`和`hooks.json`，通过Copilot的VS Code兼容PascalCase事件注入`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`Stop`与`SessionEnd`。`notification`以`permission_prompt|elicitation_dialog` matcher报告真实用户阻塞状态。Hook command分别使用PowerShell与POSIX shell保真引用per-runtime `ccsm-hook`绝对路径。plugin随runtime释放，不修改用户或repository hook配置。
+per-runtime plugin包含`plugin.json`和`hooks.json`，通过Copilot的VS Code兼容PascalCase事件注入`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`Stop`与`SessionEnd`。`notification`以`permission_prompt|elicitation_dialog` matcher报告真实用户阻塞状态。plugin的Windows PowerShell与POSIX bash字段保真引用per-runtime `ccsm-hook`绝对路径。plugin随runtime释放，不修改用户或repository hook配置。
 
-Hook command使用本次desktop executable的绝对`CCSM_HOOK_REPORTER`路径并保真引用。Windows命令显式调用Windows PowerShell，并使用call operator执行reporter，使Claude、Codex和外层shell共享同一调用语义。Codex为command hook重建shell PATH时，绝对路径保持reporter可达。
+Claude和Codex的Hook command由Provider原生命令shell直接执行reporter。Windows Claude使用双引号保真引用per-runtime `ccsm-hook.exe`绝对路径；Windows Codex使用中性`ccsm-hook hook report`并通过PATH首位的per-runtime shim解析`.exe`；POSIX使用相同中性命令解析无扩展名shim。三条链路都省去嵌套shell进程。
 
 ## 上下文与校验
 

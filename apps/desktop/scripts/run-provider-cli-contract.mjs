@@ -607,7 +607,7 @@ function createHookReporter(contractRoot) {
     ].join("\n"),
   );
   if (process.platform === "win32") {
-    const command = join(contractRoot, "ccsm-hook-stub.cmd");
+    const command = join(contractRoot, "ccsm-hook.cmd");
     writeFileSync(
       command,
       `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`,

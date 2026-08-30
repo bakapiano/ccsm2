@@ -178,7 +178,6 @@ pub struct PtyHookContext {
     pub runtime_id: String,
     pub endpoint: String,
     pub token: String,
-    pub reporter_path: String,
 }
 
 #[derive(Debug, Clone)]
