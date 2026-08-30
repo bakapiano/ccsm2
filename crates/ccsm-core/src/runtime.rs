@@ -10,8 +10,8 @@ use uuid::Uuid;
 
 use crate::{
     dto::{
-        AgentActivity, AgentActivityChangedDto, CliSessionDto, HookReport, NativeBindingState,
-        ProviderKind, RuntimeEvent, RuntimeStartedDto,
+        AgentActivity, CliSessionDto, HookReport, NativeBindingState, ProviderKind, RuntimeEvent,
+        RuntimeStartedDto,
     },
     error::{BackendError, BackendResult},
     ports::{PtyBackend, PtyEvent, PtyEventSink, PtyHookContext, PtyProcess, PtySpawnSpec},
@@ -222,7 +222,7 @@ pub struct ValidatedHookBinding {
 #[derive(Debug, Clone)]
 pub struct ValidatedHookReport {
     pub binding: ValidatedHookBinding,
-    pub activity_changed: Option<AgentActivityChangedDto>,
+    pub activity: AgentActivity,
 }
 
 pub struct RuntimeManager {
@@ -422,7 +422,6 @@ impl RuntimeManager {
                 "Hook authentication context does not match the runtime".into(),
             ));
         }
-        let previous_activity = registration.activity;
         let (activity, turn_active) = reduce_agent_activity(
             registration.activity,
             registration.turn_active,
@@ -436,11 +435,7 @@ impl RuntimeManager {
                 provider: registration.provider,
                 native_session_id: report.native_session_id.clone(),
             },
-            activity_changed: (activity != previous_activity).then(|| AgentActivityChangedDto {
-                cli_session_id: registration.cli_session_id.clone(),
-                runtime_id: report.runtime_id.clone(),
-                activity,
-            }),
+            activity,
         })
     }
 
@@ -578,7 +573,6 @@ fn reduce_agent_activity(
         "PreToolUse" if turn_active => (AgentActivity::Working, true),
         "PermissionRequest" | "PreToolUse" | "Notification" => (current, turn_active),
         "Stop" | "StopFailure" => (AgentActivity::Idle, false),
-        "SessionEnd" => (AgentActivity::Stopped, false),
         _ => (current, turn_active),
     }
 }
@@ -627,6 +621,19 @@ mod tests {
         },
         time::Duration,
     };
+
+    #[test]
+    fn session_end_preserves_agent_activity_and_turn_state() {
+        for state in [
+            (AgentActivity::Starting, false),
+            (AgentActivity::Idle, false),
+            (AgentActivity::Working, true),
+            (AgentActivity::Blocked, true),
+            (AgentActivity::Stopped, false),
+        ] {
+            assert_eq!(reduce_agent_activity(state.0, state.1, "SessionEnd"), state);
+        }
+    }
 
     #[test]
     fn output_flow_blocks_at_the_credit_limit_and_resumes_after_ack() {
@@ -822,104 +829,56 @@ mod tests {
             source: Some("startup".into()),
             parent_native_session_id: None,
             ephemeral: false,
+            display_title: None,
         };
         let validated = manager.apply_hook_report(&report).unwrap();
         assert_eq!(validated.binding.native_session_id, "native-1");
-        assert!(validated.activity_changed.is_none());
+        assert_eq!(validated.activity, AgentActivity::Idle);
 
         let mut prompt_report = report.clone();
         prompt_report.hook_event_name = "UserPromptSubmit".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&prompt_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Working
-        );
+        let prompt = manager.apply_hook_report(&prompt_report).unwrap();
+        assert_eq!(prompt.activity, AgentActivity::Working);
 
         let mut permission_report = report.clone();
         permission_report.hook_event_name = "PermissionRequest".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&permission_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Blocked
-        );
+        let permission = manager.apply_hook_report(&permission_report).unwrap();
+        assert_eq!(permission.activity, AgentActivity::Blocked);
 
         let mut stop_report = report.clone();
         stop_report.hook_event_name = "Stop".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&stop_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Idle
-        );
+        let stop = manager.apply_hook_report(&stop_report).unwrap();
+        assert_eq!(stop.activity, AgentActivity::Idle);
 
         let mut late_tool_report = report.clone();
         late_tool_report.hook_event_name = "PreToolUse".into();
-        assert!(
+        assert_eq!(
             manager
                 .apply_hook_report(&late_tool_report)
                 .unwrap()
-                .activity_changed
-                .is_none()
+                .activity,
+            AgentActivity::Idle
         );
 
         let mut retry_prompt_report = report.clone();
         retry_prompt_report.hook_event_name = "UserPromptSubmit".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&retry_prompt_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Working
-        );
+        let retry_prompt = manager.apply_hook_report(&retry_prompt_report).unwrap();
+        assert_eq!(retry_prompt.activity, AgentActivity::Working);
 
         let mut notification_report = report.clone();
         notification_report.hook_event_name = "Notification".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&notification_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Blocked
-        );
+        let notification = manager.apply_hook_report(&notification_report).unwrap();
+        assert_eq!(notification.activity, AgentActivity::Blocked);
 
         let mut resumed_tool_report = report.clone();
         resumed_tool_report.hook_event_name = "PreToolUse".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&resumed_tool_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Working
-        );
+        let resumed_tool = manager.apply_hook_report(&resumed_tool_report).unwrap();
+        assert_eq!(resumed_tool.activity, AgentActivity::Working);
 
         let mut failure_report = report.clone();
         failure_report.hook_event_name = "StopFailure".into();
-        assert_eq!(
-            manager
-                .apply_hook_report(&failure_report)
-                .unwrap()
-                .activity_changed
-                .unwrap()
-                .activity,
-            AgentActivity::Idle
-        );
+        let failure = manager.apply_hook_report(&failure_report).unwrap();
+        assert_eq!(failure.activity, AgentActivity::Idle);
 
         let mut wrong_token = report.clone();
         wrong_token.token = "wrong".into();

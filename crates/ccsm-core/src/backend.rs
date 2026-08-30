@@ -18,7 +18,10 @@ use crate::{
         TabKind, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
     },
     error::{BackendError, BackendResult},
-    ports::{FileSystemBackend, FileWatchBackend, GitBackend, PtyBackend, StateStore},
+    ports::{
+        FileSystemBackend, FileWatchBackend, GitBackend, PtyBackend, SessionTitleResolver,
+        StateStore,
+    },
     root::{ActiveRootContext, AppEventSink},
     runtime::{HookTransportDescriptor, RuntimeEventSink, RuntimeManager},
 };
@@ -29,6 +32,7 @@ pub struct AppBackend {
     root_context: ActiveRootContext,
     event_sink: AppEventSink,
     hook_transport: Mutex<Option<HookTransportDescriptor>>,
+    session_title_resolver: Mutex<Option<SessionTitleResolver>>,
 }
 
 impl AppBackend {
@@ -52,6 +56,7 @@ impl AppBackend {
             runtimes: RuntimeManager::new(pty_backend),
             event_sink,
             hook_transport: Mutex::new(None),
+            session_title_resolver: Mutex::new(None),
         })
     }
 
@@ -64,6 +69,18 @@ impl AppBackend {
             .lock()
             .map_err(|_| BackendError::Platform("Hook transport lock poisoned".into()))? =
             Some(descriptor);
+        Ok(())
+    }
+
+    pub fn configure_session_title_resolver(
+        &self,
+        resolver: SessionTitleResolver,
+    ) -> BackendResult<()> {
+        *self
+            .session_title_resolver
+            .lock()
+            .map_err(|_| BackendError::Platform("Session title resolver lock poisoned".into()))? =
+            Some(resolver);
         Ok(())
     }
 
@@ -321,6 +338,7 @@ impl AppBackend {
         }
         self.store
             .set_desired_state(&session.id, DesiredState::Running)?;
+        let initial_metadata = self.store.record_session_activity(&session.id, None)?;
         let hook_transport = self
             .hook_transport
             .lock()
@@ -330,13 +348,19 @@ impl AppBackend {
         let lifecycle_provider = session.provider;
         let store = Arc::clone(&self.store);
         let event_sink = Arc::clone(&self.event_sink);
+        let lifecycle_metadata = initial_metadata.clone();
         let lifecycle_sink: RuntimeEventSink = Arc::new(move |event| {
             if let RuntimeEvent::Exit { runtime_id, .. } = &event {
                 if lifecycle_provider != crate::dto::ProviderKind::Shell {
+                    let metadata = store
+                        .record_session_activity(&lifecycle_session_id, None)
+                        .unwrap_or_else(|_| lifecycle_metadata.clone());
                     event_sink(activity_event(AgentActivityChangedDto {
                         cli_session_id: lifecycle_session_id.clone(),
                         runtime_id: runtime_id.clone(),
                         activity: AgentActivity::Stopped,
+                        display_title: metadata.display_title,
+                        last_active_at: metadata.last_active_at,
                     }));
                 }
                 if let Ok(Some(updated)) =
@@ -362,16 +386,29 @@ impl AppBackend {
                 cli_session_id: started.cli_session_id.clone(),
                 runtime_id,
                 activity,
+                display_title: initial_metadata.display_title,
+                last_active_at: initial_metadata.last_active_at,
             }));
         }
         Ok(started)
     }
 
-    pub fn report_hook(&self, report: HookReport) -> BackendResult<CliSessionDto> {
+    pub fn report_hook(&self, mut report: HookReport) -> BackendResult<CliSessionDto> {
         let validated = self.runtimes.apply_hook_report(&report)?;
+        if report.hook_event_name != "SessionEnd" && report.display_title.is_none() {
+            let resolver = self
+                .session_title_resolver
+                .lock()
+                .map_err(|_| BackendError::Platform("Session title resolver lock poisoned".into()))?
+                .clone();
+            if let Some(resolver) = resolver {
+                report.display_title = resolver(&report);
+            }
+        }
         let binding = validated.binding;
         let previous = self.store.get_cli_session(&binding.cli_session_id)?;
-        let session = if hook_updates_native_binding(&report, &previous) {
+        let updates_native_binding = hook_updates_native_binding(&report, &previous);
+        let session = if updates_native_binding {
             self.store.bind_native_session(
                 &binding.cli_session_id,
                 binding.provider,
@@ -385,8 +422,20 @@ impl AppBackend {
         {
             (self.event_sink)(binding_event(&session));
         }
-        if let Some(activity) = validated.activity_changed {
-            (self.event_sink)(activity_event(activity));
+        if report.hook_event_name != "SessionEnd" {
+            let display_title = updates_native_binding
+                .then_some(report.display_title.as_deref())
+                .flatten();
+            let metadata = self
+                .store
+                .record_session_activity(&binding.cli_session_id, display_title)?;
+            (self.event_sink)(activity_event(AgentActivityChangedDto {
+                cli_session_id: binding.cli_session_id,
+                runtime_id: report.runtime_id,
+                activity: validated.activity,
+                display_title: metadata.display_title,
+                last_active_at: metadata.last_active_at,
+            }));
         }
         Ok(session)
     }
@@ -416,6 +465,9 @@ impl AppBackend {
 }
 
 fn hook_updates_native_binding(report: &HookReport, current: &CliSessionDto) -> bool {
+    if report.hook_event_name == "SessionEnd" {
+        return false;
+    }
     if report.ephemeral && report.parent_native_session_id.is_some() {
         return false;
     }
@@ -492,6 +544,7 @@ mod hook_binding_tests {
             source: Some("startup".into()),
             parent_native_session_id: None,
             ephemeral: false,
+            display_title: None,
         }
     }
 
@@ -507,6 +560,22 @@ mod hook_binding_tests {
             child.ephemeral = true;
             assert!(!hook_updates_native_binding(
                 &child,
+                &session(provider, Some("parent-session"))
+            ));
+        }
+    }
+
+    #[test]
+    fn session_end_preserves_all_provider_bindings() {
+        for provider in [
+            ProviderKind::Claude,
+            ProviderKind::Codex,
+            ProviderKind::Copilot,
+        ] {
+            let mut ended = report(provider);
+            ended.hook_event_name = "SessionEnd".into();
+            assert!(!hook_updates_native_binding(
+                &ended,
                 &session(provider, Some("parent-session"))
             ));
         }

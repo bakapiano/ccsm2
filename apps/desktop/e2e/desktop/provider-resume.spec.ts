@@ -194,6 +194,7 @@ describe("real provider CLI with stubbed model API", () => {
         });
         const nativeSessionId = firstTurn.nativeSessionId!;
         await waitForAgentActivity(firstTurn.cliSessionId!, "idle");
+        await waitForAgentMetadata(firstTurn.cliSessionId!, firstPrompt);
         await evidence.checkpoint("first-model-response");
 
         if (provider === "codex") {
@@ -243,6 +244,7 @@ describe("real provider CLI with stubbed model API", () => {
           });
           expect(followUpTurn.runtimeId).toBe(firstRuntimeId);
           await waitForAgentActivity(followUpTurn.cliSessionId!, "idle");
+          await waitForAgentMetadata(followUpTurn.cliSessionId!, secondPrompt);
           assertModelResponses(provider, [
             [firstPrompt, firstResponse],
             [secondPrompt, secondResponse],
@@ -280,6 +282,7 @@ describe("real provider CLI with stubbed model API", () => {
           expect(resumed.text).toContain(firstResponseMarker);
           await waitForStablePrompt(provider, resumed.runtimeId!);
           await waitForAgentActivity(resumed.cliSessionId!, "idle");
+          await waitForAgentMetadata(resumed.cliSessionId!, firstPrompt);
           await evidence.checkpoint("cli-resumed");
 
           currentStep = "resumed-prompt";
@@ -300,6 +303,7 @@ describe("real provider CLI with stubbed model API", () => {
           });
           expect(secondTurn.runtimeId).toBe(resumed.runtimeId);
           await waitForAgentActivity(secondTurn.cliSessionId!, "idle");
+          await waitForAgentMetadata(secondTurn.cliSessionId!, secondPrompt);
           assertModelResponses(provider, [
             [firstPrompt, firstResponse],
             [secondPrompt, secondResponse],
@@ -336,6 +340,7 @@ describe("real provider CLI with stubbed model API", () => {
             expect(forkSessionId).not.toBe(nativeSessionId);
             await waitForStablePrompt(provider, resumed.runtimeId!);
             await waitForAgentActivity(forked.cliSessionId!, "idle");
+            await waitForAgentMetadata(forked.cliSessionId!, forkPrompt);
             await evidence.checkpoint("persistent-fork-bound");
 
             currentStep = "clear-session";
@@ -360,6 +365,7 @@ describe("real provider CLI with stubbed model API", () => {
                 ),
             );
             expect(cleared.nativeSessionId).not.toBe(forkSessionId);
+            await waitForAgentMetadata(cleared.cliSessionId!, clearPrompt);
             await evidence.checkpoint("clear-session-bound");
           }
 
@@ -1360,6 +1366,59 @@ async function waitForAgentActivity(
       timeout: 30_000,
       interval: 200,
       timeoutMsg: `CLI session ${cliSessionId} did not become ${activity}`,
+    },
+  );
+}
+
+async function waitForAgentMetadata(
+  cliSessionId: string,
+  userPrompt: string,
+): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (sessionId, prompt) => {
+          const row = document.querySelector<HTMLElement>(
+            `.agent-item[data-cli-session-id="${CSS.escape(sessionId)}"]`,
+          );
+          const metadata = row?.querySelector<HTMLElement>(
+            ".agent-item-metadata",
+          );
+          const status =
+            metadata?.querySelector<HTMLElement>(".agent-item-status");
+          const separator = metadata?.querySelector<HTMLElement>(
+            ".agent-item-metadata-separator",
+          );
+          const activeTime = metadata?.querySelector<HTMLTimeElement>(
+            ".agent-item-active-time",
+          );
+          const statusRect = status?.getBoundingClientRect();
+          const separatorRect = separator?.getBoundingClientRect();
+          const activeTimeRect = activeTime?.getBoundingClientRect();
+          return Boolean(
+            row?.dataset.displayTitle &&
+              row.dataset.displayTitle !== prompt &&
+              Number(row.dataset.lastActiveAt) > 0 &&
+              status?.textContent?.trim() &&
+              separator?.textContent === "·" &&
+              activeTime?.textContent?.trim() &&
+              activeTime.dateTime &&
+              statusRect &&
+              separatorRect &&
+              activeTimeRect &&
+              Math.abs(statusRect.top - separatorRect.top) < 2 &&
+              Math.abs(separatorRect.top - activeTimeRect.top) < 2 &&
+              separatorRect.left >= statusRect.right &&
+              activeTimeRect.left >= separatorRect.right,
+          );
+        },
+        cliSessionId,
+        userPrompt,
+      ),
+    {
+      timeout: 30_000,
+      interval: 200,
+      timeoutMsg: `CLI session ${cliSessionId} did not show native title and inline last-active metadata`,
     },
   );
 }

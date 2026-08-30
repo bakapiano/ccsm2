@@ -42,7 +42,7 @@ git_status_cache
 - `settings`保存全局`last_active_space_id`和单窗口`window_state`，包括bounds、maximized和fullscreen。
 - `tabs` 对 `kind='cli-session'` 建立 active `resource_id` partial unique index；对 `kind='git'` 建立 active `space_id` partial unique index。
 - Browser Tab state保存`last_url/title/zoom`；global profile数据保存在filesystem store。
-- `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`和最后一次退出摘要。
+- `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`、Provider Session标题、毫秒级`last_active_at`和最后一次退出摘要。
 - `cli_sessions`对`{provider, native_session_id}`建立non-null partial unique index，确保一个原生身份映射到一个未删除的CLI Session。
 - Terminal runtime、runtime ID、PID、PTY handle、actual state和per-native-session resume mutex保存在AppBackend内存中。
 - TabRecord mutation和引用它的space_layout row在同一transaction提交。
@@ -87,6 +87,7 @@ git_status_cache
 ## Filesystem stores
 
 - 显式 `--ccsm-data-dir` 或 `CCSM_DATA_DIR` 覆盖将主界面 WebView profile 放入同一数据目录的 `main-webview/`，使隔离实例可与正式实例并行运行。
+- debug构建在缺少显式覆盖时使用可执行文件旁的`ccsm-debug-data/`，为`data.db`、主界面WebView和Browser Profile提供workspace-local隔离。
 - `main-webview/`的localStorage保存Light/Dark与Web链接打开位置等renderer UI偏好。
 - `browser-profile/` 是全局持久 WebView profile，保存共享 cookies、账号登录、storage 和 HTTP cache。
 - 主界面和 Browser Tabs 使用不同的 WebView profile；启动隔离实例时不设置进程级 `WEBVIEW2_USER_DATA_FOLDER`。

@@ -20,10 +20,10 @@
 ## Agents
 
 - 左侧栏底部列出全部Space中的Claude Code、Codex和GitHub Copilot Tabs。
-- 每项显示provider图标、Tab名称、Space名称及`starting/idle/working/blocked/stopped`状态。
+- 每项显示provider图标、Provider Session标题、Space名称、最后活跃时间及`starting/idle/working/blocked/stopped`状态。Provider标题缺席时使用Tab名称。
 - 点击Agent先切换所属Space，再激活所属Tab并把终端输入焦点带到前台。
 - 当前Space中每个可见Dockview group的Agent使用选中背景；切换、分屏和关闭Tab时即时同步。
-- `blocked`和`working`项目优先排列，其后为`starting/idle/stopped`。
+- `blocked`和`working`项目优先排列，其后为`starting/idle/stopped`；相同状态按最后活跃时间从近到远排列。
 - Spaces与Agents之间的水平separator支持pointer拖动、键盘调整和双击恢复默认高度；Agents高度本地持久化，同时为Space tree保留最小可用高度。
 
 ## 启动体验

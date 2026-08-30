@@ -37,7 +37,7 @@ DEB 的文件位置由 package metadata 和 `dpkg` 管理。AppImage 使用 Taur
 
 Windows bundle 保持 `conpty/`、manifest、license 和 notices 与可执行文件的相对布局。Linux 安装测试从 `.desktop` 启动程序，并验证 provider CLI resolution。
 
-release桌面构建启用 `tauri-plugin-single-instance`。第二次启动把已有主窗口带到前台。debug构建省略single-instance routing，可与已安装release实例并行运行。安装器进程检查作为 Windows 手工安装时的运行检测。
+release桌面构建启用 `tauri-plugin-single-instance`。第二次启动把已有主窗口带到前台。debug构建使用可执行文件旁的`ccsm-debug-data/`并省略single-instance routing，可与已安装release实例并行运行。安装器进程检查作为 Windows 手工安装时的运行检测。
 
 ## 最小实现边界
 

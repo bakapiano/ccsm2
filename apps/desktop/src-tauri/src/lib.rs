@@ -17,7 +17,7 @@ use browser::BrowserSurfaceManager;
 use ccsm_core::{AppBackend, AppEventSink, HookTransportDescriptor};
 use ccsm_platform::{
     CommandGitBackend, HookReportSink, LocalFileSystemBackend, LocalHookEndpoint,
-    NotifyFileWatchBackend, PortablePtyBackend, SqliteStateStore,
+    NotifyFileWatchBackend, PortablePtyBackend, SqliteStateStore, resolve_hook_display_title,
 };
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -53,10 +53,19 @@ impl DesktopState {
 }
 
 pub fn run() {
-    let data_dir_override = argument_value("--ccsm-data-dir")
+    let configured_data_dir = argument_value("--ccsm-data-dir")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("CCSM_DATA_DIR").map(PathBuf::from))
         .filter(|value| !value.as_os_str().is_empty());
+    let data_dir_override = configured_data_dir.or_else(|| {
+        cfg!(debug_assertions)
+            .then(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|path| debug_data_dir(&path))
+            })
+            .flatten()
+    });
     let main_webview_data_dir = data_dir_override
         .as_ref()
         .filter(|_| !cfg!(feature = "e2e"))
@@ -147,6 +156,9 @@ pub fn run() {
             });
             let backend =
                 AppBackend::new(store, pty, filesystem.clone(), git, file_watch, event_sink);
+            backend
+                .configure_session_title_resolver(Arc::new(resolve_hook_display_title))
+                .map_err(|error| error.to_string())?;
             let hook_backend = Arc::clone(&backend);
             let hook_sink: HookReportSink = Arc::new(move |report| {
                 if let Err(error) = hook_backend.report_hook(report) {
@@ -288,6 +300,12 @@ fn argument_value(name: &str) -> Option<String> {
     None
 }
 
+fn debug_data_dir(executable: &std::path::Path) -> Option<PathBuf> {
+    executable
+        .parent()
+        .map(|directory| directory.join("ccsm-debug-data"))
+}
+
 fn runtime_shim_root(executable: &std::path::Path, data_dir: &std::path::Path) -> PathBuf {
     let suffix = format!("ccsm-runtime-shims-{}", std::process::id());
     if cfg!(feature = "e2e") {
@@ -303,4 +321,18 @@ fn runtime_shim_root(executable: &std::path::Path, data_dir: &std::path::Path) -
     }
     ccsm_platform::cleanup_stale_runtime_shim_roots(data_dir);
     data_dir.join(suffix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_data_directory_is_adjacent_to_the_executable() {
+        let debug_directory = PathBuf::from("workspace").join("target").join("debug");
+        assert_eq!(
+            debug_data_dir(&debug_directory.join("ccsm-desktop")),
+            Some(debug_directory.join("ccsm-debug-data"))
+        );
+    }
 }

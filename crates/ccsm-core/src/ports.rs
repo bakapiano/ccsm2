@@ -9,7 +9,7 @@ use crate::{
         CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
         CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
         DeleteSpaceRequest, DeleteTabRequest, DesiredState, FileDocumentDto, FileEntryDto,
-        GitFileChangeDto, GitFileDiffDto, GitRepositoryStatusDto, GitSnapshotDto,
+        GitFileChangeDto, GitFileDiffDto, GitRepositoryStatusDto, GitSnapshotDto, HookReport,
         MoveFolderRequest, MoveSpaceRequest, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
         ResolvedFileReferenceDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
         SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
@@ -50,6 +50,11 @@ pub trait StateStore: Send + Sync {
     fn list_agents(&self) -> BackendResult<Vec<AgentSummaryDto>> {
         Ok(Vec::new())
     }
+    fn record_session_activity(
+        &self,
+        session_id: &str,
+        display_title: Option<&str>,
+    ) -> BackendResult<SessionActivityMetadata>;
     fn bind_native_session(
         &self,
         session_id: &str,
@@ -68,6 +73,14 @@ pub trait StateStore: Send + Sync {
     fn load_git_cache(&self, space_id: &str, root_id: &str) -> BackendResult<GitSnapshotDto>;
     fn save_git_cache(&self, snapshot: &GitSnapshotDto) -> BackendResult<()>;
 }
+
+#[derive(Debug, Clone)]
+pub struct SessionActivityMetadata {
+    pub display_title: String,
+    pub last_active_at: i64,
+}
+
+pub type SessionTitleResolver = Arc<dyn Fn(&HookReport) -> Option<String> + Send + Sync + 'static>;
 
 #[derive(Debug, Clone)]
 pub struct RootDescriptor {

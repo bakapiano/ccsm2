@@ -148,9 +148,12 @@ export_ts! {
         pub space_name: String,
         pub tab_id: String,
         pub tab_title: String,
+        pub display_title: String,
         pub provider: ProviderKind,
         pub activity: AgentActivity,
         pub runtime_id: Option<String>,
+        #[ts(type = "number")]
+        pub last_active_at: i64,
     }
 }
 
@@ -161,6 +164,9 @@ export_ts! {
         pub cli_session_id: String,
         pub runtime_id: String,
         pub activity: AgentActivity,
+        pub display_title: String,
+        #[ts(type = "number")]
+        pub last_active_at: i64,
     }
 }
 
@@ -679,6 +685,8 @@ pub struct HookReport {
     pub parent_native_session_id: Option<String>,
     #[serde(default)]
     pub ephemeral: bool,
+    #[serde(default)]
+    pub display_title: Option<String>,
 }
 
 export_ts! {

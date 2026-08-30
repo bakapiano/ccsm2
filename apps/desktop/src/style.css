@@ -993,6 +993,25 @@ button:disabled {
   font-size: 10px;
 }
 
+.agent-item-metadata {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 68px;
+  line-height: 1;
+}
+
+.agent-item-metadata-separator,
+.agent-item-active-time {
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.agent-item-active-time {
+  white-space: nowrap;
+}
+
 .agent-item-status::before {
   width: 7px;
   height: 7px;

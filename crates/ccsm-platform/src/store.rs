@@ -16,7 +16,7 @@ use ccsm_core::{
         SpaceSnapshotDto, TabDto, TabKind, UpdateTabStateRequest,
     },
     error::{BackendError, BackendResult},
-    ports::{RootDescriptor, StateStore},
+    ports::{RootDescriptor, SessionActivityMetadata, StateStore},
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
@@ -124,6 +124,8 @@ impl SqliteStateStore {
                     native_binding_state TEXT NOT NULL,
                     desired_state TEXT NOT NULL,
                     last_exit_summary TEXT,
+                    display_title TEXT,
+                    last_active_at INTEGER NOT NULL,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                 );
@@ -145,6 +147,13 @@ impl SqliteStateStore {
                     captured_at INTEGER NOT NULL
                 );
                 "#,
+            )
+            .map_err(storage_error)?;
+        ensure_cli_session_activity_columns(&connection)?;
+        connection
+            .execute(
+                "UPDATE schema_meta SET value = '2' WHERE key = 'schema_version'",
+                [],
             )
             .map_err(storage_error)?;
         connection
@@ -578,18 +587,20 @@ impl StateStore for SqliteStateStore {
             ProviderKind::Claude | ProviderKind::Codex | ProviderKind::Copilot => "pending",
         };
         let now = now_timestamp();
+        let last_active_at = now_timestamp_millis();
         transaction
             .execute(
                 "INSERT INTO cli_sessions(
                     id, space_id, provider, cwd, native_binding_state, desired_state,
-                    created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'running', ?6, ?6)",
+                    last_active_at, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'running', ?6, ?7, ?7)",
                 params![
                     session_id,
                     request.space_id,
                     provider_text(request.provider),
                     cwd,
                     binding_state,
+                    last_active_at,
                     now,
                 ],
             )
@@ -790,6 +801,43 @@ impl StateStore for SqliteStateStore {
     fn list_agents(&self) -> BackendResult<Vec<AgentSummaryDto>> {
         let connection = self.connection()?;
         list_agents(&connection)
+    }
+
+    fn record_session_activity(
+        &self,
+        session_id: &str,
+        display_title: Option<&str>,
+    ) -> BackendResult<SessionActivityMetadata> {
+        let connection = self.connection()?;
+        let last_active_at = now_timestamp_millis();
+        let changed = connection
+            .execute(
+                "UPDATE cli_sessions
+                 SET display_title = COALESCE(?2, display_title),
+                     last_active_at = ?3, updated_at = ?4
+                 WHERE id = ?1",
+                params![session_id, display_title, last_active_at, now_timestamp()],
+            )
+            .map_err(storage_error)?;
+        if changed == 0 {
+            return Err(BackendError::NotFound(format!("CLI session {session_id}")));
+        }
+        connection
+            .query_row(
+                "SELECT COALESCE(NULLIF(TRIM(cs.display_title), ''), t.title),
+                        COALESCE(cs.last_active_at, cs.updated_at * 1000)
+                 FROM cli_sessions cs
+                 JOIN tabs t ON t.resource_id = cs.id AND t.kind = 'cli-session'
+                 WHERE cs.id = ?1",
+                [session_id],
+                |row| {
+                    Ok(SessionActivityMetadata {
+                        display_title: row.get(0)?,
+                        last_active_at: row.get(1)?,
+                    })
+                },
+            )
+            .map_err(storage_error)
     }
 
     fn bind_native_session(
@@ -1027,6 +1075,7 @@ fn insert_space_graph(
     let file_tab_id = Uuid::new_v4().to_string();
     let git_tab_id = Uuid::new_v4().to_string();
     let now = now_timestamp();
+    let last_active_at = now_timestamp_millis();
     transaction
         .execute(
             "INSERT INTO spaces(id, name, folder_id, folder_order, root_id, created_at, updated_at)
@@ -1037,9 +1086,10 @@ fn insert_space_graph(
     transaction
         .execute(
             "INSERT INTO cli_sessions(
-                id, space_id, provider, cwd, native_binding_state, desired_state, created_at, updated_at
-             ) VALUES (?1, ?2, 'shell', ?3, 'not_applicable', 'running', ?4, ?4)",
-            params![session_id, space_id, root_path, now],
+                id, space_id, provider, cwd, native_binding_state, desired_state,
+                last_active_at, created_at, updated_at
+             ) VALUES (?1, ?2, 'shell', ?3, 'not_applicable', 'running', ?4, ?5, ?5)",
+            params![session_id, space_id, root_path, last_active_at, now],
         )
         .map_err(storage_error)?;
     transaction
@@ -1463,7 +1513,9 @@ fn load_cli_sessions(connection: &Connection, space_id: &str) -> BackendResult<V
 fn list_agents(connection: &Connection) -> BackendResult<Vec<AgentSummaryDto>> {
     let mut statement = connection
         .prepare(
-            "SELECT cs.id, cs.space_id, s.name, t.id, t.title, cs.provider
+            "SELECT cs.id, cs.space_id, s.name, t.id, t.title,
+                    COALESCE(NULLIF(TRIM(cs.display_title), ''), t.title),
+                    cs.provider, COALESCE(cs.last_active_at, cs.updated_at * 1000)
              FROM cli_sessions cs
              JOIN spaces s ON s.id = cs.space_id
              JOIN tabs t ON t.resource_id = cs.id AND t.kind = 'cli-session'
@@ -1480,21 +1532,33 @@ fn list_agents(connection: &Connection) -> BackendResult<Vec<AgentSummaryDto>> {
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
             ))
         })
         .map_err(storage_error)?;
     rows.map(|row| {
-        let (cli_session_id, space_id, space_name, tab_id, tab_title, provider) =
-            row.map_err(storage_error)?;
+        let (
+            cli_session_id,
+            space_id,
+            space_name,
+            tab_id,
+            tab_title,
+            display_title,
+            provider,
+            last_active_at,
+        ) = row.map_err(storage_error)?;
         Ok(AgentSummaryDto {
             cli_session_id,
             space_id,
             space_name,
             tab_id,
             tab_title,
+            display_title,
             provider: parse_provider(&provider)?,
             activity: AgentActivity::Stopped,
             runtime_id: None,
+            last_active_at,
         })
     })
     .collect()
@@ -1634,6 +1698,40 @@ fn desired_state_text(value: DesiredState) -> &'static str {
     }
 }
 
+fn ensure_cli_session_activity_columns(connection: &Connection) -> BackendResult<()> {
+    let columns = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(cli_sessions)")
+            .map_err(storage_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(storage_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(storage_error)?
+    };
+    if !columns.iter().any(|column| column == "display_title") {
+        connection
+            .execute("ALTER TABLE cli_sessions ADD COLUMN display_title TEXT", [])
+            .map_err(storage_error)?;
+    }
+    if !columns.iter().any(|column| column == "last_active_at") {
+        connection
+            .execute(
+                "ALTER TABLE cli_sessions ADD COLUMN last_active_at INTEGER",
+                [],
+            )
+            .map_err(storage_error)?;
+    }
+    connection
+        .execute(
+            "UPDATE cli_sessions
+             SET last_active_at = updated_at * 1000
+             WHERE last_active_at IS NULL",
+            [],
+        )
+        .map_err(storage_error)?;
+    Ok(())
+}
+
 #[cfg(windows)]
 fn persisted_path(path: &Path) -> String {
     normalize_windows_path(&path.to_string_lossy())
@@ -1711,6 +1809,13 @@ fn now_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
+}
+
+fn now_timestamp_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
         .unwrap_or_default()
 }
 
