@@ -744,6 +744,11 @@ button:disabled {
 }
 
 .space-row[data-active="true"] {
+  width: calc(100% + 8px);
+  margin-inline: -4px;
+  padding-right: 4px;
+  padding-left: calc(10px + var(--tree-depth, 0) * var(--tree-indent));
+  border-radius: 0;
   background: var(--sidebar-active);
   font-weight: 500;
 }
@@ -948,6 +953,14 @@ button:disabled {
 .agent-item:focus-visible {
   border: 0;
   background: var(--sidebar-hover);
+}
+
+.agent-item[data-foreground="true"] {
+  width: calc(100% + 16px);
+  margin-inline: -8px;
+  padding-right: 15px;
+  padding-left: 15px;
+  border-radius: 0;
 }
 
 .agent-item[data-foreground="true"],
