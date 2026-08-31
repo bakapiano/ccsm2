@@ -67,7 +67,7 @@ const assertDependency = (parent, dependencyName, dependency) => {
   }
 };
 
-const desktop = resolvedPackage("ccsm-desktop", "0.1.0-beta.9", null);
+const desktop = resolvedPackage("ccsm-desktop", "0.1.0-beta.10", null);
 const tauri = resolvedPackage("tauri", "2.11.5", cratesIoSource);
 const tao = resolvedPackage("tao", "0.35.3", taoFixSource);
 const wry = resolvedPackage("wry", "0.55.1", cratesIoSource);
