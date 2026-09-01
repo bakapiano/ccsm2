@@ -345,9 +345,7 @@ fn launch_windows_update_helper(
     directory: &std::path::Path,
 ) -> Result<(), String> {
     use std::{os::windows::process::CommandExt, process::Stdio};
-    use windows_sys::Win32::System::Threading::{
-        CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
-    };
+    use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
     let error_log = directory.join("CCSM-update-error.log");
     let status_log = directory.join("CCSM-update-status.log");
@@ -361,24 +359,43 @@ fn launch_windows_update_helper(
         powershell_literal(&error_log),
     );
     let worker_command = encode_powershell_command(&worker_script);
-    std::process::Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-WindowStyle",
-            "Hidden",
-            "-EncodedCommand",
-            &worker_command,
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("launch breakaway NSIS updater helper failed: {error}"))
+    let creation_flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+    launch_with_optional_job_breakaway(creation_flags, |flags| {
+        std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-EncodedCommand",
+                &worker_command,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(flags)
+            .spawn()
+            .map(|_| ())
+    })
+    .map_err(|error| format!("launch NSIS updater helper failed: {error}"))
+}
+
+#[cfg(windows)]
+fn launch_with_optional_job_breakaway(
+    creation_flags: u32,
+    mut launch: impl FnMut(u32) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+
+    match launch(creation_flags | CREATE_BREAKAWAY_FROM_JOB) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            launch(creation_flags)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(windows)]
@@ -520,5 +537,70 @@ mod tests {
         assert_eq!(WINDOWS_E2E_NSIS_UPDATE_ARGUMENTS, ["/P", "/UPDATE", "/R"]);
         assert!(is_windows_executable(b"MZsigned updater bytes"));
         assert!(!is_windows_executable(b"not an executable"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_helper_retries_inside_a_restricted_job() {
+        use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+
+        let creation_flags = 0x1234;
+        let mut attempts = Vec::new();
+        launch_with_optional_job_breakaway(creation_flags, |flags| {
+            attempts.push(flags);
+            if attempts.len() == 1 {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                Ok(())
+            }
+        })
+        .expect("the helper should start inside a job that blocks breakaway");
+
+        assert_eq!(
+            attempts,
+            vec![creation_flags | CREATE_BREAKAWAY_FROM_JOB, creation_flags]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_helper_preserves_other_launch_errors() {
+        let creation_flags = 0x1234;
+        let mut attempts = Vec::new();
+        let error = launch_with_optional_job_breakaway(creation_flags, |flags| {
+            attempts.push(flags);
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+        })
+        .expect_err("an unrelated launch failure should be returned");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(attempts.len(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_helper_starts_a_real_process_from_the_current_job() {
+        use std::{os::windows::process::CommandExt, process::Stdio};
+        use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+
+        launch_with_optional_job_breakaway(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW, |flags| {
+            std::process::Command::new("cmd.exe")
+                .args(["/D", "/C", "exit", "0"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(flags)
+                .status()
+                .and_then(|status| {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(std::io::Error::other(format!(
+                            "helper probe exited with {status}"
+                        )))
+                    }
+                })
+        })
+        .expect("the helper probe should launch from the current Windows job");
     }
 }

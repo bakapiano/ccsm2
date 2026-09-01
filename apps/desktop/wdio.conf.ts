@@ -44,6 +44,10 @@ const scenarioIds = new Map([
     "terminal-clipboard-interrupt",
   ],
   [
+    "renders Chinese shell output with the configured fallback font",
+    "terminal-cjk-font",
+  ],
+  [
     "keeps retained terminal rendering bounded across Space switches",
     "terminal-render-lifecycle",
   ],
@@ -65,6 +69,7 @@ const scenarioTitles: Record<string, string> = {
   settings: "opens Settings and checks updates",
   theme: "switches running CLI composer surfaces with the application theme",
   terminal: "copies and pastes terminal text and interrupts with Control-C",
+  cjk: "renders Chinese shell output with the configured fallback font",
   renderer: "keeps retained terminal rendering bounded across Space switches",
   links: "opens wrapped link and file path output",
   "terminal-links":
@@ -73,7 +78,7 @@ const scenarioTitles: Record<string, string> = {
 const selectedScenario = process.env.CCSM_E2E_SCENARIO ?? "all";
 if (selectedScenario !== "all" && !scenarioTitles[selectedScenario]) {
   throw new Error(
-    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar, settings, theme, terminal, renderer, links, terminal-links; received ${selectedScenario}`,
+    `CCSM_E2E_SCENARIO must be one of all, claude, codex, ghcp, markdown, sidebar, settings, theme, terminal, cjk, renderer, links, terminal-links; received ${selectedScenario}`,
   );
 }
 

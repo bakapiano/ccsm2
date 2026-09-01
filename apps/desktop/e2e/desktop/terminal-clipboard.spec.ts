@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -38,6 +39,7 @@ const platform = requiredEnvironment("CCSM_E2E_PLATFORM");
 const runId = requiredEnvironment("CCSM_E2E_RUN_ID");
 const spaceRootBase = requiredEnvironment("CCSM_E2E_TARGET_ROOT_BASE");
 const scenarioId = "terminal-clipboard-interrupt";
+const cjkScenarioId = "terminal-cjk-font";
 const webdriverKey = {
   Control: "\uE009",
   Enter: "\uE007",
@@ -146,6 +148,60 @@ describe("Terminal keyboard routing", () => {
         `${JSON.stringify(
           {
             scenarioId,
+            failureStep: currentStep,
+            error: String(error),
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } finally {
+      try {
+        await evidence.checkpoint(
+          primaryError ? `failed-${currentStep}` : "final-state",
+        );
+      } catch (error) {
+        primaryError ??= error;
+      }
+      try {
+        evidence.finalize();
+      } catch (error) {
+        primaryError ??= error;
+      }
+    }
+
+    if (primaryError) throw primaryError;
+  });
+
+  it("renders Chinese shell output with the configured fallback font", async () => {
+    const evidence = new ScenarioEvidence(cjkScenarioId);
+    const spaceName = `E2E Terminal CJK ${runId}`;
+    const spaceRoot = join(spaceRootBase, "terminal-cjk");
+    mkdirSync(spaceRoot, { recursive: true });
+
+    let currentStep = "create-space";
+    let primaryError: unknown;
+    try {
+      await restoreScenarioUi();
+      await createSpace(spaceName, spaceRoot);
+      await waitForShell((snapshot) =>
+        Boolean(
+          snapshot.runtimeId &&
+            snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
+            snapshot.inputEnabled,
+        ),
+      );
+
+      currentStep = "verify-cjk-terminal-output";
+      await verifyCjkTerminalOutput(runId);
+      await evidence.checkpoint("cjk-terminal-output");
+    } catch (error) {
+      primaryError = error;
+      writeFileSync(
+        join(artifactDirectory, `${cjkScenarioId}-failure-context.json`),
+        `${JSON.stringify(
+          {
+            scenarioId: cjkScenarioId,
             failureStep: currentStep,
             error: String(error),
           },
@@ -312,6 +368,36 @@ async function typeShellLine(input: string): Promise<void> {
   await terminalInput.click();
   for (const character of input) await browser.keys(character);
   await browser.keys("Enter");
+}
+
+async function verifyCjkTerminalOutput(id: string): Promise<void> {
+  const marker = `中文终端测试_${id.replaceAll(/[^a-z0-9]/giu, "_")}`;
+  if (platform === "windows") {
+    const command = `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Write-Output '${marker}'`;
+    const encodedCommand = Buffer.from(command, "utf16le").toString("base64");
+    await typeShellLine(
+      `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encodedCommand}`,
+    );
+  } else {
+    const encodedMarker = Buffer.from(marker, "utf8").toString("base64");
+    await typeShellLine(`printf %s ${encodedMarker} | base64 -d`);
+  }
+  const snapshot = await waitForShell((candidate) =>
+    candidate.text.includes(marker),
+  );
+  expect(snapshot.text).toContain(marker);
+
+  const canvasFont = await browser.execute(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      '.terminal-panel[data-provider="shell"] canvas:not(.terminal-resize-snapshot)',
+    );
+    const context = canvas?.getContext("2d");
+    if (!context) throw new Error("Shell terminal canvas context is missing");
+    return context.font;
+  });
+  expect(canvasFont).toContain(
+    platform === "windows" ? "Microsoft YaHei UI" : "Noto Sans CJK SC",
+  );
 }
 
 async function verifyWindowsCtrlEnterRecord(
