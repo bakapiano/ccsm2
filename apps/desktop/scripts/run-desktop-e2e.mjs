@@ -599,6 +599,7 @@ function expectedScenarioIds(selected, cliArguments) {
       "settings-update",
       "cli-theme-switch",
       "terminal-clipboard-interrupt",
+      "terminal-cjk-font",
       "terminal-render-lifecycle",
       "provider-markdown-links",
       "terminal-links",
@@ -611,6 +612,7 @@ function expectedScenarioIds(selected, cliArguments) {
     settings: ["settings-update"],
     theme: ["cli-theme-switch"],
     terminal: ["terminal-clipboard-interrupt"],
+    cjk: ["terminal-cjk-font"],
     renderer: ["terminal-render-lifecycle"],
     links: ["provider-markdown-links", "terminal-links"],
     "terminal-links": ["terminal-links"],
@@ -648,6 +650,7 @@ function expectedScenarioIds(selected, cliArguments) {
     }
     if (normalized.includes("terminal-clipboard.spec")) {
       specScenarioIds.add("terminal-clipboard-interrupt");
+      specScenarioIds.add("terminal-cjk-font");
     }
     if (normalized.includes("terminal-render-lifecycle.spec")) {
       specScenarioIds.add("terminal-render-lifecycle");

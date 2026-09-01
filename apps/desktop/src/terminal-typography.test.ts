@@ -8,10 +8,18 @@ import {
 } from "./terminal-typography";
 
 describe("Terminal typography", () => {
-  test("matches the original CCSM desktop terminal", () => {
-    expect(TERMINAL_FONT_FAMILY).toBe(
-      '"Cascadia Mono", "Geist Mono", "JetBrains Mono", Consolas, monospace',
-    );
+  test("keeps the original metrics with CJK and symbol fallbacks", () => {
+    const fontFamilies = TERMINAL_FONT_FAMILY.split(", ");
+    expect(fontFamilies.slice(0, 4)).toEqual([
+      '"Cascadia Mono"',
+      '"Geist Mono"',
+      '"JetBrains Mono"',
+      "Consolas",
+    ]);
+    expect(fontFamilies).toContain('"Noto Sans SC"');
+    expect(fontFamilies).toContain('"Microsoft YaHei UI"');
+    expect(fontFamilies).toContain('"Segoe UI Symbol"');
+    expect(fontFamilies.at(-1)).toBe("monospace");
     expect(TERMINAL_FONT_SIZE).toBe(13);
     expect(TERMINAL_FONT_CELL_WIDTH).toBe(7);
     expect(TERMINAL_FONT_CELL_HEIGHT).toBe(18);
