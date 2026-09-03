@@ -6,6 +6,7 @@ import {
   type Provider,
   readModelStubEvents,
   setModelResponse,
+  setModelToolResponse,
 } from "./support/model-stub";
 
 interface ProviderCase {
@@ -251,6 +252,9 @@ describe("real provider CLI with stubbed model API", () => {
           ]);
           await evidence.checkpoint("follow-up-model-response");
 
+          currentStep = "board-mcp";
+          await verifyProviderBoard(provider, label, evidence);
+
           currentStep = "final-stop";
           await clickRuntimeAction(provider);
           await waitForProvider(provider, (snapshot) => !snapshot.runtimeId);
@@ -315,6 +319,9 @@ describe("real provider CLI with stubbed model API", () => {
             secondPrompt,
           );
           await evidence.checkpoint("resumed-model-response");
+
+          currentStep = "board-mcp";
+          await verifyProviderBoard(provider, label, evidence);
 
           if (provider === "codex") {
             currentStep = "persistent-fork";
@@ -571,6 +578,137 @@ function terminalResponse(marker: string): string {
     .repeat(Math.ceil(payloadLength / pattern.length))
     .slice(0, payloadLength);
   return `${payload}\n${marker}`;
+}
+
+async function verifyProviderBoard(
+  provider: Provider,
+  label: string,
+  evidence: ScenarioEvidence,
+): Promise<void> {
+  const boardId = `${provider}-architecture`;
+  const prompt = `${provider}-draw-interactive-board`;
+  const responseMarker = `STUB_${provider.toUpperCase()}_BOARD_CREATED`;
+  const title = `${label} Interactive Architecture`;
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111827; color: #f8fafc; }
+    main { width: min(780px, 92vw); }
+    h1 { font-size: 22px; }
+    .flow { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 28px 0; }
+    .node { flex: 1; padding: 22px 12px; border: 2px solid #60a5fa; border-radius: 14px; background: #1e3a5f; text-align: center; transition: .2s ease; }
+    .arrow { color: #fbbf24; font-size: 28px; }
+    button { border: 0; border-radius: 8px; padding: 9px 14px; background: #2563eb; color: white; cursor: pointer; }
+    #status { margin-left: 10px; color: #93c5fd; }
+    body.interactive .node { transform: translateY(-4px); border-color: #34d399; background: #064e3b; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${title}</h1>
+    <div class="flow" aria-label="Provider architecture flow">
+      <div class="node">${label} CLI</div><div class="arrow">→</div>
+      <div class="node">CCSM MCP</div><div class="arrow">→</div>
+      <div class="node">Board Tab</div>
+    </div>
+    <button id="toggle" type="button">Run interaction</button><span id="status">Ready</span>
+  </main>
+  <script>
+    document.querySelector('#toggle').addEventListener('click', () => {
+      document.body.classList.toggle('interactive');
+      document.querySelector('#status').textContent = 'Interactive';
+      parent.postMessage({ type: 'ccsm:board-state', state: 'Interactive' }, '*');
+    });
+    setTimeout(() => document.querySelector('#toggle').click(), 100);
+  </script>
+</body>
+</html>`;
+  setModelToolResponse(
+    provider,
+    prompt,
+    "board_put",
+    { boardId, html },
+    terminalResponse(responseMarker),
+  );
+  await focusProviderTab(provider);
+  await sendTerminalLine(provider, prompt);
+  await waitForProvider(
+    provider,
+    (snapshot) =>
+      snapshot.text.includes(responseMarker) &&
+      terminalPromptReady(provider, snapshot.text),
+    120_000,
+  );
+  await waitForBoard(boardId, title);
+  await evidence.checkpoint("board-rendered");
+  await waitForBoardInteraction(boardId);
+  await evidence.checkpoint("board-interacted");
+  await focusProviderTab(provider);
+}
+
+async function waitForBoard(boardId: string, title: string): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (expectedId, expectedTitle) => {
+          const panel = document.querySelector<HTMLElement>(
+            `.board-panel[data-board-id="${CSS.escape(expectedId)}"]`,
+          ) as
+            | (HTMLElement & {
+                __CCSM_BOARD_DEBUG__?: () => {
+                  boardId: string;
+                  title: string;
+                  loaded: boolean;
+                  status: string;
+                  interactionState: string | null;
+                };
+              })
+            | null;
+          const snapshot = panel?.__CCSM_BOARD_DEBUG__?.();
+          return Boolean(
+            snapshot?.loaded &&
+              snapshot.status === "ready" &&
+              snapshot.boardId === expectedId &&
+              snapshot.title === expectedTitle,
+          );
+        },
+        boardId,
+        title,
+      ),
+    {
+      timeout: 60_000,
+      interval: 250,
+      timeoutMsg: `Board ${boardId} did not render`,
+    },
+  );
+}
+
+async function waitForBoardInteraction(boardId: string): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute((expectedId) => {
+        const panel = document.querySelector<HTMLElement>(
+          `.board-panel[data-board-id="${CSS.escape(expectedId)}"]`,
+        );
+        return panel?.dataset.interactionState === "Interactive";
+      }, boardId),
+    {
+      timeout: 20_000,
+      interval: 200,
+      timeoutMsg: `${boardId} JavaScript interaction did not run`,
+    },
+  );
+}
+
+async function focusProviderTab(provider: Provider): Promise<void> {
+  const icon = await $(`.ccsm-tab-icon[data-icon="${provider}"]`);
+  await icon.waitForClickable({ timeout: 20_000 });
+  await icon.click();
+  await terminalPanel(provider);
 }
 
 async function selectApplicationTheme(theme: "light" | "dark"): Promise<void> {

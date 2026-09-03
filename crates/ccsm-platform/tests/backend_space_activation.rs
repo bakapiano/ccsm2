@@ -5,11 +5,14 @@ use std::{
 
 use ccsm_core::{
     AppBackend,
-    dto::{CreateSpaceRequest, ListDirectoryRequest, ReadFileRequest},
+    dto::{
+        BoardDocumentDto, BoardSummaryDto, CreateSpaceRequest, ListDirectoryRequest,
+        ReadFileRequest,
+    },
     error::{BackendError, BackendResult},
     ports::{
-        FileWatchBackend, FileWatchEventSink, FileWatchHandle, PtyBackend, PtyEventSink,
-        PtyProcess, PtySpawnSpec, RootDescriptor, StateStore,
+        BoardStore, FileWatchBackend, FileWatchEventSink, FileWatchHandle, PtyBackend,
+        PtyEventSink, PtyProcess, PtySpawnSpec, RootDescriptor, StateStore,
     },
 };
 use ccsm_platform::{CommandGitBackend, LocalFileSystemBackend, SqliteStateStore};
@@ -73,6 +76,30 @@ impl FileWatchBackend for RecordingWatcher {
 }
 
 struct UnusedPtyBackend;
+
+struct UnusedBoardStore;
+
+impl BoardStore for UnusedBoardStore {
+    fn list(&self, _space_id: &str) -> BackendResult<Vec<BoardSummaryDto>> {
+        Ok(Vec::new())
+    }
+
+    fn read(&self, _space_id: &str, _board_id: &str) -> BackendResult<BoardDocumentDto> {
+        Err(BackendError::NotFound("Board".into()))
+    }
+
+    fn put(
+        &self,
+        _space_id: &str,
+        _board_id: Option<&str>,
+        _html: &str,
+        _expected_revision: Option<&str>,
+    ) -> BackendResult<BoardDocumentDto> {
+        Err(BackendError::Platform(
+            "Board write is outside this test".into(),
+        ))
+    }
+}
 
 impl PtyBackend for UnusedPtyBackend {
     fn spawn(
@@ -168,6 +195,7 @@ fn active_directory_and_file_reads_materialize_watch_scopes() {
     let backend = AppBackend::new(
         store.clone(),
         Arc::new(UnusedPtyBackend),
+        Arc::new(UnusedBoardStore),
         Arc::new(LocalFileSystemBackend::new()),
         Arc::new(CommandGitBackend::new()),
         Arc::new(RecordingWatcher {
@@ -201,6 +229,7 @@ fn backend(store: Arc<SqliteStateStore>, rejected_root: PathBuf) -> Arc<AppBacke
     AppBackend::new(
         store,
         Arc::new(UnusedPtyBackend),
+        Arc::new(UnusedBoardStore),
         Arc::new(LocalFileSystemBackend::new()),
         Arc::new(CommandGitBackend::new()),
         Arc::new(RejectRootWatcher { rejected_root }),

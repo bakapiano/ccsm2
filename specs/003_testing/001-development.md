@@ -200,6 +200,7 @@ test-results/desktop/<run_id>/
 - Markdown场景使用独立合成Space，覆盖Preview、键盘编辑、Dirty、显式保存和磁盘结果。
 - Sidebar场景覆盖折叠、状态恢复、展开，以及折叠态可见元素集合。
 - Theme场景依次启动Claude、Codex和GHCP，在运行期完成深色到浅色切换，并断言光标输入行的主导Canvas像素颜色。
+- Provider Resume场景让Claude、Codex和GHCP各自通过真实CLI发现`ccsm` MCP、调用`board_put`生成完整HTML、自动打开Board Tab，并断言iframe内JavaScript交互状态。
 - Settings场景切换主题与默认浏览器链接偏好，关闭并重开弹窗后验证持久值，再恢复初始偏好。
 - Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、窗口失焦期间modifier keyup丢失后的Win32输入状态恢复、软换行文本校验和PTY中断恢复。
 - Terminal Links场景从真实Shell输出激活Web与文件链接，验证Browser toolbar外部打开、默认浏览器偏好路由、Browser Tab数量与File Editor行列跳转。

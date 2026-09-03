@@ -160,6 +160,10 @@ fn build_claude_args(
     }
     args.push("--settings".into());
     args.push(merged.to_string().into());
+    if let Some(config) = board_mcp_json() {
+        args.push("--mcp-config".into());
+        args.push(config.into());
+    }
     args.extend(filtered);
     args
 }
@@ -181,10 +185,13 @@ fn claude_hook_settings(hook_command: &str) -> Value {
             )
         })
         .collect::<Map<_, _>>();
-    Value::Object(Map::from_iter([(
-        "hooks".to_string(),
-        Value::Object(hooks),
-    )]))
+    Value::Object(Map::from_iter([
+        ("hooks".to_string(), Value::Object(hooks)),
+        (
+            "permissions".to_string(),
+            json!({"allow": ["mcp__ccsm__*"]}),
+        ),
+    ]))
 }
 
 fn collect_claude_settings(args: Vec<OsString>) -> (Vec<OsString>, Vec<String>) {
@@ -275,6 +282,10 @@ fn build_codex_args(
             .into(),
         );
     }
+    if let Some(config) = board_mcp_codex_config() {
+        args.push("-c".into());
+        args.push(config.into());
+    }
     // Codex 0.144 evaluates the invocation trust bypass against hook
     // definitions already loaded from preceding CLI config overrides.
     args.push("--dangerously-bypass-hook-trust".into());
@@ -296,6 +307,11 @@ fn build_copilot_args(
     native_session_id: Option<String>,
 ) -> Vec<OsString> {
     let mut args = vec!["--plugin-dir".into(), plugin_dir];
+    if let Some(config) = board_mcp_json() {
+        args.push("--additional-mcp-config".into());
+        args.push(config.into());
+        args.push("--allow-tool=ccsm".into());
+    }
     if !has_explicit_copilot_session_flag(&user_args)
         && let Some(native_session_id) = native_session_id
     {
@@ -303,6 +319,57 @@ fn build_copilot_args(
     }
     args.extend(user_args);
     args
+}
+
+fn board_mcp_json() -> Option<String> {
+    let command = env::var("CCSM_HOOK_REPORTER").ok()?;
+    let env = board_mcp_environment()?;
+    Some(
+        json!({
+            "mcpServers": {
+                "ccsm": {
+                    "command": command,
+                    "args": ["mcp", "serve"],
+                    "env": env
+                }
+            }
+        })
+        .to_string(),
+    )
+}
+
+fn board_mcp_codex_config() -> Option<String> {
+    let command = toml_string(&env::var("CCSM_HOOK_REPORTER").ok()?);
+    let environment = board_mcp_environment()?;
+    let environment = environment
+        .as_object()?
+        .iter()
+        .map(|(key, value)| format!("{key}={}", toml_string(value.as_str().unwrap_or_default())))
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(format!(
+        "mcp_servers.ccsm={{command={command},args=['mcp','serve'],env={{{environment}}},default_tools_approval_mode='approve'}}"
+    ))
+}
+
+fn board_mcp_environment() -> Option<Value> {
+    let mut values = Map::new();
+    for name in [
+        "CCSM_PROVIDER",
+        "CCSM_SPACE_ID",
+        "CCSM_SESSION_ID",
+        "CCSM_RUNTIME_ID",
+        "CCSM_HOOK_PIPE",
+        "CCSM_HOOK_TOKEN",
+        "CCSM_BOARD_ROOT",
+    ] {
+        values.insert(name.into(), Value::String(env::var(name).ok()?));
+    }
+    Some(Value::Object(values))
+}
+
+fn toml_string(value: &str) -> String {
+    serde_json::to_string(value).expect("string serialization cannot fail")
 }
 
 fn has_explicit_copilot_session_flag(args: &[OsString]) -> bool {

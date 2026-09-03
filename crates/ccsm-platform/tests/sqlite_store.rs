@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ccsm_core::{
     dto::{
-        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        BoardSummaryDto, CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
         CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
         DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, MoveSpaceRequest,
         NativeBindingState, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
@@ -608,6 +608,40 @@ fn file_editor_tab_is_unique_per_space_relative_path() {
             .tabs
             .iter()
             .filter(|tab| tab.kind == ccsm_core::dto::TabKind::FileEditor)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn board_tab_is_upserted_by_space_and_board_id() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStateStore::open(&directory.path().join("data.db")).unwrap();
+    let state = store.bootstrap(directory.path()).unwrap();
+    let mut board = BoardSummaryDto {
+        id: "architecture".into(),
+        space_id: state.active_space_id.clone(),
+        title: "Architecture".into(),
+        revision: "revision-1".into(),
+    };
+
+    let first = store.upsert_board_tab(&board).unwrap();
+    board.title = "Architecture v2".into();
+    board.revision = "revision-2".into();
+    let second = store.upsert_board_tab(&board).unwrap();
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(second.kind, ccsm_core::dto::TabKind::Board);
+    assert_eq!(second.title, "Architecture v2");
+    assert_eq!(second.resource_id.as_deref(), Some("architecture"));
+    assert_eq!(second.state["revision"], "revision-2");
+    assert_eq!(
+        store
+            .load_space(&state.active_space_id)
+            .unwrap()
+            .tabs
+            .iter()
+            .filter(|tab| tab.kind == ccsm_core::dto::TabKind::Board)
             .count(),
         1
     );

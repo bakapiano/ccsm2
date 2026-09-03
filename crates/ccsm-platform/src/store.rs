@@ -6,10 +6,10 @@ use std::{
 
 use ccsm_core::{
     dto::{
-        AgentActivity, AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest,
-        CreateCliTabRequest, CreateFileEditorTabRequest, CreateFileExplorerTabRequest,
-        CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto,
-        DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
+        AgentActivity, AgentSummaryDto, BoardSummaryDto, BootstrapDto, CliSessionDto,
+        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
+        CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
         GitRepositoryStatusDto, GitSnapshotDto, MoveFolderRequest, MoveSpaceRequest,
         NativeBindingState, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
         SaveLayoutRequest, SetFolderCollapsedRequest, SpaceDto, SpaceFolderDto, SpaceLayoutDto,
@@ -105,6 +105,9 @@ impl SqliteStateStore {
                 CREATE UNIQUE INDEX IF NOT EXISTS tabs_file_editor_path_unique
                     ON tabs(space_id, resource_id)
                     WHERE kind = 'file-editor' AND resource_id IS NOT NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS tabs_board_resource_unique
+                    ON tabs(space_id, resource_id)
+                    WHERE kind = 'board' AND resource_id IS NOT NULL;
 
                 CREATE TABLE IF NOT EXISTS space_layouts (
                     space_id TEXT PRIMARY KEY REFERENCES spaces(id) ON DELETE CASCADE,
@@ -788,6 +791,56 @@ impl StateStore for SqliteStateStore {
                     r#"{"collapsedRepositoryIds":[]}"#,
                     now,
                 ],
+            )
+            .map_err(storage_error)?;
+        load_tab(&connection, &tab_id)
+    }
+
+    fn upsert_board_tab(&self, board: &BoardSummaryDto) -> BackendResult<TabDto> {
+        let connection = self.connection()?;
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM spaces WHERE id = ?1)",
+                [&board.space_id],
+                |row| row.get(0),
+            )
+            .map_err(storage_error)?;
+        if !exists {
+            return Err(BackendError::NotFound(format!("Space {}", board.space_id)));
+        }
+        let state = serde_json::to_string(&serde_json::json!({
+            "boardId": board.id,
+            "revision": board.revision
+        }))
+        .map_err(|error| BackendError::Storage(error.to_string()))?;
+        let now = now_timestamp();
+        if let Some(tab_id) = connection
+            .query_row(
+                "SELECT id FROM tabs
+                 WHERE space_id = ?1 AND kind = 'board' AND resource_id = ?2",
+                params![board.space_id, board.id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage_error)?
+        {
+            connection
+                .execute(
+                    "UPDATE tabs SET title = ?2, state_version = 1, state_json = ?3,
+                            updated_at = ?4 WHERE id = ?1",
+                    params![tab_id, board.title, state, now],
+                )
+                .map_err(storage_error)?;
+            return load_tab(&connection, &tab_id);
+        }
+        let tab_id = Uuid::new_v4().to_string();
+        connection
+            .execute(
+                "INSERT INTO tabs(
+                    id, space_id, kind, title, resource_id, state_version, state_json,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, 'board', ?3, ?4, 1, ?5, ?6, ?6)",
+                params![tab_id, board.space_id, board.title, board.id, state, now],
             )
             .map_err(storage_error)?;
         load_tab(&connection, &tab_id)
@@ -1618,6 +1671,7 @@ fn parse_tab_kind(value: &str) -> BackendResult<TabKind> {
     match value {
         "cli-session" => Ok(TabKind::CliSession),
         "browser" => Ok(TabKind::Browser),
+        "board" => Ok(TabKind::Board),
         "file-explorer" => Ok(TabKind::FileExplorer),
         "file-editor" => Ok(TabKind::FileEditor),
         "git" => Ok(TabKind::Git),

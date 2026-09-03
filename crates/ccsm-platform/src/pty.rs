@@ -25,9 +25,10 @@ const RUNTIME_SHIM_ROOT_PREFIX: &str = "ccsm-runtime-shims-";
 const PTY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const PTY_JOIN_POLL_INTERVAL: Duration = Duration::from_millis(5);
 const PTY_READ_BUFFER_BYTES: usize = 8 * 1024;
-const PROVIDER_RUNTIME_ENVIRONMENT: [&str; 9] = [
+const PROVIDER_RUNTIME_ENVIRONMENT: [&str; 11] = [
     "CCSM_WRAPPER_ACTIVE",
     "CCSM_PROVIDER",
+    "CCSM_SPACE_ID",
     "CCSM_SESSION_ID",
     "CCSM_RUNTIME_ID",
     "CCSM_HOOK_PIPE",
@@ -35,6 +36,7 @@ const PROVIDER_RUNTIME_ENVIRONMENT: [&str; 9] = [
     "CCSM_HOOK_REPORTER",
     "CCSM_NATIVE_SESSION_ID",
     "CCSM_COPILOT_PLUGIN_DIR",
+    "CCSM_BOARD_ROOT",
 ];
 
 fn clear_inherited_provider_runtime_environment(command: &mut CommandBuilder) {
@@ -116,6 +118,7 @@ enum ResizeCommand {
 pub struct PortablePtyBackend {
     shim_root: PathBuf,
     executable: PathBuf,
+    board_root: Option<PathBuf>,
     claude_model: Option<String>,
     claude_base_url: Option<String>,
     raw_claude_path: Option<String>,
@@ -132,10 +135,16 @@ impl PortablePtyBackend {
         Ok(Self {
             shim_root,
             executable,
+            board_root: None,
             claude_model: None,
             claude_base_url: None,
             raw_claude_path: None,
         })
+    }
+
+    pub fn with_board_root(mut self, board_root: PathBuf) -> Self {
+        self.board_root = Some(board_root);
+        self
     }
 
     pub fn with_claude_overrides(
@@ -334,11 +343,15 @@ impl PtyBackend for PortablePtyBackend {
             command.env("PATH", path);
             let hook = spec.hook.as_ref().expect("agent launch has Hook context");
             command.env("CCSM_PROVIDER", provider_text(spec.provider));
+            command.env("CCSM_SPACE_ID", &hook.space_id);
             command.env("CCSM_SESSION_ID", &hook.cli_session_id);
             command.env("CCSM_RUNTIME_ID", &hook.runtime_id);
             command.env("CCSM_HOOK_PIPE", &hook.endpoint);
             command.env("CCSM_HOOK_TOKEN", &hook.token);
             command.env("CCSM_HOOK_REPORTER", &runtime_shim.hook_executable);
+            if let Some(board_root) = self.board_root.as_ref() {
+                command.env("CCSM_BOARD_ROOT", board_root);
+            }
             if let Some(plugin_dir) = runtime_shim.copilot_plugin_dir() {
                 command.env("CCSM_COPILOT_PLUGIN_DIR", plugin_dir);
             }

@@ -5,14 +5,15 @@ use std::{
 
 use crate::{
     dto::{
-        AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest,
-        CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
-        CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
-        DeleteSpaceRequest, DeleteTabRequest, DesiredState, FileDocumentDto, FileEntryDto,
-        GitFileChangeDto, GitFileDiffDto, GitRepositoryStatusDto, GitSnapshotDto, HookReport,
-        MoveFolderRequest, MoveSpaceRequest, ProviderKind, RenameFolderRequest, RenameSpaceRequest,
-        ResolvedFileReferenceDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
-        SpaceSnapshotDto, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
+        AgentSummaryDto, BoardDocumentDto, BoardSummaryDto, BootstrapDto, CliSessionDto,
+        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
+        CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
+        FileDocumentDto, FileEntryDto, GitFileChangeDto, GitFileDiffDto, GitRepositoryStatusDto,
+        GitSnapshotDto, HookReport, MoveFolderRequest, MoveSpaceRequest, ProviderKind,
+        RenameFolderRequest, RenameSpaceRequest, ResolvedFileReferenceDto, SaveLayoutRequest,
+        SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto, TabDto, UpdateTabStateRequest,
+        WriteFileRequest, WriteFileResultDto,
     },
     error::BackendResult,
 };
@@ -46,6 +47,7 @@ pub trait StateStore: Send + Sync {
     ) -> BackendResult<TabDto>;
     fn create_file_editor_tab(&self, request: CreateFileEditorTabRequest) -> BackendResult<TabDto>;
     fn create_git_tab(&self, request: CreateGitTabRequest) -> BackendResult<TabDto>;
+    fn upsert_board_tab(&self, board: &BoardSummaryDto) -> BackendResult<TabDto>;
     fn get_cli_session(&self, session_id: &str) -> BackendResult<CliSessionDto>;
     fn list_agents(&self) -> BackendResult<Vec<AgentSummaryDto>> {
         Ok(Vec::new())
@@ -72,6 +74,18 @@ pub trait StateStore: Send + Sync {
     fn space_root(&self, space_id: &str) -> BackendResult<RootDescriptor>;
     fn load_git_cache(&self, space_id: &str, root_id: &str) -> BackendResult<GitSnapshotDto>;
     fn save_git_cache(&self, snapshot: &GitSnapshotDto) -> BackendResult<()>;
+}
+
+pub trait BoardStore: Send + Sync {
+    fn list(&self, space_id: &str) -> BackendResult<Vec<BoardSummaryDto>>;
+    fn read(&self, space_id: &str, board_id: &str) -> BackendResult<BoardDocumentDto>;
+    fn put(
+        &self,
+        space_id: &str,
+        board_id: Option<&str>,
+        html: &str,
+        expected_revision: Option<&str>,
+    ) -> BackendResult<BoardDocumentDto>;
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +188,7 @@ pub struct PtySpawnSpec {
 
 #[derive(Debug, Clone)]
 pub struct PtyHookContext {
+    pub space_id: String,
     pub cli_session_id: String,
     pub runtime_id: String,
     pub endpoint: String,

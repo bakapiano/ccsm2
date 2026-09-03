@@ -3,16 +3,16 @@ use std::sync::Arc;
 use ccsm_core::{
     RuntimeEventSink,
     dto::{
-        AgentSummaryDto, BootstrapDto, CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest,
-        CreateFileEditorTabRequest, CreateFileExplorerTabRequest, CreateFolderRequest,
-        CreateGitTabRequest, CreateSpaceRequest, CreatedCliTabDto, DeleteFolderRequest,
-        DeleteSpaceRequest, DeleteTabRequest, DirectoryListingDto, FileDocumentDto, GitFileDiffDto,
-        GitSnapshotDto, ListDirectoryRequest, MoveFolderRequest, MoveSpaceRequest, ReadFileRequest,
-        ReadGitDiffRequest, RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest,
-        ReplaceCliSessionRequest, ResolveFileReferenceRequest, ResolvedFileReferenceDto,
-        RuntimeStartedDto, SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto,
-        SpaceSnapshotDto, StartRuntimeRequest, TabDto, UpdateTabStateRequest, WriteFileRequest,
-        WriteFileResultDto,
+        AgentSummaryDto, BoardDocumentDto, BoardSummaryDto, BootstrapDto, CliSessionDto,
+        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
+        CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest,
+        DirectoryListingDto, FileDocumentDto, GitFileDiffDto, GitSnapshotDto, ListDirectoryRequest,
+        MoveFolderRequest, MoveSpaceRequest, ReadBoardRequest, ReadFileRequest, ReadGitDiffRequest,
+        RefreshGitRequest, RenameFolderRequest, RenameSpaceRequest, ReplaceCliSessionRequest,
+        ResolveFileReferenceRequest, ResolvedFileReferenceDto, RuntimeStartedDto,
+        SaveLayoutRequest, SetFolderCollapsedRequest, SpaceLayoutDto, SpaceSnapshotDto,
+        StartRuntimeRequest, TabDto, UpdateTabStateRequest, WriteFileRequest, WriteFileResultDto,
     },
     error::{ApiErrorDto, BackendError},
 };
@@ -529,6 +529,28 @@ pub fn navigate_browser(
     state: State<'_, DesktopState>,
 ) -> Result<String, String> {
     state.browser.navigate(&app, &surface_id, &url)
+}
+
+#[tauri::command]
+pub fn list_boards(
+    space_id: String,
+    state: State<'_, DesktopState>,
+) -> CommandResult<Vec<BoardSummaryDto>> {
+    state
+        .backend
+        .list_boards(&space_id)
+        .map_err(ApiErrorDto::from)
+}
+
+#[tauri::command]
+pub fn read_board(
+    request: ReadBoardRequest,
+    state: State<'_, DesktopState>,
+) -> CommandResult<BoardDocumentDto> {
+    state
+        .backend
+        .read_board(&request.space_id, &request.board_id)
+        .map_err(ApiErrorDto::from)
 }
 
 #[tauri::command]

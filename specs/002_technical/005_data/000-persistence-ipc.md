@@ -11,6 +11,7 @@ CCSM data directory
 ├─ data.db
 ├─ main-webview/
 ├─ browser-profile/
+├─ temp/boards/<space-id>/<board-id>.html
 └─ logs/
 ```
 
@@ -42,6 +43,7 @@ git_status_cache
 - `settings`保存全局`last_active_space_id`和单窗口`window_state`，包括bounds、maximized和fullscreen。
 - `tabs` 对 `kind='cli-session'` 建立 active `resource_id` partial unique index；对 `kind='git'` 建立 active `space_id` partial unique index。
 - Browser Tab state保存`last_url/title/zoom`；global profile数据保存在filesystem store。
+- Board Tab state保存`board_id/revision`；完整HTML保存在`temp/boards/<space-id>/<board-id>.html`，单文档上限为2 MiB。
 - `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`、Provider Session标题、毫秒级`last_active_at`和最后一次退出摘要。
 - `cli_sessions`对`{provider, native_session_id}`建立non-null partial unique index，确保一个原生身份映射到一个未删除的CLI Session。
 - Terminal runtime、runtime ID、PID、PTY handle、actual state和per-native-session resume mutex保存在AppBackend内存中。
@@ -95,6 +97,7 @@ git_status_cache
 - Agent CLI provider transcripts保持在provider data directory；CCSM不读取或扫描这些目录来推断native Session ID。
 - Agent CLI登录由provider CLI管理；Git认证由Git工具链管理；Browser认证由platform WebView profile管理。
 - Hook token属于单次runtime，保存在RuntimeManager和子进程环境中，并在runtime结束时丢弃。
+- `temp/boards/`由CCSM管理并位于Git workspace边界之外；Board文件使用Space ID和已校验的Board ID确定路径。
 
 ## Global Browser Profile
 
@@ -173,6 +176,7 @@ interface AppBackendClient {
   sessions: SessionCommands;
   files: FileCommands;
   git: GitCommands;
+  boards: BoardCommands;
 }
 
 type AppEvent =
@@ -180,6 +184,7 @@ type AppEvent =
   | { kind: "session.runtimeChanged"; payload: SessionStateDto }
   | { kind: "session.bindingChanged"; payload: NativeBindingDto }
   | { kind: "git.statusChanged"; payload: GitStatusDto }
+  | { kind: "board.changed"; payload: BoardChangedDto }
   | { kind: "filesystem.changed"; payload: FileChangeHintDto };
 
 type BrowserSurfaceEvent =
@@ -196,6 +201,8 @@ interface FileChangeHintDto {
 ```
 
 Event payload使用完整领域snapshot或可重复处理的invalidation hint。`runtime_id`和`git_scan_generation`只出现在对应领域DTO中；`layout_revision`由layout command response返回。
+
+`board.changed`携带来源CLI Session、已提交的Board metadata与upsert后的Tab DTO。renderer将新Tab放到来源CLI右侧，并让已存在的Board panel读取最新HTML。
 
 File Explorer通过backend command声明watch scope。`filesystem.changed`经统一`DesktopEventStream`发送；watch scope不创建独立callback、channel或transport subscription。
 

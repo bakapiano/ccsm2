@@ -4,8 +4,16 @@ export type Provider = "claude" | "codex" | "copilot";
 
 interface ModelStubConfig {
   defaultResponse?: string;
-  providers: Partial<Record<Provider, Record<string, string>>>;
+  providers: Partial<Record<Provider, Record<string, ModelStubResponse>>>;
 }
+
+type ModelStubResponse =
+  | string
+  | {
+      tool: string;
+      arguments: Record<string, unknown>;
+      finalResponse: string;
+    };
 
 export interface ModelStubEvent {
   at: string;
@@ -19,6 +27,24 @@ export interface ModelStubEvent {
   previousResponseId?: string | null;
   configuredPromptsPresent: string[];
   configuredResponsesPresent: string[];
+}
+
+export function setModelToolResponse(
+  provider: Provider,
+  prompt: string,
+  tool: string,
+  argumentsValue: Record<string, unknown>,
+  finalResponse: string,
+): void {
+  const path = requiredPath("CCSM_E2E_MODEL_STUB_FILE");
+  const config = JSON.parse(readFileSync(path, "utf8")) as ModelStubConfig;
+  config.providers[provider] ??= {};
+  config.providers[provider]![prompt] = {
+    tool,
+    arguments: argumentsValue,
+    finalResponse,
+  };
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 function requiredPath(name: string): string {
