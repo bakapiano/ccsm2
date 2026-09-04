@@ -34,7 +34,7 @@ per-runtime shim directory added to PATH
 → inject per-invocation Hook arguments
 → exec real CLI
 → Hook reads native payload from stdin
-→ ccsm[.exe] hook report → HookEndpoint → AppBackend
+→ ccsm[.exe] hook report → RuntimeReportEndpoint → AppBackend
 ```
 
 wrapper 必须避免递归解析到自己。平台实现：
@@ -94,7 +94,7 @@ CCSM_HOOK_PIPE
 CCSM_HOOK_TOKEN
 ```
 
-HookEndpoint读取并反序列化报告后立即写入进程内无界队列。独立消费者按接收顺序调用AppBackend完成token、provider、session、runtime ID和payload ID校验，再通过platform resolver解析Provider Session metadata并提交状态更新。Hook命令完成endpoint写入后立即返回空JSON响应。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
+RuntimeReportEndpoint读取tagged envelope并按producer/kind写入高优先级Hook队列、普通Gateway status队列或受限activity队列。独立消费者调用AppBackend完成token scope、provider、session、runtime ID、generation、seq和payload ID校验，再通过platform resolver解析Provider Session metadata并提交状态更新。Hook命令完成endpoint写入后立即返回空JSON响应。认证HookReport是Claude/Codex/Copilot native Session ID的唯一来源；Shell跳过native binding。
 
 Hook reporter从`session_title/sessionTitle`生成标题候选。消费者对认证Hook给出的Claude/Codex精确`transcript_path`执行有界JSONL读取，提取显式标题和Provider摘要；Codex同时按native Session ID读取相邻`session_index.jsonl`中的thread name。标题归一化后最多保存96个字符。缺少原生标题时，Agents使用Tab标题。用户prompt仅更新session activity和last-active时间。`cli_sessions.display_title`保存最近确认的原生标题，`last_active_at`以Unix毫秒记录每次有效Hook或runtime生命周期活动。
 
@@ -127,3 +127,5 @@ Codex与Copilot TUI在空提示符阶段尚未创建native session，首次promp
 Hook尚未到达时显示`binding pending`，CLI和PTY继续运行。Runtime结束仍未绑定时进入`resume unavailable`；下一次恢复显示degraded并提供Start New/Replace。CCSM使用认证Hook完成身份绑定；Session metadata读取目标限定为该Hook给出的精确路径和native Session ID。
 
 当前 Windows-first 项是 `.exe/.cmd` 解析与 quoting；macOS/Linux 在宣称支持前必须用真实 npm/native CLI 安装分别验证 shim、resume 和 Hook stdin。
+
+结构化Agent Gateway runtime继续使用同一CLI shim与Hook binding。Gateway对原生协议事件的观察通过RuntimeReportEndpoint补充turn、tool、approval和transport状态，详细协议见[Runtime reports](../002_runtime/005-runtime-reports.md)。
