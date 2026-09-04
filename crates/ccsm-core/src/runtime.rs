@@ -10,8 +10,8 @@ use uuid::Uuid;
 
 use crate::{
     dto::{
-        AgentActivity, CliSessionDto, HookReport, NativeBindingState, ProviderKind, RuntimeEvent,
-        RuntimeStartedDto,
+        AgentActivity, BoardChangeReport, CliSessionDto, HookReport, NativeBindingState,
+        ProviderKind, RuntimeEvent, RuntimeStartedDto,
     },
     error::{BackendError, BackendResult},
     ports::{PtyBackend, PtyEvent, PtyEventSink, PtyHookContext, PtyProcess, PtySpawnSpec},
@@ -287,6 +287,7 @@ impl RuntimeManager {
                 },
             );
             Some(PtyHookContext {
+                space_id: session.space_id.clone(),
                 cli_session_id: session.id.clone(),
                 runtime_id: runtime_id.clone(),
                 endpoint: transport.endpoint,
@@ -435,6 +436,23 @@ impl RuntimeManager {
             },
             activity,
         })
+    }
+
+    pub fn validate_board_report(&self, report: &BoardChangeReport) -> BackendResult<()> {
+        let state = self.lock_state()?;
+        let registration = state
+            .hook_registrations
+            .get(&report.runtime_id)
+            .ok_or_else(|| BackendError::NotFound(format!("runtime {}", report.runtime_id)))?;
+        if registration.cli_session_id != report.cli_session_id
+            || registration.provider != report.provider
+            || !tokens_equal(&registration.token, &report.token)
+        {
+            return Err(BackendError::Invalid(
+                "Board report runtime authentication failed".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn agent_activity(

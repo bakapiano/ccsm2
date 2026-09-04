@@ -35,6 +35,7 @@ function createBuiltInProviders(deps: AppDependencies) {
   return [
     createCliSessionProvider(deps.cli),
     createBrowserProvider(deps.browser),
+    createBoardProvider(deps.boards),
     createFileExplorerProvider(deps.files),
     createFileEditorProvider(deps.files),
     createGitProvider(deps.git),
@@ -54,6 +55,7 @@ function createBuiltInProviders(deps: AppDependencies) {
 | --------------- | ---------------------------------- | ------------------------ |
 | `cli-session`   | terminal view preferences          | AppBackend CliSession    |
 | `browser`       | URL、title、zoom                   | Tauri BrowserSurface     |
+| `board`         | board ID、revision                 | Space BoardStore         |
 | `file-explorer` | relative root、expanded、selection | Space filesystem service |
 | `file-editor`   | path、selection、scroll、wrap      | Space filesystem service |
 | `git`           | section collapse、selection        | GitStatusService         |

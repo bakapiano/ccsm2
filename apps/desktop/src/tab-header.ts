@@ -8,6 +8,7 @@ import type { CliSessionDto } from "./generated/CliSessionDto";
 import type { TabDto } from "./generated/TabDto";
 
 export type TabIconKind =
+  | "board"
   | "browser"
   | "claude"
   | "codex"
@@ -21,6 +22,11 @@ const ICONS: Record<
   Exclude<TabIconKind, "claude" | "codex" | "copilot">,
   string
 > = {
+  board: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="4" width="16" height="15" rx="2"></rect>
+      <path d="M8 15v-4m4 4V8m4 7v-2"></path>
+    </svg>`,
   browser: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="9"></circle>
@@ -62,6 +68,8 @@ export function resolveTabIconKind(
   cliSessions: readonly CliSessionDto[],
 ): TabIconKind {
   switch (tab.kind) {
+    case "board":
+      return "board";
     case "browser":
       return "browser";
     case "file-explorer":

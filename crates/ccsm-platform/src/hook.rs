@@ -12,7 +12,7 @@ use std::{
 };
 
 use ccsm_core::{
-    dto::{HookReport, ProviderKind},
+    dto::{BoardChangeReport, HookReport, ProviderKind},
     error::{BackendError, BackendResult},
 };
 use serde_json::Value;
@@ -24,6 +24,12 @@ const MAX_AGENT_TITLE_CHARACTERS: usize = 96;
 const CONNECT_RETRIES: usize = 40;
 
 pub type HookReportSink = Arc<dyn Fn(HookReport) + Send + Sync + 'static>;
+pub type BoardChangeReportSink = Arc<dyn Fn(BoardChangeReport) + Send + Sync + 'static>;
+
+enum RuntimeReport {
+    Hook(HookReport),
+    Board(BoardChangeReport),
+}
 
 pub struct LocalHookEndpoint {
     address: String,
@@ -34,12 +40,19 @@ pub struct LocalHookEndpoint {
 
 impl LocalHookEndpoint {
     pub fn start(sink: HookReportSink) -> BackendResult<Self> {
+        Self::start_with_board(sink, Arc::new(|_| {}))
+    }
+
+    pub fn start_with_board(
+        hook_sink: HookReportSink,
+        board_sink: BoardChangeReportSink,
+    ) -> BackendResult<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let address = endpoint_address();
         let (report_tx, report_rx) = mpsc::channel();
         let consumer = thread::Builder::new()
             .name("ccsm-hook-consumer".into())
-            .spawn(move || consume_hook_reports(report_rx, sink))
+            .spawn(move || consume_runtime_reports(report_rx, hook_sink, board_sink))
             .map_err(|error| {
                 BackendError::Platform(format!("start Hook consumer failed: {error}"))
             })?;
@@ -257,18 +270,35 @@ fn parse_provider(value: &str) -> BackendResult<ProviderKind> {
     }
 }
 
-fn enqueue_message(bytes: Vec<u8>, queue: &mpsc::Sender<HookReport>) {
+pub(crate) fn send_board_change_report(report: &BoardChangeReport) -> BackendResult<()> {
+    let endpoint = required_env("CCSM_HOOK_PIPE")?;
+    let payload =
+        serde_json::to_vec(report).map_err(|error| BackendError::Platform(error.to_string()))?;
+    write_endpoint(&endpoint, &payload)
+        .map_err(|error| BackendError::Platform(format!("send Board report: {error}")))
+}
+
+fn enqueue_message(bytes: Vec<u8>, queue: &mpsc::Sender<RuntimeReport>) {
     if bytes.is_empty() || bytes.len() as u64 > MAX_HOOK_MESSAGE_BYTES {
         return;
     }
     if let Ok(report) = serde_json::from_slice::<HookReport>(&bytes) {
-        let _ = queue.send(report);
+        let _ = queue.send(RuntimeReport::Hook(report));
+    } else if let Ok(report) = serde_json::from_slice::<BoardChangeReport>(&bytes) {
+        let _ = queue.send(RuntimeReport::Board(report));
     }
 }
 
-fn consume_hook_reports(queue: mpsc::Receiver<HookReport>, sink: HookReportSink) {
+fn consume_runtime_reports(
+    queue: mpsc::Receiver<RuntimeReport>,
+    hook_sink: HookReportSink,
+    board_sink: BoardChangeReportSink,
+) {
     for report in queue {
-        sink(report);
+        match report {
+            RuntimeReport::Hook(report) => hook_sink(report),
+            RuntimeReport::Board(report) => board_sink(report),
+        }
     }
 }
 
@@ -420,7 +450,7 @@ fn connect_named_pipe(
 fn run_server(
     address: String,
     stop: Arc<AtomicBool>,
-    queue: mpsc::Sender<HookReport>,
+    queue: mpsc::Sender<RuntimeReport>,
     ready: mpsc::Sender<BackendResult<()>>,
 ) {
     use std::{fs::File, os::windows::io::FromRawHandle};
@@ -486,7 +516,7 @@ fn run_server(
 fn run_server(
     address: String,
     stop: Arc<AtomicBool>,
-    queue: mpsc::Sender<HookReport>,
+    queue: mpsc::Sender<RuntimeReport>,
     ready: mpsc::Sender<BackendResult<()>>,
 ) {
     use std::os::unix::net::UnixListener;
@@ -787,6 +817,40 @@ mod tests {
     }
 
     #[test]
+    fn endpoint_routes_board_changes_to_the_board_sink() {
+        let (tx, rx) = mpsc::channel();
+        let endpoint = LocalHookEndpoint::start_with_board(
+            Arc::new(|_| {}),
+            Arc::new(move |report| {
+                let _ = tx.send(report);
+            }),
+        )
+        .expect("start endpoint");
+        let report = BoardChangeReport {
+            provider: ProviderKind::Claude,
+            cli_session_id: "session-board".into(),
+            runtime_id: "runtime-board".into(),
+            token: "secret".into(),
+            space_id: "space-board".into(),
+            board_id: "architecture".into(),
+            revision: "revision-1".into(),
+        };
+        write_endpoint(
+            endpoint.address(),
+            &serde_json::to_vec(&report).expect("serialize Board report"),
+        )
+        .expect("send Board report");
+
+        let received = rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("receive Board report");
+        assert_eq!(received.runtime_id, report.runtime_id);
+        assert_eq!(received.space_id, report.space_id);
+        assert_eq!(received.board_id, report.board_id);
+        endpoint.shutdown();
+    }
+
+    #[test]
     fn endpoint_accepts_reports_while_the_consumer_is_busy() {
         let (consumer_started_tx, consumer_started_rx) = mpsc::channel();
         let release_consumer = Arc::new((Mutex::new(false), Condvar::new()));
@@ -930,9 +994,13 @@ mod tests {
 
         let (tx, rx) = mpsc::channel();
         enqueue_message(bytes, &tx);
-        let received = rx
+        let received = match rx
             .recv_timeout(Duration::from_secs(1))
-            .expect("deliver buffered named-pipe report");
+            .expect("deliver buffered named-pipe report")
+        {
+            RuntimeReport::Hook(report) => report,
+            RuntimeReport::Board(_) => panic!("expected Hook report"),
+        };
         assert_eq!(received.runtime_id, report.runtime_id);
         assert_eq!(received.native_session_id, report.native_session_id);
     }

@@ -57,6 +57,7 @@ import {
   BrowserTabProvider,
   canOpenInDefaultBrowser,
 } from "./tabs/browser-provider";
+import { BoardTabProvider } from "./tabs/board-provider";
 import { FileEditorTabProvider } from "./tabs/file-editor-provider";
 import { FileExplorerTabProvider } from "./tabs/file-explorer-provider";
 import { GitTabProvider } from "./tabs/git-provider";
@@ -81,6 +82,7 @@ export class CcsmApp {
   readonly #materializedTabIds = new Set<string>();
   readonly #browserFavicons = new BrowserFaviconStore();
   readonly #browserProvider: BrowserTabProvider;
+  readonly #boardProvider: BoardTabProvider;
   readonly #fileEditorProvider: FileEditorTabProvider;
   readonly #terminalProvider: TerminalTabProvider;
   readonly #surfaceOcclusion: SurfaceOcclusionController;
@@ -150,6 +152,8 @@ export class CcsmApp {
       this.#browserProvider.setOverlaySuspended(occluded),
     );
     this.#registry.register(this.#browserProvider);
+    this.#boardProvider = new BoardTabProvider(desktopClient);
+    this.#registry.register(this.#boardProvider);
     this.#fileEditorProvider = new FileEditorTabProvider(desktopClient, {
       presentationChanged: () => this.#refreshFileEditorTitles(),
       setDialogVisible: (visible) =>
@@ -314,9 +318,14 @@ export class CcsmApp {
     });
     void desktopClient.events
       .subscribe((event) => {
-        if (event.kind !== "agent.activityChanged") return;
-        if (!this.#agentList.updateActivity(event.payload)) {
-          void this.#refreshAgents();
+        if (event.kind === "agent.activityChanged") {
+          if (!this.#agentList.updateActivity(event.payload)) {
+            void this.#refreshAgents();
+          }
+          return;
+        }
+        if (event.kind === "board.changed") {
+          this.#handleBoardChanged(event.payload);
         }
       })
       .then((unlisten) => (this.#eventUnlisten = unlisten));
@@ -335,6 +344,7 @@ export class CcsmApp {
       this.#terminalProvider.destroyAll();
       this.#fileEditorProvider.destroyAll();
       this.#browserProvider.destroy();
+      this.#boardProvider.destroy();
       this.#settingsDialog.destroy();
       if (this.#updateCheckTimer !== null)
         window.clearTimeout(this.#updateCheckTimer);
@@ -687,6 +697,8 @@ export class CcsmApp {
       case "browser":
         await this.#createBrowserTab(targetGroupId);
         return;
+      case "board":
+        return;
       case "file-explorer":
         await this.#createFileExplorerTab(targetGroupId);
         return;
@@ -886,6 +898,34 @@ export class CcsmApp {
     if (tab.kind === "file-editor") this.#refreshFileEditorTitles();
     requestAnimationFrame(() => this.#terminalProvider.focusTab(tab.id));
     this.#setGlobalStatus("running", "ready");
+  }
+
+  #handleBoardChanged(
+    change: import("./generated/BoardChangedDto").BoardChangedDto,
+  ): void {
+    const snapshot = this.#activeSnapshot;
+    if (!snapshot || snapshot.space.id !== change.tab.spaceId) return;
+    const existingIndex = snapshot.tabs.findIndex(
+      (tab) => tab.id === change.tab.id,
+    );
+    if (existingIndex >= 0) {
+      snapshot.tabs[existingIndex] = change.tab;
+      this.#tabs.set(change.tab.id, change.tab);
+      const panel = findDockPanelById(this.#dockview.panels, change.tab.id);
+      if (panel && panel.title !== change.tab.title)
+        panel.api.setTitle(change.tab.title);
+      this.#focusTab(change.tab);
+      return;
+    }
+    const sourceTab = snapshot.tabs.find(
+      (tab) =>
+        tab.kind === "cli-session" &&
+        tab.resourceId === change.sourceCliSessionId,
+    );
+    this.#addCreatedTabToRight(
+      change.tab,
+      sourceTab ? this.#dockGroupIdForPanel(sourceTab.id) : null,
+    );
   }
 
   #addCreatedTab(

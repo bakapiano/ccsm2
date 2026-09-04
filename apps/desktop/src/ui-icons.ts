@@ -1,5 +1,6 @@
 export type UiIconName =
   | "arrow-right"
+  | "board"
   | "browser"
   | "ellipsis"
   | "files"
@@ -17,6 +18,9 @@ export type UiIconName =
 
 const UI_ICONS: Record<UiIconName, string> = {
   "arrow-right": icon(`<path d="M3 8h9"></path><path d="m9 4 4 4-4 4"></path>`),
+  board: icon(
+    `<rect x="2" y="2.5" width="12" height="10.5" rx="1"></rect><path d="M5 10V7m3 3V5m3 5V8"></path>`,
+  ),
   browser: icon(
     `<circle cx="8" cy="8" r="5.5"></circle><path d="M2.5 8h11M8 2.5c1.7 1.5 2.6 3.3 2.6 5.5S9.7 12 8 13.5C6.3 12 5.4 10.2 5.4 8S6.3 4 8 2.5Z"></path>`,
   ),

@@ -40,6 +40,18 @@
 - Duplicate创建新的 Browser Tab并复制当前 URL。
 - 工具栏右侧提供Open in default browser按钮，通过操作系统默认浏览器打开当前HTTP/HTTPS/FTP URL。
 
+## Board
+
+- Claude Code、Codex和GitHub Copilot CLI启动时获得当前Space作用域的`ccsm` MCP Server，以及`board_list`、`board_get`和`board_put`工具。
+- `board_put`接收一个完整UTF-8 HTML文档。文档可内嵌CSS与JavaScript，也可引用浏览器可加载的版本固定外部包。
+- 每个Board使用稳定`board_id`。首次写入创建Board Tab并放到来源CLI Tab右侧，再次写入更新并聚焦同一个Tab。
+- Board Tab在sandboxed iframe中执行HTML交互，页面内部管理按钮、表单、动画和可视状态。
+- Board标题来自HTML的`<title>`，工具栏提供手动Reload并显示当前加载状态。
+- Board HTML保存在CCSM数据目录的Space作用域临时存储中；Tab与Dock布局保存在`data.db`，应用重启后恢复。
+- 更新现有Board时，CLI先通过`board_get`读取当前revision，再以`expectedRevision`提交，revision冲突返回明确错误。
+- 关闭Board Tab会从Space布局与Tab registry移除视图；HTML继续保留在当前Space的Board列表中，后续`board_put`会重新打开该Board。
+- Board Tab禁用Duplicate。
+
 ## File Explorer
 
 - 以 Space root 为 capability root，并可定位到 Git tree 中选定的 repository 或 Space-relative 子目录。

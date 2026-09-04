@@ -7,6 +7,8 @@ const expectedApiKey = process.env.CCSM_PROVIDER_MODEL_STUB_KEY;
 if (!expectedApiKey)
   throw new Error("CCSM_PROVIDER_MODEL_STUB_KEY is required");
 let responseSequence = 0;
+const pendingToolPlans = new Map();
+const loggedMissingToolPayloads = new Set();
 
 const server = createServer(async (request, response) => {
   try {
@@ -24,6 +26,7 @@ const server = createServer(async (request, response) => {
     const { prompt, response: modelResponse } = responseSelection(
       provider,
       promptCandidates,
+      payload,
     );
     const context = configuredContextMarkers(provider, payload);
     const sequence = ++responseSequence;
@@ -37,7 +40,7 @@ const server = createServer(async (request, response) => {
       provider,
       model: payload.model,
       prompt,
-      response: modelResponse,
+      response: responseLogValue(modelResponse),
       responseId,
       previousResponseId: payload.previous_response_id ?? null,
       configuredPromptsPresent: context.prompts,
@@ -46,7 +49,13 @@ const server = createServer(async (request, response) => {
     });
 
     if (request.method === "POST" && request.url?.includes("/messages")) {
-      sendAnthropicResponse(response, payload, modelResponse, responseId);
+      sendAnthropicResponse(
+        response,
+        payload,
+        modelResponse,
+        responseId,
+        prompt,
+      );
       return;
     }
     if (request.method === "POST" && request.url?.includes("/responses")) {
@@ -56,6 +65,7 @@ const server = createServer(async (request, response) => {
         modelResponse,
         responseId,
         sequence,
+        prompt,
       );
       return;
     }
@@ -88,14 +98,31 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => server.close(() => process.exit(0)));
 }
 
-function sendAnthropicResponse(response, payload, text, responseId) {
+function sendAnthropicResponse(
+  response,
+  payload,
+  modelResponse,
+  responseId,
+  prompt,
+) {
+  const tool = resolveToolCall(payload, modelResponse, responseId, prompt);
+  const content = tool
+    ? [
+        {
+          type: "tool_use",
+          id: tool.callId,
+          name: tool.name,
+          input: tool.arguments,
+        },
+      ]
+    : [{ type: "text", text: modelResponse }];
   const message = {
     id: responseId,
     type: "message",
     role: "assistant",
     model: payload.model ?? "claude-sonnet-4-5",
-    content: [{ type: "text", text }],
-    stop_reason: "end_turn",
+    content,
+    stop_reason: tool ? "tool_use" : "end_turn",
     stop_sequence: null,
     usage: {
       input_tokens: 1,
@@ -126,12 +153,19 @@ function sendAnthropicResponse(response, payload, text, responseId) {
   sendEvent(response, "content_block_start", {
     type: "content_block_start",
     index: 0,
-    content_block: { type: "text", text: "" },
+    content_block: tool
+      ? { type: "tool_use", id: tool.callId, name: tool.name, input: {} }
+      : { type: "text", text: "" },
   });
   sendEvent(response, "content_block_delta", {
     type: "content_block_delta",
     index: 0,
-    delta: { type: "text_delta", text },
+    delta: tool
+      ? {
+          type: "input_json_delta",
+          partial_json: JSON.stringify(tool.arguments),
+        }
+      : { type: "text_delta", text: modelResponse },
   });
   sendEvent(response, "content_block_stop", {
     type: "content_block_stop",
@@ -139,22 +173,55 @@ function sendAnthropicResponse(response, payload, text, responseId) {
   });
   sendEvent(response, "message_delta", {
     type: "message_delta",
-    delta: { stop_reason: "end_turn", stop_sequence: null },
+    delta: { stop_reason: tool ? "tool_use" : "end_turn", stop_sequence: null },
     usage: { output_tokens: 1 },
   });
   sendEvent(response, "message_stop", { type: "message_stop" });
   response.end();
 }
 
-function sendOpenAiResponse(response, payload, text, responseId, sequence) {
+function sendOpenAiResponse(
+  response,
+  payload,
+  modelResponse,
+  responseId,
+  sequence,
+  prompt,
+) {
   const createdAt = Math.floor(Date.now() / 1000);
-  const output = {
-    id: `msg_ccsm_provider_stub_${sequence}`,
-    type: "message",
-    status: "completed",
-    role: "assistant",
-    content: [{ type: "output_text", annotations: [], logprobs: [], text }],
-  };
+  const tool = resolveToolCall(payload, modelResponse, responseId, prompt);
+  const output = tool
+    ? tool.kind === "custom"
+      ? {
+          id: `ctc_ccsm_provider_stub_${sequence}`,
+          type: "custom_tool_call",
+          status: "completed",
+          input: tool.input,
+          call_id: tool.callId,
+          name: tool.name,
+        }
+      : {
+          id: `fc_ccsm_provider_stub_${sequence}`,
+          type: "function_call",
+          status: "completed",
+          arguments: JSON.stringify(tool.arguments),
+          call_id: tool.callId,
+          name: tool.name,
+        }
+    : {
+        id: `msg_ccsm_provider_stub_${sequence}`,
+        type: "message",
+        status: "completed",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            annotations: [],
+            logprobs: [],
+            text: modelResponse,
+          },
+        ],
+      };
   const completed = {
     id: responseId,
     object: "response",
@@ -212,41 +279,78 @@ function sendOpenAiResponse(response, payload, text, responseId, sequence) {
   });
   emit("response.output_item.added", {
     output_index: 0,
-    item: { ...output, content: [] },
+    item: tool
+      ? tool.kind === "custom"
+        ? { ...output, input: "" }
+        : { ...output, arguments: "" }
+      : { ...output, content: [] },
   });
-  emit("response.content_part.added", {
-    item_id: output.id,
-    output_index: 0,
-    content_index: 0,
-    part: { type: "output_text", annotations: [], logprobs: [], text: "" },
-  });
-  emit("response.output_text.delta", {
-    item_id: output.id,
-    output_index: 0,
-    content_index: 0,
-    delta: text,
-    logprobs: [],
-  });
-  emit("response.output_text.done", {
-    item_id: output.id,
-    output_index: 0,
-    content_index: 0,
-    text,
-    logprobs: [],
-  });
-  emit("response.content_part.done", {
-    item_id: output.id,
-    output_index: 0,
-    content_index: 0,
-    part: output.content[0],
-  });
+  if (tool) {
+    if (tool.kind === "custom") {
+      emit("response.custom_tool_call_input.delta", {
+        item_id: output.id,
+        output_index: 0,
+        delta: output.input,
+      });
+      emit("response.custom_tool_call_input.done", {
+        item_id: output.id,
+        output_index: 0,
+        input: output.input,
+      });
+    } else {
+      emit("response.function_call_arguments.delta", {
+        item_id: output.id,
+        output_index: 0,
+        delta: output.arguments,
+      });
+      emit("response.function_call_arguments.done", {
+        item_id: output.id,
+        output_index: 0,
+        arguments: output.arguments,
+      });
+    }
+  } else {
+    emit("response.content_part.added", {
+      item_id: output.id,
+      output_index: 0,
+      content_index: 0,
+      part: { type: "output_text", annotations: [], logprobs: [], text: "" },
+    });
+    emit("response.output_text.delta", {
+      item_id: output.id,
+      output_index: 0,
+      content_index: 0,
+      delta: modelResponse,
+      logprobs: [],
+    });
+    emit("response.output_text.done", {
+      item_id: output.id,
+      output_index: 0,
+      content_index: 0,
+      text: modelResponse,
+      logprobs: [],
+    });
+    emit("response.content_part.done", {
+      item_id: output.id,
+      output_index: 0,
+      content_index: 0,
+      part: output.content[0],
+    });
+  }
   emit("response.output_item.done", { output_index: 0, item: output });
   emit("response.completed", { response: completed });
   response.write("data: [DONE]\n\n");
   response.end();
 }
 
-function responseSelection(provider, promptCandidates) {
+function responseSelection(provider, promptCandidates, payload) {
+  const continuation = continuedToolPlan(payload);
+  if (continuation) {
+    return {
+      prompt: continuation.prompt,
+      response: continuation.finalResponse,
+    };
+  }
   const fallbackPrompt =
     promptCandidates.at(-1) ?? "CCSM_PROVIDER_CONTRACT_PROMPT";
   const configPath = process.env.CCSM_PROVIDER_MODEL_STUB_CONFIG;
@@ -281,7 +385,7 @@ function configuredResponse(promptCandidates, responses) {
   const entries = Object.entries(responses);
   for (let index = promptCandidates.length - 1; index >= 0; index -= 1) {
     const prompt = promptCandidates[index];
-    if (typeof responses[prompt] === "string") {
+    if (isConfiguredResponse(responses[prompt])) {
       return { prompt, response: responses[prompt] };
     }
     const match = entries
@@ -295,6 +399,100 @@ function configuredResponse(promptCandidates, responses) {
     if (match) return { prompt: match.candidate, response: match.response };
   }
   return undefined;
+}
+
+function isConfiguredResponse(value) {
+  return (
+    typeof value === "string" ||
+    (value &&
+      typeof value === "object" &&
+      typeof value.tool === "string" &&
+      value.arguments &&
+      typeof value.arguments === "object" &&
+      typeof value.finalResponse === "string")
+  );
+}
+
+function responseLogValue(value) {
+  return typeof value === "string" ? value : `TOOL:${value.tool}`;
+}
+
+function resolveToolCall(payload, response, responseId, prompt) {
+  if (typeof response === "string") return null;
+  if (hasCodeModeTool(payload, response.tool)) {
+    const callId = `call_ccsm_provider_stub_${responseSequence}`;
+    const plan = { prompt, finalResponse: response.finalResponse };
+    pendingToolPlans.set(responseId, plan);
+    pendingToolPlans.set(callId, plan);
+    const method = `mcp__ccsm__${response.tool}`;
+    return {
+      kind: "custom",
+      name: "exec",
+      callId,
+      input: `const result = await tools.${method}(${JSON.stringify(response.arguments)}); text(result);`,
+    };
+  }
+  const names = (payload.tools ?? [])
+    .map((tool) => tool?.name ?? tool?.function?.name)
+    .filter((name) => typeof name === "string");
+  const name = names.find(
+    (candidate) =>
+      candidate === response.tool ||
+      candidate.endsWith(`__${response.tool}`) ||
+      candidate.endsWith(`-${response.tool}`),
+  );
+  if (!name) {
+    const diagnosticKey = `${prompt}:${response.tool}`;
+    if (!loggedMissingToolPayloads.has(diagnosticKey)) {
+      loggedMissingToolPayloads.add(diagnosticKey);
+      appendEvent({ missingToolDiagnostic: diagnosticKey, payload });
+    }
+    throw new Error(
+      `configured tool ${response.tool} is absent; available=${names.join(",")} raw=${JSON.stringify(payload.tools ?? null)}`,
+    );
+  }
+  const callId = `call_ccsm_provider_stub_${responseSequence}`;
+  const plan = { prompt, finalResponse: response.finalResponse };
+  pendingToolPlans.set(responseId, plan);
+  pendingToolPlans.set(callId, plan);
+  return { kind: "function", name, callId, arguments: response.arguments };
+}
+
+function hasCodeModeTool(payload, toolName) {
+  const metadata = payload.client_metadata?.["x-codex-turn-metadata"];
+  if (typeof metadata !== "string") return false;
+  try {
+    const parsed = JSON.parse(metadata);
+    return Boolean(parsed.code_mode_tool_names?.[`mcp__ccsm__${toolName}`]);
+  } catch {
+    return false;
+  }
+}
+
+function continuedToolPlan(payload) {
+  const ids = [];
+  if (typeof payload.previous_response_id === "string") {
+    ids.push(payload.previous_response_id);
+  }
+  collectValuesForKeys(payload, new Set(["tool_use_id", "call_id"]), ids);
+  const plan = ids.map((id) => pendingToolPlans.get(id)).find(Boolean);
+  if (!plan) return undefined;
+  for (const [id, candidate] of pendingToolPlans) {
+    if (candidate === plan) pendingToolPlans.delete(id);
+  }
+  return plan;
+}
+
+function collectValuesForKeys(value, keys, output) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectValuesForKeys(item, keys, output);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, item] of Object.entries(value)) {
+    if (keys.has(key) && typeof item === "string") output.push(item);
+    else collectValuesForKeys(item, keys, output);
+  }
 }
 
 function configuredContextMarkers(provider, payload) {

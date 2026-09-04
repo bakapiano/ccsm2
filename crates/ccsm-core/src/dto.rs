@@ -21,6 +21,7 @@ export_ts! {
     pub enum TabKind {
         CliSession,
         Browser,
+        Board,
         FileExplorer,
         FileEditor,
         Git,
@@ -68,6 +69,60 @@ export_ts! {
         Blocked,
         Stopped,
     }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct BoardSummaryDto {
+        pub id: String,
+        pub space_id: String,
+        pub title: String,
+        pub revision: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct BoardDocumentDto {
+        pub id: String,
+        pub space_id: String,
+        pub title: String,
+        pub html: String,
+        pub revision: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ReadBoardRequest {
+        pub space_id: String,
+        pub board_id: String,
+    }
+}
+
+export_ts! {
+    #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+    #[serde(rename_all = "camelCase")]
+    pub struct BoardChangedDto {
+        pub source_cli_session_id: String,
+        pub tab: TabDto,
+        pub board: BoardSummaryDto,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardChangeReport {
+    pub provider: ProviderKind,
+    pub cli_session_id: String,
+    pub runtime_id: String,
+    pub token: String,
+    pub space_id: String,
+    pub board_id: String,
+    pub revision: String,
 }
 
 export_ts! {
@@ -507,6 +562,8 @@ export_ts! {
     pub enum AppEvent {
         #[serde(rename = "filesystem.changed")]
         FilesystemChanged { payload: FileChangeHintDto },
+        #[serde(rename = "board.changed")]
+        BoardChanged { payload: BoardChangedDto },
         #[serde(rename = "session.bindingChanged")]
         SessionBindingChanged { payload: NativeBindingDto },
         #[serde(rename = "agent.activityChanged")]

@@ -9,6 +9,8 @@ import {
 import type { AppEvent } from "../generated/AppEvent";
 import type { AgentSummaryDto } from "../generated/AgentSummaryDto";
 import type { BootstrapDto } from "../generated/BootstrapDto";
+import type { BoardDocumentDto } from "../generated/BoardDocumentDto";
+import type { BoardSummaryDto } from "../generated/BoardSummaryDto";
 import type { BrowserBounds } from "../generated/BrowserBounds";
 import type { BrowserInfo } from "../generated/BrowserInfo";
 import type { BrowserOpenRequest } from "../generated/BrowserOpenRequest";
@@ -40,6 +42,7 @@ import type { RenameFolderRequest } from "../generated/RenameFolderRequest";
 import type { RenameSpaceRequest } from "../generated/RenameSpaceRequest";
 import type { RefreshGitRequest } from "../generated/RefreshGitRequest";
 import type { ReadFileRequest } from "../generated/ReadFileRequest";
+import type { ReadBoardRequest } from "../generated/ReadBoardRequest";
 import type { ReadGitDiffRequest } from "../generated/ReadGitDiffRequest";
 import type { ReplaceCliSessionRequest } from "../generated/ReplaceCliSessionRequest";
 import type { ResolveFileReferenceRequest } from "../generated/ResolveFileReferenceRequest";
@@ -94,6 +97,8 @@ export interface AppBackendClient {
   createFileEditorTab(request: CreateFileEditorTabRequest): Promise<TabDto>;
   createGitTab(request: CreateGitTabRequest): Promise<TabDto>;
   createCliTab(request: CreateCliTabRequest): Promise<CreatedCliTabDto>;
+  listBoards(spaceId: string): Promise<BoardSummaryDto[]>;
+  readBoard(request: ReadBoardRequest): Promise<BoardDocumentDto>;
   getCliSession(cliSessionId: string): Promise<CliSessionDto>;
   replaceCliSession(request: ReplaceCliSessionRequest): Promise<CliSessionDto>;
   startRuntime(
@@ -305,6 +310,14 @@ class TauriBackendClient implements AppBackendClient {
 
   createCliTab(request: CreateCliTabRequest): Promise<CreatedCliTabDto> {
     return invoke("create_cli_tab", { request });
+  }
+
+  listBoards(spaceId: string): Promise<BoardSummaryDto[]> {
+    return invoke("list_boards", { spaceId });
+  }
+
+  readBoard(request: ReadBoardRequest): Promise<BoardDocumentDto> {
+    return invoke("read_board", { request });
   }
 
   getCliSession(cliSessionId: string): Promise<CliSessionDto> {

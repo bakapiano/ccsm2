@@ -5,8 +5,9 @@ use std::{
 
 use crate::{
     dto::{
-        AgentActivity, AgentActivityChangedDto, AgentSummaryDto, AppEvent, BootstrapDto,
-        CliSessionDto, CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
+        AgentActivity, AgentActivityChangedDto, AgentSummaryDto, AppEvent, BoardChangeReport,
+        BoardChangedDto, BoardDocumentDto, BoardSummaryDto, BootstrapDto, CliSessionDto,
+        CreateBrowserTabRequest, CreateCliTabRequest, CreateFileEditorTabRequest,
         CreateFileExplorerTabRequest, CreateFolderRequest, CreateGitTabRequest, CreateSpaceRequest,
         CreatedCliTabDto, DeleteFolderRequest, DeleteSpaceRequest, DeleteTabRequest, DesiredState,
         DirectoryListingDto, FileDocumentDto, GitFileDiffDto, GitSnapshotDto, HookReport,
@@ -19,8 +20,8 @@ use crate::{
     },
     error::{BackendError, BackendResult},
     ports::{
-        FileSystemBackend, FileWatchBackend, GitBackend, PtyBackend, SessionTitleResolver,
-        StateStore,
+        BoardStore, FileSystemBackend, FileWatchBackend, GitBackend, PtyBackend,
+        SessionTitleResolver, StateStore,
     },
     root::{ActiveRootContext, AppEventSink},
     runtime::{HookTransportDescriptor, RuntimeEventSink, RuntimeManager},
@@ -31,6 +32,7 @@ pub struct AppBackend {
     runtimes: Arc<RuntimeManager>,
     root_context: ActiveRootContext,
     event_sink: AppEventSink,
+    boards: Arc<dyn BoardStore>,
     hook_transport: Mutex<Option<HookTransportDescriptor>>,
     session_title_resolver: Mutex<Option<SessionTitleResolver>>,
 }
@@ -39,6 +41,7 @@ impl AppBackend {
     pub fn new(
         store: Arc<dyn StateStore>,
         pty_backend: Arc<dyn PtyBackend>,
+        boards: Arc<dyn BoardStore>,
         filesystem: Arc<dyn FileSystemBackend>,
         git: Arc<dyn GitBackend>,
         file_watch: Arc<dyn FileWatchBackend>,
@@ -53,6 +56,7 @@ impl AppBackend {
                 Arc::clone(&event_sink),
             ),
             store,
+            boards,
             runtimes: RuntimeManager::new(pty_backend),
             event_sink,
             hook_transport: Mutex::new(None),
@@ -257,6 +261,47 @@ impl AppBackend {
             ));
         }
         self.store.create_git_tab(request)
+    }
+
+    pub fn list_boards(&self, space_id: &str) -> BackendResult<Vec<BoardSummaryDto>> {
+        self.store.load_space(space_id)?;
+        self.boards.list(space_id)
+    }
+
+    pub fn read_board(&self, space_id: &str, board_id: &str) -> BackendResult<BoardDocumentDto> {
+        self.store.load_space(space_id)?;
+        self.boards.read(space_id, board_id)
+    }
+
+    pub fn report_board_change(&self, report: BoardChangeReport) -> BackendResult<TabDto> {
+        self.runtimes.validate_board_report(&report)?;
+        let session = self.store.get_cli_session(&report.cli_session_id)?;
+        if session.space_id != report.space_id {
+            return Err(BackendError::Invalid(
+                "Board report Space does not match its CLI session".into(),
+            ));
+        }
+        let document = self.boards.read(&report.space_id, &report.board_id)?;
+        if document.revision != report.revision {
+            return Err(BackendError::Conflict(
+                "Board report revision is stale".into(),
+            ));
+        }
+        let board = BoardSummaryDto {
+            id: document.id,
+            space_id: document.space_id,
+            title: document.title,
+            revision: document.revision,
+        };
+        let tab = self.store.upsert_board_tab(&board)?;
+        (self.event_sink)(AppEvent::BoardChanged {
+            payload: BoardChangedDto {
+                source_cli_session_id: report.cli_session_id,
+                tab: tab.clone(),
+                board,
+            },
+        });
+        Ok(tab)
     }
 
     pub fn get_cli_session(&self, session_id: &str) -> BackendResult<CliSessionDto> {

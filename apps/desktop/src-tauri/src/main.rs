@@ -15,6 +15,9 @@ fn main() {
     if arguments.as_slice() == ["hook", "report"] {
         std::process::exit(ccsm_platform::run_hook_reporter());
     }
+    if arguments.as_slice() == ["mcp", "serve"] {
+        std::process::exit(ccsm_platform::run_board_mcp_server());
+    }
     if let [mode, pgid] = arguments.as_slice()
         && mode == "process-watchdog"
     {

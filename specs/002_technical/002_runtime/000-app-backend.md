@@ -16,7 +16,8 @@ ccsm-platform ──depends on──> ccsm-core
 ├─ PTY/process tree
 ├─ filesystem/Git
 ├─ platform paths
-└─ HookEndpoint
+├─ BoardStore + Board MCP
+└─ RuntimeReportEndpoint
 
 ccsm-desktop ──depends on──> ccsm-core + ccsm-platform + Tauri
 ├─ composition root
@@ -33,6 +34,7 @@ ccsm-desktop ──depends on──> ccsm-core + ccsm-platform + Tauri
 
 ```text
 StateStore
+BoardStore
 SessionService
 RuntimeManager
 ActiveRootContext?
@@ -58,17 +60,24 @@ deserialize generated DTO
 
 业务规则、SQLite query、process lifecycle和Git逻辑位于core/platform层。Mutation services返回committed DTO或snapshot。后台runtime、Hook和Git变化通过单一有序Rust channel发布，由desktop adapter映射为generated `AppEvent`；command完成时不发布镜像event。PTY output通过Tauri binary Channel传给ghostty-web。
 
-## HookEndpoint
+## Runtime report endpoint
 
-Claude/Codex/Copilot Hook运行在外部子进程中，通过受限HookEndpoint上报：
+Claude/Codex/Copilot Hook与Board MCP运行在外部子进程中，通过当前用户作用域的RuntimeReportEndpoint上报：
 
 ```text
 ccsm hook report
-→ authenticated HookEndpoint
+→ authenticated RuntimeReportEndpoint
 → AppBackend SessionService
+
+ccsm mcp serve / board_put
+→ write temp/boards/<space-id>/<board-id>.html
+→ authenticated BoardChangeReport
+→ AppBackend upsert Board Tab + board.changed
 ```
 
-HookEndpoint只接受版本化`HookReport`。Windows使用当前用户Named Pipe；macOS/Linux使用当前用户权限Unix socket。endpoint验证token、provider、session和runtime ID。Hook token由RuntimeManager按runtime随机生成并仅保存在内存中。
+RuntimeReportEndpoint接收版本化`HookReport`与`BoardChangeReport`。Windows使用当前用户Named Pipe；macOS/Linux使用当前用户权限Unix socket。AppBackend验证token、provider、CLI Session、runtime ID、Space和Board revision。Hook token由RuntimeManager按runtime随机生成并仅保存在内存中。
+
+PTY adapter向每个Agent CLI runtime注入当前Space、Board root和认证上下文。CLI shim将同一个`ccsm mcp serve`以invocation-scoped配置合并到Claude Code、Codex和GitHub Copilot的MCP集合。MCP Server通过`board_list/board_get/board_put`访问当前Space，并在`board_put`落盘完成后发送BoardChangeReport。
 
 ## Task isolation
 

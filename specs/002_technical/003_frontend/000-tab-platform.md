@@ -8,6 +8,7 @@ Tab 是可持久化的视图抽象。Session、PTY 和 WebView 分别使用独�
 type TabKind =
   | "cli-session"
   | "browser"
+  | "board"
   | "file-explorer"
   | "file-editor"
   | "git";
@@ -69,6 +70,7 @@ interface TabView {
 | --------------- | -------------------- | ------------------------ |
 | `cli-session`   | `cli_session_id`     | Rust AppBackend          |
 | `browser`       | `browser_surface_id` | Tauri host               |
+| `board`         | `board_id`           | Space BoardStore         |
 | `file-explorer` | `space_id`           | Space filesystem service |
 | `file-editor`   | Space-relative path  | Space filesystem service |
 | `git`           | `space_id`           | GitStatusService         |
@@ -76,6 +78,8 @@ interface TabView {
 - CLI view mount 时 attach runtime；打开已有 CliSession时通过 Tab index聚焦唯一 CLI Tab。
 - Browser panel提供DOM anchor和toolbar；`BrowserSurfaceClient`同步bounds、visibility、focus和navigation。
 - `BrowserProfileManager` 创建一个全局持久 profile handle，并提供给所有 Browser surfaces。
+- Board panel通过`AppBackendClient.readBoard`读取完整HTML，并以`sandbox="allow-scripts allow-forms"`的iframe `srcdoc`呈现；`board.changed`触发同一`board_id`的局部reload。
+- Board iframe使用opaque origin与`no-referrer`策略。JavaScript、表单和外部browser packages在该frame中运行，页面交互状态由HTML管理。
 - File Explorer state 保存 Space-relative root、展开节点和选择项；只读 filesystem API 使用 canonical capability root。
 - File Editor state 保存 Space-relative path、selection、scroll 和 wrap；未保存文本与 undo history 保存在 renderer 内存会话。
 - Git Tab state 保存 section collapse 和 selection；同一 Space 的 Open Git 操作复用已有 Tab。

@@ -16,8 +16,9 @@ use std::{
 use browser::BrowserSurfaceManager;
 use ccsm_core::{AppBackend, AppEventSink, HookTransportDescriptor};
 use ccsm_platform::{
-    CommandGitBackend, HookReportSink, LocalFileSystemBackend, LocalHookEndpoint,
-    NotifyFileWatchBackend, PortablePtyBackend, SqliteStateStore, resolve_hook_display_title,
+    BoardChangeReportSink, CommandGitBackend, HookReportSink, LocalBoardStore,
+    LocalFileSystemBackend, LocalHookEndpoint, NotifyFileWatchBackend, PortablePtyBackend,
+    SqliteStateStore, resolve_hook_display_title,
 };
 use tauri::{Emitter, Manager, RunEvent};
 
@@ -134,9 +135,14 @@ pub fn run() {
                 SqliteStateStore::open(&data_dir.join("data.db"))
                     .map_err(|error| error.to_string())?,
             );
+            let board_root = data_dir.join("temp").join("boards");
+            let boards = Arc::new(
+                LocalBoardStore::open(board_root.clone()).map_err(|error| error.to_string())?,
+            );
             let pty = Arc::new(
                 PortablePtyBackend::new(shim_root.clone(), executable.clone())
                     .map_err(|error| error.to_string())?
+                    .with_board_root(board_root)
                     .with_claude_overrides(
                         claude_model_override.clone(),
                         claude_base_url_override.clone(),
@@ -154,8 +160,15 @@ pub fn run() {
             let event_sink: AppEventSink = Arc::new(move |event| {
                 let _ = app_handle.emit("ccsm:event", event);
             });
-            let backend =
-                AppBackend::new(store, pty, filesystem.clone(), git, file_watch, event_sink);
+            let backend = AppBackend::new(
+                store,
+                pty,
+                boards,
+                filesystem.clone(),
+                git,
+                file_watch,
+                event_sink,
+            );
             backend
                 .configure_session_title_resolver(Arc::new(resolve_hook_display_title))
                 .map_err(|error| error.to_string())?;
@@ -165,8 +178,14 @@ pub fn run() {
                     eprintln!("CCSM Hook report rejected: {error}");
                 }
             });
-            let hook_endpoint =
-                LocalHookEndpoint::start(hook_sink).map_err(|error| error.to_string())?;
+            let board_backend = Arc::clone(&backend);
+            let board_sink: BoardChangeReportSink = Arc::new(move |report| {
+                if let Err(error) = board_backend.report_board_change(report) {
+                    eprintln!("CCSM Board report rejected: {error}");
+                }
+            });
+            let hook_endpoint = LocalHookEndpoint::start_with_board(hook_sink, board_sink)
+                .map_err(|error| error.to_string())?;
             backend
                 .configure_hook_transport(HookTransportDescriptor {
                     endpoint: hook_endpoint.address().to_string(),
@@ -243,6 +262,8 @@ pub fn run() {
             commands::create_file_explorer_tab,
             commands::create_file_editor_tab,
             commands::create_git_tab,
+            commands::list_boards,
+            commands::read_board,
             commands::get_cli_session,
             commands::replace_cli_session,
             commands::list_directory,
