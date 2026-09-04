@@ -12,6 +12,8 @@ CCSM data directory
 ├─ main-webview/
 ├─ browser-profile/
 ├─ temp/boards/<space-id>/<board-id>.html
+├─ runtimes/node/
+├─ agent-gateway/web/
 └─ logs/
 ```
 
@@ -44,9 +46,9 @@ git_status_cache
 - `tabs` 对 `kind='cli-session'` 建立 active `resource_id` partial unique index；对 `kind='git'` 建立 active `space_id` partial unique index。
 - Browser Tab state保存`last_url/title/zoom`；global profile数据保存在filesystem store。
 - Board Tab state保存`board_id/revision`；完整HTML保存在`temp/boards/<space-id>/<board-id>.html`，单文档上限为2 MiB。
-- `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`、Provider Session标题、毫秒级`last_active_at`和最后一次退出摘要。
+- `cli_sessions`保存启动配置、`desired_state`、`native_session_id`、`native_binding_state`、Provider Session标题、毫秒级`last_active_at`、preferred runtime engine、Model/Effort/Permission配置快照和最后一次退出摘要。
 - `cli_sessions`对`{provider, native_session_id}`建立non-null partial unique index，确保一个原生身份映射到一个未删除的CLI Session。
-- Terminal runtime、runtime ID、PID、PTY handle、actual state和per-native-session resume mutex保存在AppBackend内存中。
+- Terminal/Gateway runtime、runtime ID、PID、PTY/Gateway handles、actual state和per-native-session resume mutex保存在AppBackend内存中。
 - TabRecord mutation和引用它的space_layout row在同一transaction提交。
 - Hook确认后直接更新`cli_sessions.native_session_id/native_binding_state`；ID冲突时拒绝更新并返回domain error。
 - `settings`仅保存非敏感应用设置。CCSM首版不持久化credential或secret。
@@ -98,6 +100,8 @@ git_status_cache
 - Agent CLI登录由provider CLI管理；Git认证由Git工具链管理；Browser认证由platform WebView profile管理。
 - Hook token属于单次runtime，保存在RuntimeManager和子进程环境中，并在runtime结束时丢弃。
 - `temp/boards/`由CCSM管理并位于Git workspace边界之外；Board文件使用Space ID和已校验的Board ID确定路径。
+- Managed Node安装在`runtimes/node/<version>-<target>/`；runtime manifest记录固定版本、target、SHA-256和来源URL。
+- Agent Gateway bundle与Remote Web assets随CCSM资源发布；绝对resource path由desktop composition root传给platform adapter。
 
 ## Global Browser Profile
 
@@ -208,16 +212,17 @@ File Explorer通过backend command声明watch scope。`filesystem.changed`经统
 
 Create、Rename、Move、Delete和layout save等用户mutation返回committed DTO、变更集合或领域snapshot，并由调用方更新store。Start Session返回`runtime_id + starting`；后续`live/exited/lost`作为`AppEvent`发送。Session reducer按同一runtime ID的状态机前进，迟到的`starting` response不能覆盖已经收到的后续状态。Command完成时不发送内容相同的镜像event。
 
-## Future Web product boundary
+## Agent Gateway and Web product boundary
 
-未来`ccsm-web-server`复用ccsm-core DTOs和service ports，并增加：
+TypeScript Agent Gateway作为Rust监管的应用级子进程，为Remote Web提供HTTPS/WebSocket，并通过RuntimeReportEndpoint与host control protocol连接AppBackend：
 
 ```text
-CONTROL_JSON   WebSocket text message
-PTY_BINARY     WebSocket binary message
+Desktop renderer → Tauri IPC → Rust AppBackend
+Agent Gateway   → RuntimeReportEndpoint Gateway channel → Rust AppBackend
+Remote Web      → HTTPS/WebSocket → Agent Gateway
 ```
 
-WebSocket authentication、pairing、client identity、backpressure和reconnect contract在独立Web产品中定义。当前desktop/core/platform crates不包含WebSocket transport trait、server、listener、端口配置或网络依赖。
+Gateway拥有WebSocket authentication、pairing、client identity、backpressure和reconnect contract。desktop/core/platform crates保持网络transport无关；未来`ccsm-web-server`可作为平级composition root复用core DTOs和services。Gateway process见[Agent Gateway](../002_runtime/004-agent-gateway.md)，网络协议见[Remote Control](../002_runtime/007-remote-control.md)。
 
 ## 一致性规则
 

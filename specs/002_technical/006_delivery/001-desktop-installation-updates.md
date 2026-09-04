@@ -142,7 +142,7 @@ Windows 把签名验证后的 NSIS bytes 写入临时 `.exe`，启动 breakaway 
 
 DEB 先验证 package 格式，再通过 `pkexec`、图形 sudo 或终端 sudo 执行 `dpkg -i`。AppImage 保留原权限，在替换失败时恢复临时备份。Linux 安装成功后执行同一 shutdown，再 relaunch 当前路径。
 
-shutdown 依照资源清理规格关闭 native WebViews、Browser Profile、CLI process trees、PTY threads、HookEndpoint、background tasks 和 `data.db`。下载、签名、权限或安装错误进入 `error`，当前程序继续运行并提供“重试”。
+shutdown 依照资源清理规格关闭 native WebViews、Browser Profile、Agent Gateway、CLI process trees、PTY threads、RuntimeReportEndpoint、background tasks 和 `data.db`。下载、签名、权限或安装错误进入 `error`，当前程序继续运行并提供“重试”。
 
 ## 签名与发布
 
