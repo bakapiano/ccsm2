@@ -41,6 +41,11 @@ Local changes:
 - pause the animation-frame render loop while a retained terminal is hidden,
   and redraw cursor/scrollback Canvas content only when presentation state
   changes instead of on every display refresh.
+- round Canvas backing dimensions consistently at fractional display scaling,
+  with the renderer owning both CSS and backing sizes to avoid idle reallocations.
+- reuse each terminal's parsed viewport until the next write or resize;
+  line reads remain independent copies and scrollback scratch-buffer reads
+  do not invalidate the JavaScript snapshot.
 
 The checked-in WASM binary is rebuilt from the pinned source and
 `ccsm-hyperlink-uri.patch`; its SHA-256 is

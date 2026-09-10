@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { resolveScrollbarWidth } from "./addons/fit";
-import { Ghostty } from "./ghostty";
+import { Ghostty, GhosttyTerminal } from "./ghostty";
+import type { GhosttyWasmExports } from "./types";
 import { calculateInputAnchor } from "./input-anchor";
 import { LinkDetector } from "./link-detector";
 import {
@@ -89,7 +91,150 @@ function idleRendererHarness(viewportY: number) {
   };
 }
 
+async function viewportHarness(cols: number = 8, rows: number = 4) {
+  const bytes = await readFile(new URL("../ghostty-vt.wasm", import.meta.url));
+  const { instance } = await WebAssembly.instantiate(bytes, {
+    env: {
+      log: () => {
+        throw new Error(
+          "Unexpected WASM diagnostic during viewport regression",
+        );
+      },
+    },
+  });
+  const exports = instance.exports as GhosttyWasmExports;
+  let reads = 0;
+  const terminal = new GhosttyTerminal(
+    {
+      ...exports,
+      ghostty_render_state_get_viewport: (...args) => {
+        reads += 1;
+        return exports.ghostty_render_state_get_viewport(...args);
+      },
+    },
+    exports.memory,
+    cols,
+    rows,
+  );
+  return { terminal, reads: () => reads };
+}
+
 describe("local ghostty-web regressions", () => {
+  test.each([1, 1.25, 1.5, 1.75, 2])(
+    "keeps an idle Canvas stable at device pixel ratio %s",
+    (devicePixelRatio) => {
+      const harness = idleRendererHarness(0);
+      const renderer = harness.renderer;
+      let width = 0;
+      let height = 0;
+      let allocations = 0;
+      renderer.canvas = {
+        style: {},
+        get width() {
+          return width;
+        },
+        set width(value: number) {
+          width = Math.trunc(value);
+          allocations += 1;
+        },
+        get height() {
+          return height;
+        },
+        set height(value: number) {
+          height = Math.trunc(value);
+          allocations += 1;
+        },
+      };
+      renderer.ctx = { scale() {}, fillRect() {} };
+      renderer.theme = { background: "#000000" };
+      renderer.metrics = { width: 7, height: 18 };
+      renderer.devicePixelRatio = devicePixelRatio;
+      harness.buffer.getDimensions = () => ({ cols: 101, rows: 41 });
+      renderer.resize(101, 41);
+      const initialAllocations = allocations;
+
+      for (let frame = 0; frame < 5; frame += 1) {
+        renderer.render(harness.buffer, false, 0, harness.scrollback);
+      }
+
+      expect(allocations).toBe(initialAllocations);
+      expect(harness.renderedRows).toEqual([]);
+      expect(width).toBe(Math.ceil(101 * 7 * devicePixelRatio));
+      expect(height).toBe(Math.ceil(41 * 18 * devicePixelRatio));
+    },
+  );
+
+  test("reads one viewport per write while preserving independent line snapshots", async () => {
+    const { terminal, reads } = await viewportHarness();
+    try {
+      terminal.write("first\r\nsecond");
+      const first = terminal.getLine(0)!;
+      for (let row = 0; row < terminal.rows; row += 1) {
+        terminal.getLine(row);
+      }
+      terminal.clearDirty();
+      terminal.getCursor();
+      terminal.getViewport();
+      expect(reads()).toBe(1);
+      first[0].codepoint = 88;
+      expect(terminal.getLine(0)![0].codepoint).toBe(102);
+
+      terminal.write("\x1b[Hnew");
+      expect(terminal.getLine(0)![0].codepoint).toBe(110);
+      expect(reads()).toBe(2);
+      expect(first[0].codepoint).toBe(88);
+    } finally {
+      terminal.free();
+    }
+  });
+
+  test("refreshes viewport snapshots on resize, screen switch and reset", async () => {
+    const { terminal, reads } = await viewportHarness();
+    try {
+      terminal.write("normal");
+      expect(terminal.getViewport()[0].codepoint).toBe(110);
+      terminal.write("\x1b[?1049h\x1b[Halt");
+      expect(terminal.getViewport()[0].codepoint).toBe(97);
+      terminal.write("\x1b[?1049l");
+      expect(terminal.getViewport()[0].codepoint).toBe(110);
+      terminal.resize(4, 2);
+      expect(terminal.getViewport()).toHaveLength(8);
+      terminal.resize(10, 5);
+      expect(terminal.getViewport()).toHaveLength(50);
+      terminal.write("\x1bc");
+      expect(
+        terminal
+          .getViewport()
+          .every((cell) => cell.codepoint === 0 || cell.codepoint === 32),
+      ).toBe(true);
+      expect(reads()).toBe(6);
+    } finally {
+      terminal.free();
+    }
+  });
+
+  test("keeps cached viewports separate from scrollback reads and other terminals", async () => {
+    const first = await viewportHarness();
+    const second = await viewportHarness();
+    try {
+      first.terminal.write("old\r\n".repeat(8) + "first");
+      second.terminal.write("second");
+      const before = first.terminal.getLine(3);
+      first.terminal.getScrollbackLine(0);
+      second.terminal.getViewport();
+      expect(first.terminal.getLine(3)).toEqual(before);
+      expect(first.reads()).toBe(1);
+      second.terminal.write("\x1b[Hchanged");
+      expect(second.terminal.getViewport()[0].codepoint).toBe(99);
+      expect(first.terminal.getLine(3)).toEqual(before);
+      expect(first.reads()).toBe(1);
+      expect(second.reads()).toBe(2);
+    } finally {
+      first.terminal.free();
+      second.terminal.free();
+    }
+  });
+
   test("keeps an unchanged scrolled viewport idle between animation frames", () => {
     const harness = idleRendererHarness(4);
 
