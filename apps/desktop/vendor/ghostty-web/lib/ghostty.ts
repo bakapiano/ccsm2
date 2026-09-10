@@ -380,6 +380,7 @@ export class GhosttyTerminal {
 
   /** Cell pool for zero-allocation rendering */
   private cellPool: GhosttyCell[] = [];
+  private viewportValid = false;
 
   constructor(
     exports: GhosttyWasmExports,
@@ -466,6 +467,7 @@ export class GhosttyTerminal {
   // ==========================================================================
 
   write(data: string | Uint8Array): void {
+    this.viewportValid = false;
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
     this.keyboardProtocol.accept(bytes);
     const ptr = this.exports.ghostty_wasm_alloc_u8_array(bytes.length);
@@ -588,6 +590,8 @@ export class GhosttyTerminal {
    * Returns a reusable cell array (zero allocation after warmup).
    */
   getViewport(): GhosttyCell[] {
+    if (this.viewportValid) return this.cellPool;
+    this.update();
     const totalCells = this._cols * this._rows;
     const neededSize = totalCells * GhosttyTerminal.CELL_SIZE;
 
@@ -611,6 +615,9 @@ export class GhosttyTerminal {
 
     // Parse cells into pool (reuses existing objects)
     this.parseCellsIntoPool(this.viewportBufferPtr, totalCells);
+    // Writes and resizes invalidate this JS snapshot. Scrollback may reuse
+    // the WASM scratch buffer without changing the cached viewport cells.
+    this.viewportValid = true;
     return this.cellPool;
   }
 
@@ -625,9 +632,6 @@ export class GhosttyTerminal {
    */
   getLine(y: number): GhosttyCell[] | null {
     if (y < 0 || y >= this._rows) return null;
-    // Call update() to ensure render state is fresh.
-    // This is safe to call multiple times - dirty state persists until markClean().
-    this.update();
     const viewport = this.getViewport();
     const start = y * this._cols;
     // Return deep copies to avoid cell pool reference issues
@@ -834,6 +838,7 @@ export class GhosttyTerminal {
 
   private initCellPool(): void {
     const total = this._cols * this._rows;
+    if (this.cellPool.length > total) this.cellPool.length = total;
     if (this.cellPool.length < total) {
       for (let i = this.cellPool.length; i < total; i++) {
         this.cellPool.push({
@@ -955,6 +960,7 @@ export class GhosttyTerminal {
   }
 
   private invalidateBuffers(): void {
+    this.viewportValid = false;
     if (this.viewportBufferPtr) {
       this.exports.ghostty_wasm_free_u8_array(this.viewportBufferPtr, this.viewportBufferSize);
       this.viewportBufferPtr = 0;

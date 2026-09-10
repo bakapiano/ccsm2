@@ -388,20 +388,33 @@ export class CanvasRenderer {
   // Canvas Sizing
   // ==========================================================================
 
+  private getBackingSize(
+    cols: number,
+    rows: number,
+  ): { width: number; height: number } {
+    // Canvas dimensions are integers, including at fractional display scaling.
+    // Use the same rounding for allocation and the per-frame size comparison.
+    return {
+      width: Math.ceil(cols * this.metrics.width * this.devicePixelRatio),
+      height: Math.ceil(rows * this.metrics.height * this.devicePixelRatio),
+    };
+  }
+
   /**
    * Resize canvas to fit terminal dimensions
    */
   public resize(cols: number, rows: number): void {
     const cssWidth = cols * this.metrics.width;
     const cssHeight = rows * this.metrics.height;
+    const backing = this.getBackingSize(cols, rows);
 
     // Set CSS size (what user sees)
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
 
     // Set actual canvas size (scaled for DPI)
-    this.canvas.width = cssWidth * this.devicePixelRatio;
-    this.canvas.height = cssHeight * this.devicePixelRatio;
+    this.canvas.width = backing.width;
+    this.canvas.height = backing.height;
 
     // Scale context to match DPI (setting canvas.width/height resets the context)
     this.ctx.scale(this.devicePixelRatio, this.devicePixelRatio);
@@ -446,11 +459,10 @@ export class CanvasRenderer {
     }
 
     // Resize canvas if dimensions changed
+    const backing = this.getBackingSize(dims.cols, dims.rows);
     const needsResize =
-      this.canvas.width !==
-        dims.cols * this.metrics.width * this.devicePixelRatio ||
-      this.canvas.height !==
-        dims.rows * this.metrics.height * this.devicePixelRatio;
+      this.canvas.width !== backing.width ||
+      this.canvas.height !== backing.height;
 
     if (needsResize) {
       this.resize(dims.cols, dims.rows);

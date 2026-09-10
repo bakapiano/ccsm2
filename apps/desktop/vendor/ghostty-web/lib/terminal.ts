@@ -923,13 +923,6 @@ export class Terminal implements ITerminalCore {
     // Resize renderer
     this.renderer!.resize(cols, rows);
 
-    // Update canvas dimensions
-    const metrics = this.renderer!.getMetrics();
-    this.canvas!.width = metrics.width * cols;
-    this.canvas!.height = metrics.height * rows;
-    this.canvas!.style.width = `${metrics.width * cols}px`;
-    this.canvas!.style.height = `${metrics.height * rows}px`;
-
     // Fire resize event
     this.resizeEmitter.fire({ cols, rows });
 
