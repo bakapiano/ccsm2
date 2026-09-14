@@ -88,28 +88,15 @@ describe("Sidebar navigation", () => {
       await evidence.checkpoint("expanded-again");
 
       currentStep = "resize-agents";
-      const preferredHeight = 420;
-      const start = await browser.execute(() => {
-        const separator = document.querySelector("#agents-resizer")!;
-        const rect = separator.getBoundingClientRect();
-        return {
-          x: Math.round(rect.left + rect.width / 2),
-          y: Math.round(rect.top + rect.height / 2),
-          height: Number(separator.getAttribute("aria-valuenow")),
-        };
-      });
-      await browser
-        .action("pointer", { parameters: { pointerType: "mouse" } })
-        .move({ duration: 0, origin: "viewport", x: start.x, y: start.y })
-        .down("left")
-        .move({
-          duration: 250,
-          origin: "viewport",
-          x: start.x,
-          y: start.y + start.height - preferredHeight,
-        })
-        .up("left")
-        .perform();
+      const separator = await $("#agents-resizer");
+      const preferredHeight =
+        Number(await separator.getAttribute("aria-valuenow")) + 144;
+      // The embedded driver delivers MouseEvents for pointer actions; exercise
+      // the separator's keyboard resize path through WebDriver key actions.
+      await separator.click();
+      for (let step = 0; step < 18; step += 1) {
+        await browser.keys("ArrowUp");
+      }
       await waitForAgentsHeight(preferredHeight);
       await evidence.checkpoint("resized-agents");
 
