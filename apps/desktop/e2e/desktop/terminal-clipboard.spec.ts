@@ -570,18 +570,35 @@ function runWindowsKeyboardAction(action: "down" | "up" | "focus"): void {
     "'",
     "''",
   );
+  const nativeMethods = [
+    "public struct Point { public int X; public int Y; }",
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, System.UIntPtr extraInfo);',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetWindowPos(System.IntPtr window, System.IntPtr after, int x, int y, int width, int height, uint flags);',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ClientToScreen(System.IntPtr window, ref Point point);',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr WindowFromPoint(Point point);',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetAncestor(System.IntPtr window, uint flags);',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);',
+    '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, System.UIntPtr extraInfo);',
+  ].join(" ");
   const script = [
     "$ErrorActionPreference = 'Stop'",
-    'Add-Type -Namespace CcsmE2e -Name NativeKeyboard -MemberDefinition \'[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, System.UIntPtr extraInfo); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr window); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] public static extern System.IntPtr SendMessageTimeout(System.IntPtr window, uint message, System.UIntPtr wParam, System.IntPtr lParam, uint flags, uint timeout, out System.UIntPtr result);\'',
+    `Add-Type -Namespace CcsmE2e -Name NativeKeyboard -MemberDefinition '${nativeMethods}'`,
     ...(action !== "up"
       ? [
           `$targets = @(Get-Process ccsm-desktop | Where-Object { $_.Path -eq '${appBinary}' })`,
           "if ($targets.Count -ne 1) { throw 'Expected one E2E CCSM window for native keyboard input' }",
           "$window = $targets[0].MainWindowHandle",
           "if ($window -eq 0) { throw 'E2E CCSM main window is unavailable' }",
-          "[void][CcsmE2e.NativeKeyboard]::SetForegroundWindow($window)",
-          "$messageResult = [UIntPtr]::Zero",
-          "if ([CcsmE2e.NativeKeyboard]::SendMessageTimeout($window, 0, [UIntPtr]::Zero, [IntPtr]::Zero, 2, 5000, [ref]$messageResult) -eq [IntPtr]::Zero) { throw 'E2E CCSM window did not process its foreground notification' }",
+          ...(action === "focus"
+            ? [
+                // Activate through a native titlebar click, preserving the
+                // keyboard state under test across minimize/restore.
+                "if ([CcsmE2e.NativeKeyboard]::GetForegroundWindow() -ne $window) { try { [void][CcsmE2e.NativeKeyboard]::SetWindowPos($window, [IntPtr](-1), 0, 0, 0, 0, 0x13); $point = New-Object 'CcsmE2e.NativeKeyboard+Point'; $point.X = 80; $point.Y = 18; if (-not [CcsmE2e.NativeKeyboard]::ClientToScreen($window, [ref]$point)) { throw 'Could not resolve E2E titlebar coordinates' }; if ([CcsmE2e.NativeKeyboard]::GetAncestor([CcsmE2e.NativeKeyboard]::WindowFromPoint($point), 2) -ne $window) { throw ('E2E titlebar is occluded: title={0}; target={1}; hit={2}; point={3},{4}; foreground={5}' -f $targets[0].MainWindowTitle, $window, [CcsmE2e.NativeKeyboard]::GetAncestor([CcsmE2e.NativeKeyboard]::WindowFromPoint($point), 2), $point.X, $point.Y, [CcsmE2e.NativeKeyboard]::GetForegroundWindow()) }; [void][CcsmE2e.NativeKeyboard]::SetCursorPos($point.X, $point.Y); [CcsmE2e.NativeKeyboard]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [CcsmE2e.NativeKeyboard]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); $deadline = [DateTime]::UtcNow.AddSeconds(5); while ([CcsmE2e.NativeKeyboard]::GetForegroundWindow() -ne $window -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 20 } } finally { [void][CcsmE2e.NativeKeyboard]::SetWindowPos($window, [IntPtr](-2), 0, 0, 0, 0, 0x13) } }",
+                "$deadline = [DateTime]::UtcNow.AddSeconds(5)",
+                "while ([CcsmE2e.NativeKeyboard]::GetForegroundWindow() -ne $window -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 20 }",
+              ]
+            : []),
           "if ([CcsmE2e.NativeKeyboard]::GetForegroundWindow() -ne $window) { throw 'E2E CCSM window did not become the native foreground target' }",
         ]
       : []),
