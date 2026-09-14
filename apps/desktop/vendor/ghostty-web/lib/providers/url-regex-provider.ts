@@ -60,15 +60,17 @@ export class UrlRegexProvider implements ILinkProvider {
         const url = match[0];
         const startIndex = match.index;
         const endIndex = match.index + url.length;
-        for (const range of linkRanges(
+        const ranges = linkRanges(
           this.terminal.buffer.active,
           extracted.positions,
           startIndex,
           endIndex,
-        )) {
+        );
+        for (const range of ranges) {
           links.push({
             text: url,
             range,
+            ranges,
             activate: (event) => this.linkHandler(url, event),
           });
         }

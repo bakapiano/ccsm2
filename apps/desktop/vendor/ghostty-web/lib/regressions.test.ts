@@ -11,6 +11,7 @@ import {
   calculateLinkUnderlineY,
   calculateFontMetrics,
   createThemeColorRemap,
+  linkViewportRanges,
 } from "./renderer";
 import { crossedDragThreshold, resolveDragRow } from "./selection-hit-test";
 import { SelectionManager } from "./selection-manager";
@@ -59,8 +60,8 @@ function idleRendererHarness(viewportY: number) {
     selectionManager: undefined,
     hoveredHyperlinkId: 0,
     previousHoveredHyperlinkId: 0,
-    hoveredLinkRange: null,
-    previousHoveredLinkRange: null,
+    hoveredLinkRanges: [],
+    previousHoveredLinkRanges: [],
     renderLine: (_line: unknown, row: number) => renderedRows.push(row),
     renderCursor: () => {
       renderedCursors += 1;
@@ -472,6 +473,49 @@ describe("local ghostty-web regressions", () => {
   test("link underline stays visibly inside a fixed-height cell", () => {
     expect(calculateLinkUnderlineY(18, { height: 18, baseline: 18 })).toBe(34);
     expect(calculateLinkUnderlineY(0, { height: 18, baseline: 14 })).toBe(15);
+  });
+
+  test("maps every hover segment through scrollback while preserving table gaps", () => {
+    const ranges = [
+      { start: { x: 23, y: 10 }, end: { x: 51, y: 10 } },
+      { start: { x: 17, y: 11 }, end: { x: 57, y: 11 } },
+      { start: { x: 17, y: 12 }, end: { x: 28, y: 12 } },
+    ];
+    const link = { range: ranges[1], ranges };
+    expect(linkViewportRanges(link, 20, 10.8, 80, 3)).toEqual([
+      { startX: 23, startY: 0, endX: 51, endY: 0 },
+      { startX: 17, startY: 1, endX: 57, endY: 1 },
+      { startX: 17, startY: 2, endX: 28, endY: 2 },
+    ]);
+    expect(linkViewportRanges(link, 20, 9, 80, 3)).toEqual([
+      { startX: 17, startY: 0, endX: 57, endY: 0 },
+      { startX: 17, startY: 1, endX: 28, endY: 1 },
+    ]);
+    expect(linkViewportRanges(link, 20, 0, 80, 3)).toEqual([]);
+    const softWrap = {
+      range: { start: { x: 23, y: 9 }, end: { x: 12, y: 14 } },
+    };
+    expect(linkViewportRanges(softWrap, 20, 10, 80, 3)).toEqual([
+      { startX: 0, startY: 0, endX: 79, endY: 2 },
+    ]);
+  });
+
+  test("redraws every hover segment on enter and leave with an otherwise clean buffer", () => {
+    const { renderer, buffer, scrollback, renderedRows } =
+      idleRendererHarness(0);
+    renderer.setHoveredLinkRanges([
+      { startX: 2, startY: 0, endX: 3, endY: 0 },
+      { startX: 1, startY: 2, endX: 2, endY: 2 },
+    ]);
+    renderer.render(buffer, false, 0, scrollback);
+    expect(renderedRows).toEqual([0, 1, 2]);
+    renderedRows.length = 0;
+    renderer.setHoveredLinkRanges([]);
+    renderer.render(buffer, false, 0, scrollback);
+    expect(renderedRows).toEqual([0, 1, 2]);
+    renderedRows.length = 0;
+    renderer.render(buffer, false, 0, scrollback);
+    expect(renderedRows).toEqual([]);
   });
 
   test("link underlines follow terminal text color and dotted hover state", () => {

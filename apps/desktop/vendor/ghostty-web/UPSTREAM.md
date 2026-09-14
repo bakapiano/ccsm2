@@ -39,6 +39,8 @@ Local changes:
   columns, retaining exact clickable segments around indentation and table gaps.
 - reconstruct default-style borderless Markdown table continuations from divider
   columns and row labels, preserving physical-cell hit ranges through soft wrapping.
+- group the physical ranges of each URL/file occurrence for whole-link hover,
+  redraw every segment on hover changes, and clip ranges at viewport boundaries.
 - cache complete per-row link scans in provider priority order and coalesce
   concurrent requests; buffer changes invalidate pending scan generations.
 - expose OSC 8 URIs by buffer position, assign page-stable hyperlink identities

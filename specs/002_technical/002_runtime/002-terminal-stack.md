@@ -25,7 +25,7 @@ portable-pty platform backend
 ## 所有权与约束
 
 - ghostty-web 是唯一 VT、cursor、mode、viewport、selection 和 scrollback 所有者。
-- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。链接hover继续报告应用mouse motion；`Ctrl+左键`命中链接时由CCSM保留并优先于应用mouse mode。普通URL和文件引用在hover时使用主题色实线下划线与目标tooltip；OSC 8链接静止时使用主题色点线并在hover时切换实线。
+- ghostty-web在CLI启用DEC mouse tracking时发送SGR 1006 mouse press、release、motion和wheel序列；未启用SGR格式时回落X10编码。链接hover继续报告应用mouse motion；`Ctrl+左键`命中链接时由CCSM保留并优先于应用mouse mode。普通URL和文件引用在hover时使用主题色实线下划线与完整目标tooltip；同一链接的所有换行文字段共享hover范围，缩进与表格列间空白保持原样，相同地址的独立出现分别绘制。Renderer在hover进入、切换和移开时重绘全部受影响行，viewport裁剪保留可见段的实际列边界。OSC 8链接静止时使用主题色点线并在hover时切换实线。
 - Rust 管理 PTY/process、byte transport、resize 和 shutdown。
 - PTY output 有序且只写入 ghostty-web 一次；input/query reply 原样回传。
 - 前端input writer在空闲时立即发送首个输入；一次`write_runtime`在途期间按runtime合并后续输入事件，并以原始事件顺序写入PTY。runtime切换等待input writer排空。

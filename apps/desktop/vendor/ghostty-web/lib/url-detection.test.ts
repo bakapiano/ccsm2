@@ -52,6 +52,29 @@ function getLinks(
 }
 
 describe('URL Detection', () => {
+  test('keeps hover groups separate for repeated destinations in different table rows', async () => {
+    const terminal = await linkTestTerminal(
+      [
+        '  Label   Target',
+        '  -----   -------------------------------',
+        '  First   https://example.com/',
+        '          target',
+        '  Second  https://example.com/',
+        '          target',
+      ].join('\r\n')
+    );
+    const detector = new LinkDetector(terminal);
+    detector.registerProvider(new UrlRegexProvider(terminal));
+    try {
+      const first = await detector.getLinkAt(10, 3);
+      const second = await detector.getLinkAt(10, 5);
+      expect(first?.text).toBe(second?.text);
+      expect(first?.ranges?.map((range) => range.start.y)).toEqual([2, 3]);
+      expect(second?.ranges?.map((range) => range.start.y)).toEqual([4, 5]);
+    } finally {
+      terminal.dispose();
+    }
+  });
   test.each([80, 37])('opens every unstyled table URL fragment at width %s', async (cols) => {
     const url =
       'https://example.com/ccsm/manual/markdown/table/wrapped/browser/link/target?source=table';
@@ -87,6 +110,9 @@ describe('URL Detection', () => {
       for (const [x, y] of fragments.reverse()) {
         const link = await detector.getLinkAt(x, y);
         expect(link?.text).toBe(url);
+        expect(link?.ranges?.length).toBeGreaterThanOrEqual(3);
+        expect(link?.ranges?.[0].start.y).toBe(cols === 80 ? 2 : 3);
+        expect(link?.ranges?.at(-1)?.end.y).toBe(cols === 80 ? 4 : 7);
         link?.activate({} as MouseEvent);
       }
       expect(opened).toEqual([url, url, url]);

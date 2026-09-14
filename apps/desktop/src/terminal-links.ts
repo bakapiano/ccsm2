@@ -116,15 +116,17 @@ export class FilePathLinkProvider implements ILinkProvider {
       y,
     )) {
       for (const reference of findTerminalFileReferences(extracted.text)) {
-        for (const range of linkRanges(
+        const ranges = linkRanges(
           this.terminal.buffer.active,
           extracted.positions,
           reference.startIndex,
           reference.endIndex,
-        )) {
+        );
+        for (const range of ranges) {
           links.push({
             text: reference.text,
             range,
+            ranges,
             activate: () => this.activateReference(reference),
           });
         }

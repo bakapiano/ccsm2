@@ -63,6 +63,37 @@ export interface FontMetrics {
   boxThickness?: number;
 }
 
+export interface LinkHoverRange {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
+/** Map one link occurrence's text segments into the visible terminal cells. */
+export function linkViewportRanges(
+  link: Pick<ILink, "range" | "ranges">,
+  scrollbackLength: number,
+  viewportY: number,
+  cols: number,
+  rows: number,
+): LinkHoverRange[] {
+  const offset = Math.max(0, Math.floor(viewportY)) - scrollbackLength;
+  return (link.ranges ?? [link.range]).flatMap((range) => {
+    const startY = range.start.y + offset;
+    const endY = range.end.y + offset;
+    if (startY >= rows || endY < 0) return [];
+    return [
+      {
+        startX: startY < 0 ? 0 : range.start.x,
+        startY: Math.max(0, startY),
+        endX: endY >= rows ? cols - 1 : range.end.x,
+        endY: Math.min(rows - 1, endY),
+      },
+    ];
+  });
+}
+
 export interface FontMetricMeasurement {
   width?: number;
   actualBoundingBoxAscent?: number;
@@ -268,18 +299,8 @@ export class CanvasRenderer {
   private previousHoveredHyperlinkId: number = 0;
 
   // Regex link hover tracking (for links without hyperlink_id)
-  private hoveredLinkRange: {
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-  } | null = null;
-  private previousHoveredLinkRange: {
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-  } | null = null;
+  private hoveredLinkRanges: readonly LinkHoverRange[] = [];
+  private previousHoveredLinkRanges: readonly LinkHoverRange[] = [];
 
   constructor(canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.canvas = canvas;
@@ -542,8 +563,8 @@ export class CanvasRenderer {
     const hyperlinkChanged =
       this.hoveredHyperlinkId !== this.previousHoveredHyperlinkId;
     const linkRangeChanged =
-      JSON.stringify(this.hoveredLinkRange) !==
-      JSON.stringify(this.previousHoveredLinkRange);
+      JSON.stringify(this.hoveredLinkRanges) !==
+      JSON.stringify(this.previousHoveredLinkRanges);
 
     if (hyperlinkChanged) {
       // Find rows containing the old or new hovered hyperlink
@@ -587,27 +608,16 @@ export class CanvasRenderer {
 
     // Track rows affected by link range changes (for regex URLs)
     if (linkRangeChanged) {
-      // Add rows from old range
-      if (this.previousHoveredLinkRange) {
-        for (
-          let y = this.previousHoveredLinkRange.startY;
-          y <= this.previousHoveredLinkRange.endY;
-          y++
-        ) {
+      // Repaint every old and new segment, including links spanning table gaps.
+      for (const range of [
+        ...this.previousHoveredLinkRanges,
+        ...this.hoveredLinkRanges,
+      ]) {
+        for (let y = range.startY; y <= range.endY; y++) {
           hyperlinkRows.add(y);
         }
       }
-      // Add rows from new range
-      if (this.hoveredLinkRange) {
-        for (
-          let y = this.hoveredLinkRange.startY;
-          y <= this.hoveredLinkRange.endY;
-          y++
-        ) {
-          hyperlinkRows.add(y);
-        }
-      }
-      this.previousHoveredLinkRange = this.hoveredLinkRange;
+      this.previousHoveredLinkRanges = this.hoveredLinkRanges;
     }
 
     // Track if anything was actually rendered
@@ -899,9 +909,9 @@ export class CanvasRenderer {
       );
     }
 
-    const hasHoveredLink =
-      this.hoveredLinkRange !== null &&
-      this.isCellInLinkRange(x, y, this.hoveredLinkRange);
+    const hasHoveredLink = this.hoveredLinkRanges.some((range) =>
+      this.isCellInLinkRange(x, y, range),
+    );
     if (cell.hyperlink_id === 0 && hasHoveredLink) {
       this.drawLinkUnderline(cellX, cellY, cellWidth, false);
     }
@@ -910,12 +920,7 @@ export class CanvasRenderer {
   private isCellInLinkRange(
     x: number,
     y: number,
-    range: {
-      startX: number;
-      startY: number;
-      endX: number;
-      endY: number;
-    },
+    range: LinkHoverRange,
   ): boolean {
     return (
       (y === range.startY &&
@@ -1156,15 +1161,13 @@ export class CanvasRenderer {
    * Set the currently hovered link range for rendering underlines (for regex-detected URLs)
    * Pass null to clear the hover state
    */
-  public setHoveredLinkRange(
-    range: {
-      startX: number;
-      startY: number;
-      endX: number;
-      endY: number;
-    } | null,
-  ): void {
-    this.hoveredLinkRange = range;
+  public setHoveredLinkRange(range: LinkHoverRange | null): void {
+    this.setHoveredLinkRanges(range ? [range] : []);
+  }
+
+  /** Set all text segments of the hovered occurrence; an empty array clears it. */
+  public setHoveredLinkRanges(ranges: readonly LinkHoverRange[]): void {
+    this.hoveredLinkRanges = ranges;
   }
 
   /**

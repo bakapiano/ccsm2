@@ -39,6 +39,10 @@ describe("terminal links", () => {
         expect(link?.text).toBe(
           "docs/manual/wrapped-links/a-very-long-directory-name/with-several-levels/target.md:2:3",
         );
+        expect(link?.ranges).toEqual([
+          { start: { x: 17, y: 2 }, end: { x: 69, y: 2 } },
+          { start: { x: 17, y: 3 }, end: { x: 49, y: 3 } },
+        ]);
         link?.activate({} as MouseEvent);
       }
       expect(opened).toHaveLength(3);
