@@ -133,6 +133,7 @@ CCSM 延续原版桌面前端的视觉语言：安静、紧凑、内容优先，
 - 浅色背景为 `#ffffff`，深色背景为 `#1e1e1e`。
 - 工具条和 Terminal scrollbar 跟随当前模式。
 - Terminal画布占据上方剩余空间；运行状态、进程信息和Stop操作在panel最底部保持一行。
+- Stop操作在Light/Dark模式下使用实色红底和白色文字、图标；hover加深红色背景。Resume与Restart沿用普通工具栏按钮样式。
 - 滚动条贴齐终端 host 的右边界。
 
 ### Browser

@@ -198,7 +198,7 @@ test-results/desktop/<run_id>/
 - 条件等待负责测试同步；证据动画节奏可以使用短暂延时。
 - fixture 使用合成 Space、provider home 和 credential 数据。
 - Markdown场景使用独立合成Space，覆盖Preview、键盘编辑、Dirty、显式保存和磁盘结果。
-- Sidebar场景覆盖折叠、状态恢复、展开，以及折叠态可见元素集合。
+- Sidebar场景覆盖折叠、状态恢复、展开、折叠态可见元素集合，以及Agents分隔线拖动后在最小化/最大化、临时窗口缩小和页面重载时恢复缓存高度。
 - Theme场景依次启动Claude、Codex和GHCP，在运行期完成深色到浅色切换，并断言光标输入行的主导Canvas像素颜色。
 - Provider Resume场景让Claude、Codex和GHCP各自通过真实CLI发现`ccsm` MCP、调用`board_put`生成完整HTML、自动打开Board Tab，并断言iframe内JavaScript交互状态。
 - Settings场景切换主题与默认浏览器链接偏好，关闭并重开弹窗后验证持久值，再恢复初始偏好。

@@ -6,6 +6,18 @@ const provider = await Bun.file(
 const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
 
 describe("Terminal status layout", () => {
+  test("styles Stop with an opaque red surface and white content", () => {
+    expect(cssRule(":root")).toContain("--term-stop-bg: #b73f3f");
+    expect(cssRule(":root")).toContain("--term-stop-bg-hover: #993535");
+    const stop = cssRule(".terminal-panel-toolbar button.danger");
+    expect(stop).toContain("background: var(--term-stop-bg)");
+    expect(stop).toContain("border-color: var(--term-stop-bg)");
+    expect(stop).toContain("color: #fff");
+    const hover = cssRule(".terminal-panel-toolbar button.danger:hover");
+    expect(hover).toContain("background: var(--term-stop-bg-hover)");
+    expect(hover).toContain("border-color: var(--term-stop-bg-hover)");
+  });
+
   test("renders the terminal host above a fixed bottom status bar", () => {
     expect(provider.indexOf('class="terminal-host"')).toBeLessThan(
       provider.indexOf('class="terminal-panel-toolbar"'),
