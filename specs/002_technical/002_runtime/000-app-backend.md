@@ -17,6 +17,7 @@ ccsm-platform ──depends on──> ccsm-core
 ├─ filesystem/Git
 ├─ platform paths
 ├─ BoardStore + Board MCP
+├─ Node runtime + Agent Gateway process
 └─ RuntimeReportEndpoint
 
 ccsm-desktop ──depends on──> ccsm-core + ccsm-platform + Tauri
@@ -28,7 +29,7 @@ ccsm-desktop ──depends on──> ccsm-core + ccsm-platform + Tauri
 
 `ccsm-core`的dependency graph不包含Tauri、WebView或桌面窗口类型。`ccsm-desktop`创建platform adapters，构造`AppBackend`，并将其放入Tauri managed state。
 
-未来`ccsm-web-server`与`ccsm-desktop`平级，复用`ccsm-core + ccsm-platform`并增加WebSocket adapter。
+未来`ccsm-web-server`与`ccsm-desktop`平级，复用`ccsm-core + ccsm-platform`并监管同一Agent Gateway形成headless composition root。
 
 ## AppBackend state
 
@@ -37,6 +38,7 @@ StateStore
 BoardStore
 SessionService
 RuntimeManager
+AgentGatewayService
 ActiveRootContext?
 ShutdownToken
 DomainEventBus
@@ -62,10 +64,11 @@ deserialize generated DTO
 
 ## Runtime report endpoint
 
-Claude/Codex/Copilot Hook与Board MCP运行在外部子进程中，通过当前用户作用域的RuntimeReportEndpoint上报：
+Claude/Codex/Copilot Hook、Agent Gateway与Board MCP运行在外部子进程中，通过当前用户作用域的RuntimeReportEndpoint上报：
 
 ```text
 ccsm hook report
+agent-gateway status/snapshot
 → authenticated RuntimeReportEndpoint
 → AppBackend SessionService
 
@@ -75,18 +78,20 @@ ccsm mcp serve / board_put
 → AppBackend upsert Board Tab + board.changed
 ```
 
-RuntimeReportEndpoint接收版本化`HookReport`与`BoardChangeReport`。Windows使用当前用户Named Pipe；macOS/Linux使用当前用户权限Unix socket。AppBackend验证token、provider、CLI Session、runtime ID、Space和Board revision。Hook token由RuntimeManager按runtime随机生成并仅保存在内存中。
+RuntimeReportEndpoint接收tagged、版本化的`HookReport`、`GatewayStatusReport`、`GatewaySnapshotReport`与`BoardChangeReport`。Windows使用当前用户Named Pipe；macOS/Linux使用当前用户权限Unix socket。AppBackend验证producer、token scope、provider、CLI Session、runtime ID、generation、seq、Space和Board revision。Hook token与Gateway runtime capability由RuntimeManager生成并保存在内存中。
 
 PTY adapter向每个Agent CLI runtime注入当前Space、Board root和认证上下文。CLI shim将同一个`ccsm mcp serve`以invocation-scoped配置合并到Claude Code、Codex和GitHub Copilot的MCP集合。MCP Server通过`board_list/board_get/board_put`访问当前Space，并在`board_put`落盘完成后发送BoardChangeReport。
 
+认证HookReport是native Session ID的持久binding来源。Gateway reports提供transport、turn、tool、approval及heartbeat observation。Gateway process见[Agent Gateway](004-agent-gateway.md)，上报协议见[Runtime reports](005-runtime-reports.md)，远程协议见[Remote Control](007-remote-control.md)。
+
 ## Task isolation
 
-PTY readers、Git discovery/status、filesystem watch和maintenance作为可取消Rust tasks运行。Task completion/panic转换为domain error并进入DomainEventBus。Blocking Git/filesystem/process操作进入专用blocking pool。
+PTY readers、Gateway supervision、Runtime reports、Git discovery/status、filesystem watch和maintenance作为可取消Rust tasks运行。Task completion/panic转换为domain error并进入DomainEventBus。Blocking Git/filesystem/process操作进入专用blocking pool。
 
 Tauri command adapter将bootstrap、Space create/switch/delete、layout/Tab持久化、目录与文件I/O、Git读取及runtime start/stop调度到blocking worker。原生事件线程完成DTO反序列化、任务调度和结果映射；blocking worker panic统一转换为`internal` command error。
 
 ## Lifecycle
 
-Tauri setup构造AppBackend。主窗口退出、应用内updater安装、installer请求退出或OS shutdown signal触发统一`shutdown()`：冻结新命令、释放native surfaces、停止process trees、取消tasks、提交状态并关闭数据库。DesktopUpdateManager位于ccsm-desktop managed state，并在installer handoff时调用同一shutdown gate。
+Tauri setup构造AppBackend。主窗口退出、应用内updater安装、installer请求退出或OS shutdown signal触发统一`shutdown()`：冻结新命令、停止Gateway与Provider connections、释放native surfaces、停止process trees、取消tasks、提交状态并关闭数据库。DesktopUpdateManager位于ccsm-desktop managed state，并在installer handoff时调用同一shutdown gate。
 
 整个Rust进程异常退出时，Windows Job Object kill-on-close或Unix launch wrapper control-pipe EOF触发process-group cleanup。下一次启动从空RuntimeManager开始，并根据持久Session state协调恢复。

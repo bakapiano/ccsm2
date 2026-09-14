@@ -8,6 +8,8 @@
 PtyBackend             PTY create/read/write/resize
 ProcessTree            interrupt/terminate/kill
 CliShimAdapter         PATH shim、binary resolution、quoting
+NodeRuntimeManager     system/managed Node解析、校验和安装
+AgentGatewayProcess    Gateway spawn、host IPC、process containment
 PlatformPaths          data/cache/runtime directories
 FileWatchAdapter       Space folder/Git filesystem events
 ```
@@ -23,7 +25,9 @@ Installer、package format、signing和notarization由Tauri bundle config与GitH
 | 能力            | Windows（当前重点）                      | macOS                                    | Linux                                                 |
 | --------------- | ---------------------------------------- | ---------------------------------------- | ----------------------------------------------------- |
 | PTY             | app-local ConPTY 1.24                    | Unix PTY                                 | Unix PTY                                              |
-| Hook endpoint   | Named Pipe                               | Unix domain socket                       | Unix domain socket                                    |
+| Runtime reports | Named Pipe                               | Unix domain socket                       | Unix domain socket                                    |
+| Agent Gateway   | Node child + hidden window               | Node child + process group               | Node child + process group                            |
+| Managed Node    | official ZIP                             | official tar archive                     | official tar archive                                  |
 | 进程树          | application Job + nested runtime Job     | planned：process group + watchdog        | planned：process group + parent-death signal/watchdog |
 | CLI shim        | 中性console `.exe`，处理 `.cmd/.bat`     | executable/symlink                       | executable/symlink                                    |
 | Browser         | WebView2                                 | WKWebView                                | WebKitGTK                                             |
@@ -40,7 +44,7 @@ Installer、package format、signing和notarization由Tauri bundle config与GitH
 以下实现按层归属Windows模块：
 
 - ccsm-platform：vendored Microsoft ConPTY DLL、hash loader和raw Windows command tail patch。
-- ccsm-platform：`.exe/.cmd/.bat` CLI查找、Windows quoting、HookEndpoint Named Pipe、process creation flags和Job Object。
+- ccsm-platform：`.exe/.cmd/.bat` CLI查找、Windows quoting、RuntimeReportEndpoint Named Pipe、Node/Gateway process creation flags和Job Object。
 - ccsm-platform：application Job在异常退出时回收WebView2、OpenConsole和CLI树；runtime Job执行单Session Stop。
 - ccsm-platform：中性provider/Hook shim、PTY output-before-exit ordering和快速启动事件队列。
 - ccsm-desktop：WebView2 child surfaces、CDP、profile和Windows IME集成。

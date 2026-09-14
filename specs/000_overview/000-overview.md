@@ -13,13 +13,16 @@ Tauri 2 desktop app
 │  ├─ Dockview layout
 │  ├─ Tab platform
 │  └─ ghostty-web terminal
-└─ Rust host
+├─ Rust host
    ├─ desktop adapter + native child WebViews
    └─ AppBackend
       ├─ PTY/process lifecycle
       ├─ CLI Session + Hook binding
       ├─ Space folder/Git/filesystem services
       └─ SQLite persistence
+└─ supervised TypeScript Agent Gateway
+   ├─ native Agent protocol observation
+   └─ paired Remote Web control
 ```
 
 ## 已锁定决策
@@ -35,7 +38,8 @@ Tauri 2 desktop app
 - 关闭 Tab 执行视图 detach；停止和删除底层 Session 使用独立命令。
 - Rust AppBackend使用单一`data.db`保存durable facts和rebuildable cache；Browser Profile与logs使用filesystem stores。
 - Space Switch在应用内保持CLI运行；Space Delete和应用退出统一释放WebViews、PTY、CLI process trees和watchers。
-- Desktop通过`CcsmDesktopClient`访问Rust：backend client调用AppBackend，browser client调用ccsm-desktop native host。未来`ccsm-web-server`复用core DTOs和services并提供WebSocket。
+- Desktop通过`CcsmDesktopClient`访问Rust：backend client调用AppBackend，browser client调用ccsm-desktop native host。Remote Web通过Agent Gateway访问已注册Agent Sessions；未来`ccsm-web-server`作为headless composition root复用core DTOs和services。
+- Agent Gateway由Rust监管为应用级Node子进程，向Rust上报原生Session observation，并为配对Remote clients提供HTTPS/WebSocket。
 - CLI Session持久化`desired_state`；RuntimeManager在内存中维护`actual_state`。当前Space按需自动恢复，未打开Space延迟恢复。
 - 桌面首版使用单 Tauri window、单 TypeScript renderer 和单 active Space。
 - 所有 Browser Tabs 共享一个全局持久 Browser Profile；未来多账号通过命名 Profile扩展。

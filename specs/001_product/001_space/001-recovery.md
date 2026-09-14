@@ -19,14 +19,14 @@ Tab 恢复状态：`restoring | live | degraded | failed`。Space health 汇总�
 
 | Tab           | 首选恢复                          | runtime 丢失后的恢复                                  |
 | ------------- | --------------------------------- | ----------------------------------------------------- |
-| CLI Session   | attach 相同 TerminalRuntime       | 按native Session ID获取进程内mutex，执行native resume |
+| CLI Session   | attach 相同 SessionRuntime        | 按native Session ID获取进程内mutex，以Terminal或Gateway engine执行native resume |
 | Browser       | reuse live child WebView          | 使用 global profile + last URL 创建新 WebView         |
 | File Explorer | restore root/expanded/selection   | 重新扫描 Space root 并协调缺失路径                    |
 | Git           | 相同root时reuse ActiveRootContext | 加载共享cache、激活root context并刷新status           |
 
 CLI 的 in-flight turn 状态由 provider transcript 和新一轮 resume 结果协调。Browser 的 cookies/storage 来自全局持久 profile；URL、title 和可恢复的 view state 来自 TabRecord。
 
-Terminal VT和scrollback属于当前应用生命周期。应用退出释放CLI runtime；下次启动创建新Terminal，并根据Session desired state执行new或native resume。
+Terminal VT和scrollback属于当前应用生命周期。Gateway connection同样属于当前应用生命周期。应用退出释放CLI runtime；下次启动根据Session desired state和preferred engine执行new或native resume。
 
 ## CLI 恢复策略
 

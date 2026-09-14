@@ -24,13 +24,14 @@ CliSession {
   created_at, last_active_at
 }
 
-TerminalRuntime {
+SessionRuntime {
   runtime_id, session_id, pid,
-  cols, rows, actual_state, started_at, exited_at?
+  engine, actual_state, started_at, exited_at?,
+  terminal_size? or gateway_connection_id?
 }
 ```
 
-`CliSession`及其当前`native_session_id`写入`data.db`。`TerminalRuntime`由AppBackend的RuntimeManager保存在内存中。
+`CliSession`及其当前`native_session_id`写入`data.db`。`SessionRuntime`由AppBackend的RuntimeManager保存在内存中。`engine = terminal | gateway`描述本次runtime使用PTY TUI或结构化Agent Gateway connection。
 
 `desired_state = running | stopped` 表示跨启动保留的用户意图。`actual_state = starting | live | exited | lost` 表示当前应用进程观察到的runtime事实。
 
@@ -41,6 +42,7 @@ TerminalRuntime {
 ## 不变量
 
 - 一个 CCSM Session 同时最多有一个 writable runtime。
+- Terminal与Gateway runtimes共享同一个ResumeKey、mutex和runtime identity规则。
 - 一个 CliSession 同时最多有一个 non-deleted CLI Tab。
 - RuntimeManager为每个CliSession维护一个runtime entry。ResumeKey优先使用`{provider, native_session_id}`，尚未绑定时使用`cli_session_id`；每个ResumeKey对应一个进程内mutex。
 - 每次spawn创建新的opaque UUID `runtime_id`；RuntimeManager丢弃与当前runtime ID不匹配的Hook、PTY和exit event。
@@ -66,9 +68,10 @@ App crash      → 丢弃全部内存runtime；desired_state保持原值
 
 ```text
 derive ResumeKey and acquire mutex
-→ 等待目标 Tab 提供稳定 rows/cols
-→ 创建 PTY + wrapper
-→ claude --resume ID / codex resume ID
+→ resolve preferred engine
+→ Terminal: 等待稳定rows/cols并创建PTY + wrapper
+→ Gateway: ensure Gateway process并创建logical connection
+→ provider native resume
 → SessionStart Hook 确认 binding
 → register runtime entry
 → actual_state = live
@@ -82,3 +85,5 @@ runtime注册完成、超时或spawn失败后释放mutex。恢复策略：
 - 未打开 Space 在用户打开时执行相同恢复判断。
 - `desired_state=stopped` 保持 stopped。
 - cold resume 并发上限为 2；失败进入 degraded并等待显式 Retry。
+
+Terminal与Gateway之间的切换先停止当前runtime，再以相同native Session ID创建新runtime。每次切换生成新的opaque`runtime_id`。Gateway实时状态、Remote Control及Node runtime见[Agent Gateway 与 Remote Control](004-agent-gateway.md)。
