@@ -39,6 +39,7 @@ portable-pty platform backend
 - IME preedit 覆盖显示在 Canvas cursor 上；textarea 的非 composing `input` 与 `compositionend` 最终文本归一化为一次 VT/PTY 输入，覆盖 Windows WebView2 中搜狗的 `insertText` 提交序列。
 - IME input proxy和preedit overlay使用Terminal host内的Canvas布局坐标；Dockview transform不能重复叠加Panel viewport偏移。
 - 新GhosttyTerminal handle在首次viewport读取和render前执行RIS；WASM allocator复用的已释放screen cells不能出现在新Tab首帧。
+- WASM PageList在初始页、扩容页和scrollback新页分配时显式清零page buffer；优化构建复用线性内存时保持空白cell初始化，并由原有resize/reflow保留已写入内容。
 - ghostty-web跟踪应用通过CSI协商的Kitty keyboard flags栈与xterm modifyOtherKeys状态，并在每次按键编码前同步DECCKM、DECNKM、NumLock、Alt ESC prefix和增强键盘状态；修饰后的Enter与文本键保持独立序列，不能退化为无修饰键输入。
 
 ## Tab 集成
@@ -63,6 +64,8 @@ portable-pty platform backend
 - Windows ConPTY输入兼容层跨PTY output chunk跟踪`CSI ?9001h/l` Win32 Input Mode；普通文本、`Ctrl+C`与独立modifier保留Ghostty/raw VT路径，修饰组合和功能键编码为`CSI Vk;Sc;Uc;Kd;Cs;Rc_` KEY_EVENT_RECORD序列。目标键record中的control state保留左右Ctrl/Alt、Shift、lock与enhanced-key状态。窗口失焦、Terminal Tab失活和renderer释放会清空浏览器侧临时按键状态并保留已协商的Win32 Input Mode；document级keyup完成终端外释放事件的配对。Codex默认keymap使用`Shift+Enter`插入换行，因此Windows Codex profile把`Ctrl+Enter`规范化为Shift+Enter record，并原样保留`Shift+Enter`；模式协商前继续使用Provider legacy `Alt+Enter`（`ESC CR`）fallback。真实Codex回归以Ctrl+Enter、Shift+Enter和普通Enter输入三行prompt，并验证模型端收到两个换行。终端输入回归集同时验证9001分片协商、Win32 key record、窗口失焦期间丢失modifier keyup后的状态恢复、Codex multiline、Claude所需的`Shift+Enter`不退化为CR，以及默认DEC Alt ESC prefix下`Alt+V`产生`ESC v`。
 - CLI Provider层读取SelectionManager选区，并通过desktop clipboard transport写入系统剪贴板；有选区时消费`Ctrl/Cmd+C`，空选区时`Ctrl+C`进入Ghostty key encoder并产生ETX（`0x03`）。`Ctrl/Cmd+V`通过同一transport读取文本，再交给Terminal paste保留bracketed-paste语义。Windows clipboard瞬时占用使用有界重试。
 - ghostty-web LinkProvider在VT buffer完成ANSI解析后识别普通URL、OSC 8 URL和文件引用。普通URL使用Windows Terminal的边界、scheme和尾部标点规则识别HTTP/HTTPS/FTP/`file://`，并恢复terminal soft-wrap形成的逻辑行。WASM按buffer cell公开OSC 8 URI，显式OSC 8链接优先于同范围正则结果。HTTP/HTTPS/FTP/`about:`交给CCSM创建内置Browser Tab；文件引用先由platform adapter canonicalize并验证Space containment，再创建或聚焦File Editor Tab。链接路由不改写PTY byte stream；terminal resize/reflow使LinkProvider cache失效。
+
+Markdown TUI通过hard newline排版的URL和文件引用，按非默认前景色或下划线样式、列起点与相邻行恢复完整目标；扫描上限为32行，完整文件后缀、闭合标点、空行、新目标和歧义列终止续接。满宽行末到下一行第0列的连续token可恢复ConPTY重绘后丢失的soft-wrap标记。每个链接的命中范围由实际文字的连续cell构成。LinkDetector按行缓存完整Provider扫描结果，固定OSC 8、URL、文件路径优先级；同一行的并发hover共享扫描，write/resize后旧generation的结果重新读取当前buffer。
 
 ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `WindowsPtyBackend`；Unix fd、process group 和 signal 属于 macOS/Linux backend。ghostty-web byte contract 对三平台完全相同。
 

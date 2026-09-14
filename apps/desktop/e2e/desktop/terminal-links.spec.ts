@@ -48,11 +48,13 @@ describe("Terminal links", () => {
     const browserUrl =
       "https://example.com/ccsm/e2e/windows-terminal-compatible/markdown/soft-wrapped/browser/link/target?source=terminal";
     const providerBrowserUrl = "https://example.com/p";
-    const tableBrowserUrl = "https://example.com/t";
+    const tableBrowserUrl =
+      "https://example.com/ccsm/e2e/markdown/table/wrapped/browser/link/target?source=table";
     const relativeFilePath =
       "docs/e2e/windows-terminal-compatible/markdown/soft-wrapped/file/path/with/additional/review/context/target.md";
     const fileReference = `${relativeFilePath}:2:3`;
-    const providerFilePath = "provider-click-target.md";
+    const providerFilePath =
+      "docs/e2e/markdown/table/wrapped/file/path/with/review/context/provider-click-target.md";
     const providerFileReference = `${providerFilePath}:2:3`;
     const heading = "Provider Markdown link regression";
     const tableHeading = "Nested target";
@@ -66,17 +68,17 @@ describe("Terminal links", () => {
       "",
       `[Open provider link](${providerBrowserUrl})`,
       "",
-      `\`${providerFileReference}\``,
-      "",
       `| ${tableHeading} | Link |`,
       "| --- | --- |",
       `| Table cell | [Open nested table link](${tableBrowserUrl}) |`,
+      `| File cell | \`${providerFileReference}\` |`,
       "",
       responseMarker,
     ].join("\n");
     const targetPath = join(spaceRoot, ...relativeFilePath.split("/"));
     mkdirSync(dirname(targetPath), { recursive: true });
     writeFileSync(targetPath, "first line\nsecond line target\nthird line\n");
+    mkdirSync(dirname(join(spaceRoot, providerFilePath)), { recursive: true });
     writeFileSync(
       join(spaceRoot, providerFilePath),
       "first line\nsecond line target\nthird line\n",
@@ -147,6 +149,13 @@ describe("Terminal links", () => {
         textWithoutWhitespace(`\`${providerFileReference}\``),
       );
       expect(renderedText).not.toContain("|---|---|");
+      const minimized = await browser.execute(
+        () => window.innerWidth < 900 || window.innerHeight < 650,
+      );
+      if (minimized) {
+        await ensureProviderMarkdownWindow();
+        await waitForStablePrompt(output.runtimeId!);
+      }
       const viewport = await browser.execute(() => ({
         height: window.innerHeight,
         width: window.innerWidth,
@@ -159,6 +168,14 @@ describe("Terminal links", () => {
       const fileGeometry = await targetGeometry(fileReference, provider);
       expect(fileGeometry.endRow).toBeGreaterThan(fileGeometry.startRow);
       await evidence.checkpoint("provider-markdown-rendered-and-wrapped");
+
+      currentStep = "open-provider-wrapped-url";
+      await movePointer(browserGeometry);
+      await waitForLinkTooltip(browserUrl, provider);
+      await controlClick(browserGeometry);
+      await waitForBrowserUrl(browserUrl);
+      await evidence.checkpoint("provider-wrapped-url-opened");
+      await returnToProvider();
 
       currentStep = "open-provider-markdown-url";
       const providerBrowserTarget = await targetGeometry(
@@ -177,20 +194,50 @@ describe("Terminal links", () => {
       const tableBrowserTarget = await targetGeometry(
         tableBrowserUrl,
         provider,
-        "optional",
+        "required",
       );
       await movePointer(tableBrowserTarget);
       await waitForLinkTooltip(tableBrowserUrl, provider);
       await controlClick(tableBrowserTarget);
       await waitForBrowserUrl(tableBrowserUrl);
       await evidence.checkpoint("provider-table-url-opened");
+      await returnToProvider();
+      const tableUrlLast = await targetGeometry(
+        tableBrowserUrl,
+        provider,
+        "required",
+        "last",
+      );
+      await movePointer(tableUrlLast);
+      await waitForLinkTooltip(tableBrowserUrl, provider);
+      await controlClick(tableUrlLast);
+      await waitForBrowserUrl(tableBrowserUrl);
+      await evidence.checkpoint("provider-table-url-last-fragment-opened");
 
-      currentStep = "open-provider-markdown-file";
+      currentStep = "open-provider-wrapped-file";
+      await returnToProvider();
+      const wrappedFileTarget = await targetGeometry(fileReference, provider);
+      await movePointer(wrappedFileTarget);
+      await waitForLinkTooltip(fileReference, provider);
+      await controlClick(wrappedFileTarget);
+      await waitForTab("file-editor", relativeFilePath);
+      await browser.waitUntil(
+        async () =>
+          (await $(".file-editor-panel .file-editor-position").getText()) ===
+          "Ln 2, Col 3",
+        {
+          timeout: 30_000,
+          timeoutMsg: "Wrapped file did not reveal Ln 2, Col 3",
+        },
+      );
+      await evidence.checkpoint("provider-wrapped-file-opened");
+
+      currentStep = "open-provider-table-file";
       await returnToProvider();
       const providerFileTarget = await targetGeometry(
         providerFileReference,
         provider,
-        "optional",
+        "required",
       );
       await movePointer(providerFileTarget);
       await waitForLinkTooltip(providerFileReference, provider);
@@ -211,7 +258,7 @@ describe("Terminal links", () => {
             "Provider Markdown file link did not reveal line 2 column 3",
         },
       );
-      await evidence.checkpoint("provider-markdown-file-opened");
+      await evidence.checkpoint("provider-table-file-opened");
     } catch (error) {
       primaryError = error;
       writeFileSync(
@@ -476,9 +523,10 @@ async function targetGeometry(
   target: string,
   selectedProvider: TerminalSnapshot["provider"],
   wrapping: "required" | "optional" = "required",
+  fragment: "continuation" | "last" = "continuation",
 ): Promise<TargetGeometry> {
   const serialized = await browser.execute(
-    (expected, requestedProvider, requestedWrapping) => {
+    (expected, requestedProvider, requestedWrapping, requestedFragment) => {
       const panel = document.querySelector<HTMLElement>(
         `.terminal-panel[data-provider="${CSS.escape(requestedProvider)}"]`,
       );
@@ -531,7 +579,10 @@ async function targetGeometry(
             throw new Error(`Target ${expected} did not wrap`);
           }
           const pointer =
-            wrapped ?? targetPositions[Math.floor(targetPositions.length / 2)];
+            requestedFragment === "last"
+              ? end
+              : (wrapped ??
+                targetPositions[Math.floor(targetPositions.length / 2)]);
           if (!pointer) throw new Error(`Target ${expected} has no cells`);
 
           const firstBufferLine = Math.max(
@@ -560,6 +611,7 @@ async function targetGeometry(
     target,
     selectedProvider,
     wrapping,
+    fragment,
   );
   return JSON.parse(serialized) as TargetGeometry;
 }
@@ -664,7 +716,7 @@ async function waitForLinkTooltip(
             tooltip &&
               !tooltip.hidden &&
               tooltip.dataset.visible === "true" &&
-              tooltip.textContent?.includes(target),
+              tooltip.textContent === target,
           );
         },
         expected,
@@ -885,6 +937,7 @@ async function returnToProvider(): Promise<void> {
   await $('.terminal-panel[data-provider="codex"]').waitForDisplayed({
     timeout: 20_000,
   });
+  await focusTerminalInput(provider);
 }
 
 async function waitForBrowserUrl(expected: string): Promise<void> {

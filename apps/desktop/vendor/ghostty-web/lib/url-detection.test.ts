@@ -8,6 +8,8 @@
 import { describe, expect, test } from 'bun:test';
 import { UrlRegexProvider } from './providers/url-regex-provider';
 import type { ILink } from './types';
+import { linkTestTerminal, providerLinks } from './link-test-harness';
+import { LinkDetector } from './link-detector';
 
 /**
  * Mock terminal for testing
@@ -50,6 +52,121 @@ function getLinks(
 }
 
 describe('URL Detection', () => {
+  test('recovers full-width URL rows repainted with hard CRLF by ConPTY', async () => {
+    const head = '  https://example.com/a/long/path/';
+    const tail = 'target?source=terminal';
+    const terminal = await linkTestTerminal(`${head}\r\n${tail}`, head.length);
+    try {
+      expect(terminal.buffer.active.getLine(1)?.isWrapped).toBe(false);
+      const provider = new UrlRegexProvider(terminal);
+      for (const row of [0, 1]) {
+        const links = await providerLinks(provider, row);
+        expect(links[0].text).toBe(head.trimStart() + tail);
+      }
+      terminal.wasmTerm.write('\r\n'.repeat(20));
+      expect(terminal.wasmTerm.getScrollbackLength()).toBeGreaterThan(1);
+      expect((await providerLinks(provider, 1))[0].text).toBe(head.trimStart() + tail);
+    } finally {
+      terminal.dispose();
+    }
+  });
+  test('opens every styled Codex table URL fragment with its complete destination', async () => {
+    const url =
+      'https://example.com/ccsm/e2e/markdown/table/wrapped/browser/link/target?source=table';
+    const terminal = await linkTestTerminal(
+      [
+        '   Table cell       Open nested table link (\x1b[36;4mhttps://example.com/ccsm/e2e/\x1b[0m',
+        '                    \x1b[36;4mmarkdown/table/wrapped/browser/link/target?\x1b[0m',
+        '                    \x1b[36;4msource=table\x1b[0m)',
+      ].join('\r\n')
+    );
+    const opened: string[] = [];
+    const provider = new UrlRegexProvider(terminal, (uri) => opened.push(uri));
+    const detector = new LinkDetector(terminal);
+    detector.registerProvider(provider);
+    try {
+      for (const [x, y] of [
+        [44, 0],
+        [20, 1],
+        [25, 2],
+      ]) {
+        const link = await detector.getLinkAt(x, y);
+        expect(link?.text).toBe(url);
+        link?.activate({} as MouseEvent);
+      }
+      expect(opened).toEqual([url, url, url]);
+      expect(await detector.getLinkAt(4, 0)).toBeUndefined();
+      expect(await detector.getLinkAt(19, 1)).toBeUndefined();
+      expect(await detector.getLinkAt(65, 1)).toBeUndefined();
+      expect(await detector.getLinkAt(32, 2)).toBeUndefined();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('keeps adjacent complete styled URLs separate', async () => {
+    const terminal = await linkTestTerminal(
+      '  (\x1b[36;4mhttps://first.example/a\x1b[0m)\r\n  (\x1b[36;4mhttps://second.example/b\x1b[0m)'
+    );
+    try {
+      const provider = new UrlRegexProvider(terminal);
+      expect((await providerLinks(provider, 0)).map((link) => link.text)).toEqual([
+        'https://first.example/a',
+      ]);
+      expect((await providerLinks(provider, 1)).map((link) => link.text)).toEqual([
+        'https://second.example/b',
+      ]);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('keeps styled URL continuations in their table column', async () => {
+    const terminal = await linkTestTerminal(
+      [
+        '  Left              (\x1b[36;4mhttps://example.com/table/\x1b[0m',
+        '  \x1b[36;4munrelated\x1b[0m         \x1b[36;4mtarget\x1b[0m)',
+      ].join('\r\n')
+    );
+    try {
+      const links = await providerLinks(new UrlRegexProvider(terminal), 1);
+      expect(links[0].text).toBe('https://example.com/table/target');
+      expect(links.some((link) => link.text.includes('unrelated'))).toBe(false);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('maps styled URL fragments after wide CJK cells', async () => {
+    const terminal = await linkTestTerminal(
+      '中文 (\x1b[36;4mhttps://example.com/long/\x1b[0m\r\n  \x1b[36;4mtarget\x1b[0m)'
+    );
+    try {
+      const links = await providerLinks(new UrlRegexProvider(terminal), 1);
+      expect(links[0]).toMatchObject({
+        text: 'https://example.com/long/target',
+        range: { start: { x: 6, y: 0 } },
+      });
+      expect(links[1]).toMatchObject({ range: { start: { x: 2, y: 1 }, end: { x: 7, y: 1 } } });
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('ends a full-width URL before the next independent file reference', async () => {
+    const head = 'https://example.com/long/';
+    const terminal = await linkTestTerminal(
+      `${head}\r\ntarget?source=terminal\r\ndocs/a/very/long/file/path/target.md:2:3`,
+      head.length
+    );
+    try {
+      const links = await providerLinks(new UrlRegexProvider(terminal), 1);
+      expect(links[0].text).toBe(head + 'target?source=terminal');
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   test('detects HTTPS URLs', async () => {
     const links = await getLinks('Visit https://github.com for code');
     expect(links).toBeDefined();

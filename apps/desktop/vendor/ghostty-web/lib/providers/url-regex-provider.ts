@@ -8,10 +8,8 @@
  */
 
 import type { ILink, ILinkProvider } from "../types";
-import {
-  extractWrappedLine,
-  type WrappedLineBuffer,
-} from "../wrapped-buffer-line";
+import type { WrappedLineBuffer } from "../wrapped-buffer-line";
+import { extractRenderedLinkLines, linkRanges } from "../rendered-link-line";
 
 /**
  * URL Regex Provider
@@ -47,35 +45,37 @@ export class UrlRegexProvider implements ILinkProvider {
   ): void {
     const links: ILink[] = [];
 
-    const extracted = extractWrappedLine(this.terminal.buffer.active, y);
-    if (!extracted) {
-      callback(undefined);
-      return;
-    }
+    for (const extracted of extractRenderedLinkLines(
+      this.terminal.buffer.active,
+      y,
+    )) {
+      // Reset regex state (global flag maintains state)
+      UrlRegexProvider.URL_REGEX.lastIndex = 0;
 
-    // Reset regex state (global flag maintains state)
-    UrlRegexProvider.URL_REGEX.lastIndex = 0;
+      // Find all URL matches in the reconstructed logical line.
+      let match: RegExpExecArray | null = UrlRegexProvider.URL_REGEX.exec(
+        extracted.text,
+      );
+      while (match !== null) {
+        const url = match[0];
+        const startIndex = match.index;
+        const endIndex = match.index + url.length;
+        for (const range of linkRanges(
+          this.terminal.buffer.active,
+          extracted.positions,
+          startIndex,
+          endIndex,
+        )) {
+          links.push({
+            text: url,
+            range,
+            activate: (event) => this.linkHandler(url, event),
+          });
+        }
 
-    // Find all URL matches in the reconstructed logical line.
-    let match: RegExpExecArray | null = UrlRegexProvider.URL_REGEX.exec(
-      extracted.text,
-    );
-    while (match !== null) {
-      const url = match[0];
-      const startIndex = match.index;
-      const endIndex = match.index + url.length - 1;
-      const start = extracted.positions[startIndex];
-      const end = extracted.positions[endIndex];
-      if (start && end) {
-        links.push({
-          text: url,
-          range: { start, end },
-          activate: (event) => this.linkHandler(url, event),
-        });
+        // Get next match
+        match = UrlRegexProvider.URL_REGEX.exec(extracted.text);
       }
-
-      // Get next match
-      match = UrlRegexProvider.URL_REGEX.exec(extracted.text);
     }
 
     callback(links.length > 0 ? links : undefined);

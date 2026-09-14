@@ -203,7 +203,9 @@ test-results/desktop/<run_id>/
 - Provider Resume场景让Claude、Codex和GHCP各自通过真实CLI发现`ccsm` MCP、调用`board_put`生成完整HTML、自动打开Board Tab，并断言iframe内JavaScript交互状态。
 - Settings场景切换主题与默认浏览器链接偏好，关闭并重开弹窗后验证持久值，再恢复初始偏好。
 - Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、窗口失焦期间modifier keyup丢失后的Win32输入状态恢复、软换行文本校验和PTY中断恢复。
+- Terminal CJK场景在Windows新建Shell后先核对首屏仅含完整提示符，再验证中文输出；WASM回归覆盖内存复用、多组初始尺寸与保留提示符的后续扩容。
 - Terminal Links场景从真实Shell输出激活Web与文件链接，验证Browser toolbar外部打开、默认浏览器偏好路由、Browser Tab数量与File Editor行列跳转。
+- Provider Markdown Links场景让固定版本Codex渲染长URL、长文件路径及表格内长URL/文件引用；通过可见hover与Ctrl-click点击续行和URL末段，验证完整Browser URL及File Editor行列位置。真实WASM单测覆盖列间空白、相邻独立目标、Provider优先级和并发缓存失效。
 - 平台差异放入 screenshot、process 和 display adapter，业务步骤保持共享。
 
 ## 本地验收证据

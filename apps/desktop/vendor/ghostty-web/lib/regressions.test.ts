@@ -324,6 +324,38 @@ describe("local ghostty-web regressions", () => {
     }
   });
 
+  test("initial fitting clears reused screen cells before shell output", async () => {
+    const ghostty = await Ghostty.load();
+    for (const [cols, rows] of [
+      [76, 41],
+      [180, 70],
+      [30, 80],
+      [300, 100],
+      [8, 4],
+      [76, 41],
+    ]) {
+      const terminal = ghostty.createTerminal(80, 24);
+      try {
+        terminal.resize(cols, rows);
+        expect(
+          terminal
+            .getViewport()
+            .every((cell) => cell.codepoint === 0 || cell.codepoint === 32),
+        ).toBe(true);
+        terminal.write("PS D:/repo> ");
+        terminal.resize(cols + 10, rows + 3);
+        const text = terminal
+          .getViewport()
+          .filter((cell) => cell.width > 0 && cell.codepoint > 32)
+          .map((cell) => String.fromCodePoint(cell.codepoint))
+          .join("");
+        expect(text).toBe("PSD:/repo>");
+      } finally {
+        terminal.free();
+      }
+    }
+  });
+
   test("OSC 8 links retain their URI and identity across soft wrapping", async () => {
     const ghostty = await Ghostty.load();
     const terminal = ghostty.createTerminal(8, 4);
@@ -371,6 +403,70 @@ describe("local ghostty-web regressions", () => {
 
     (await detector.getLinkAt(0, 0))?.activate({} as MouseEvent);
     expect(activated).toEqual(["osc"]);
+  });
+
+  test("a previously scanned file fragment cannot shadow a wrapped URL", async () => {
+    const detector = new LinkDetector({
+      buffer: {
+        active: {
+          getLine: () => ({
+            length: 80,
+            getCell: () => ({ getHyperlinkId: () => 0 }),
+          }),
+        },
+      },
+    });
+    const link = (text: string) => ({
+      text,
+      range: { start: { x: 0, y: 1 }, end: { x: 20, y: 1 } },
+      activate: () => {},
+    });
+    detector.registerProvider({
+      provideLinks: (row, done) =>
+        done(row === 1 ? [link("https://example.com/full/path")] : []),
+    });
+    detector.registerProvider({
+      provideLinks: (_row, done) => done([link("full/path")]),
+    });
+    await detector.getLinkAt(0, 0);
+    expect((await detector.getLinkAt(0, 1))?.text).toBe(
+      "https://example.com/full/path",
+    );
+  });
+
+  test("concurrent hovers share a complete row scan and discard stale results", async () => {
+    const detector = new LinkDetector({
+      buffer: {
+        active: {
+          getLine: () => ({
+            length: 80,
+            getCell: () => ({ getHyperlinkId: () => 0 }),
+          }),
+        },
+      },
+    });
+    const link = (text: string) => ({
+      text,
+      range: { start: { x: 0, y: 0 }, end: { x: 20, y: 0 } },
+      activate: () => {},
+    });
+    let complete: ((links: ReturnType<typeof link>[]) => void) | undefined;
+    let scans = 0;
+    detector.registerProvider({
+      provideLinks: (_row, done) => {
+        scans += 1;
+        if (scans === 1) complete = done;
+        else done([link("fresh")]);
+      },
+    });
+    const first = detector.getLinkAt(0, 0);
+    const second = detector.getLinkAt(1, 0);
+    expect(scans).toBe(1);
+    detector.invalidateCache();
+    complete!([link("stale")]);
+    expect((await first)?.text).toBe("fresh");
+    expect((await second)?.text).toBe("fresh");
+    expect(scans).toBe(2);
   });
 
   test("link underline stays visibly inside a fixed-height cell", () => {

@@ -35,6 +35,10 @@ Local changes:
   source passes the production TypeScript strict check without changing runtime behavior.
 - reconstruct soft-wrapped logical lines for plain-text URL detection and map
   multi-row matches back to their terminal buffer cells.
+- reconstruct styled Markdown URL/file continuations within their rendered
+  columns, retaining exact clickable segments around indentation and table gaps.
+- cache complete per-row link scans in provider priority order and coalesce
+  concurrent requests; buffer changes invalidate pending scan generations.
 - expose OSC 8 URIs by buffer position, assign page-stable hyperlink identities
   across Ghostty pages, and preserve the corresponding WASM source patch under
   `patches/ccsm-hyperlink-uri.patch`.
@@ -46,14 +50,17 @@ Local changes:
 - reuse each terminal's parsed viewport until the next write or resize;
   line reads remain independent copies and scrollback scratch-buffer reads
   do not invalidate the JavaScript snapshot.
+- zero freshly allocated WASM page buffers during initial creation and growth,
+  preserving existing terminal content while clearing recycled linear memory.
+- flush Unicode generator stdout portably when building the WASM on Windows.
 
 The checked-in WASM binary is rebuilt from the pinned source and
-`ccsm-hyperlink-uri.patch`; its SHA-256 is
-`7f526983d0e7f67c06dbb880943311b93b969d6cf97eb53a222e45c8f6c17e1f`.
+`ccsm-hyperlink-uri.patch` plus `ccsm-wasm-zero-pages.patch`; its SHA-256 is
+`1ef1a10a1c4dfc7930382e7653e3f9d9a6259d0507e1ece5d6205ab0776dbe4e`.
 
 To reproduce it, clone the pinned `coder/ghostty-web` commit, initialize its
 Ghostty submodule, apply upstream `patches/ghostty-wasm-api.patch` inside that
-submodule, then apply the CCSM patch and run:
+submodule, then apply both CCSM patches and run with Zig 0.15.2:
 
 ```sh
 zig build lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall
@@ -61,3 +68,6 @@ zig build lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall
 
 Copy `ghostty/zig-out/bin/ghostty-vt.wasm` to this directory and verify the
 SHA-256 above.
+
+On Windows, place `ZIG_GLOBAL_CACHE_DIR` on the same volume as the checkout
+so Zig's build runner can resolve relative paths for the Unicode generators.

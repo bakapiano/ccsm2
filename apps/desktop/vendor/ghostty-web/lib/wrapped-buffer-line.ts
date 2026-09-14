@@ -1,6 +1,8 @@
 export interface WrappedBufferCell {
   getCodepoint(): number;
   getWidth?(): number;
+  getFgColor?(): number;
+  isUnderline?(): number | boolean;
 }
 
 export interface WrappedBufferLine {
@@ -12,6 +14,7 @@ export interface WrappedBufferLine {
 
 export interface WrappedLineBuffer {
   getLine(y: number): WrappedBufferLine | undefined;
+  getDefaultFgColor?(): number;
 }
 
 export interface BufferCellPosition {

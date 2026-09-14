@@ -1,8 +1,9 @@
 import type { ILink, ILinkProvider } from "../vendor/ghostty-web/lib/types";
+import type { WrappedLineBuffer } from "../vendor/ghostty-web/lib/wrapped-buffer-line";
 import {
-  extractWrappedLine,
-  type WrappedLineBuffer,
-} from "../vendor/ghostty-web/lib/wrapped-buffer-line";
+  extractRenderedLinkLines,
+  linkRanges,
+} from "../vendor/ghostty-web/lib/rendered-link-line";
 
 export interface TerminalFileReference {
   path: string;
@@ -109,28 +110,25 @@ export class FilePathLinkProvider implements ILinkProvider {
     y: number,
     callback: (links: ILink[] | undefined) => void,
   ): void {
-    const extracted = extractWrappedLine(this.terminal.buffer.active, y);
-    if (!extracted) {
-      callback(undefined);
-      return;
-    }
-
     const links: ILink[] = [];
-    for (const reference of findTerminalFileReferences(extracted.text)) {
-      const start = extracted.positions[reference.startIndex];
-      const end =
-        extracted.positions[
-          Math.max(reference.startIndex, reference.endIndex - 1)
-        ];
-      if (!start || !end) continue;
-      links.push({
-        text: reference.text,
-        range: {
-          start,
-          end,
-        },
-        activate: () => this.activateReference(reference),
-      });
+    for (const extracted of extractRenderedLinkLines(
+      this.terminal.buffer.active,
+      y,
+    )) {
+      for (const reference of findTerminalFileReferences(extracted.text)) {
+        for (const range of linkRanges(
+          this.terminal.buffer.active,
+          extracted.positions,
+          reference.startIndex,
+          reference.endIndex,
+        )) {
+          links.push({
+            text: reference.text,
+            range,
+            activate: () => this.activateReference(reference),
+          });
+        }
+      }
     }
     callback(links.length > 0 ? links : undefined);
   }
