@@ -635,6 +635,9 @@ export interface ILink {
   /** The range of the link in the buffer (may span multiple lines) */
   range: IBufferRange;
 
+  /** All text segments of this occurrence, shared by its hit ranges. */
+  ranges?: readonly IBufferRange[];
+
   /** Called when the link is activated */
   activate(event: MouseEvent): void;
 

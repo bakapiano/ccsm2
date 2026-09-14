@@ -1,4 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import {
+  linkTestTerminal,
+  providerLinks,
+} from "../vendor/ghostty-web/lib/link-test-harness";
+import { LinkDetector } from "../vendor/ghostty-web/lib/link-detector";
 
 import {
   FilePathLinkProvider,
@@ -8,6 +13,154 @@ import {
 } from "./terminal-links";
 
 describe("terminal links", () => {
+  test("opens unstyled table file fragments with the complete path and location", async () => {
+    const terminal = await linkTestTerminal(
+      [
+        "   Case          Target",
+        "   ----------    --------------------------------------------------------",
+        "   File          docs/manual/wrapped-links/a-very-long-directory-name/",
+        "                 with-several-levels/target.md:2:3",
+        "   Other         docs/other.md:4:5",
+        "",
+      ].join("\r\n"),
+    );
+    const opened: unknown[] = [];
+    const detector = new LinkDetector(terminal);
+    detector.registerProvider(
+      new FilePathLinkProvider(terminal, (value) => opened.push(value)),
+    );
+    try {
+      for (const [x, y] of [
+        [18, 3],
+        [18, 2],
+        [48, 3],
+      ]) {
+        const link = await detector.getLinkAt(x, y);
+        expect(link?.text).toBe(
+          "docs/manual/wrapped-links/a-very-long-directory-name/with-several-levels/target.md:2:3",
+        );
+        expect(link?.ranges).toEqual([
+          { start: { x: 17, y: 2 }, end: { x: 69, y: 2 } },
+          { start: { x: 17, y: 3 }, end: { x: 49, y: 3 } },
+        ]);
+        link?.activate({} as MouseEvent);
+      }
+      expect(opened).toHaveLength(3);
+      expect(opened[0]).toMatchObject({
+        path: "docs/manual/wrapped-links/a-very-long-directory-name/with-several-levels/target.md",
+        line: 2,
+        column: 3,
+      });
+      expect((await detector.getLinkAt(18, 4))?.text).toBe("docs/other.md:4:5");
+      expect(await detector.getLinkAt(16, 3)).toBeUndefined();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test.each([17, 20, 25, 33, 34, 50, 51])(
+    "retains wrapped filename extensions and locations at width %s",
+    async (cols) => {
+      const reference =
+        "docs/e2e/windows-terminal-compatible/soft-wrapped/file/path/with/additional/review/context/target.md:2:3";
+      for (const hardBreaks of [false, true]) {
+        const output = hardBreaks
+          ? reference.match(new RegExp(`.{1,${cols}}`, "g"))!.join("\r\n")
+          : reference;
+        const terminal = await linkTestTerminal(output, cols);
+        try {
+          const activated: unknown[] = [];
+          const detector = new LinkDetector(terminal);
+          detector.registerProvider(
+            new FilePathLinkProvider(terminal, (value) =>
+              activated.push(value),
+            ),
+          );
+          const link = await detector.getLinkAt(0, 1);
+          expect(link?.text).toBe(reference);
+          link?.activate({} as MouseEvent);
+          expect(activated[0]).toMatchObject({
+            path: reference.slice(0, -4),
+            line: 2,
+            column: 3,
+          });
+        } finally {
+          terminal.dispose();
+        }
+      }
+    },
+  );
+  test("reconstructs full-width paths whose continuation starts with a slash", async () => {
+    const head = "docs/e2e/long/file";
+    const tail = "/path/target.md:2:3";
+    const terminal = await linkTestTerminal(`${head}\r\n${tail}`, head.length);
+    try {
+      const links = await providerLinks(
+        new FilePathLinkProvider(terminal, () => {}),
+        1,
+      );
+      expect(links[0].text).toBe(head + tail);
+    } finally {
+      terminal.dispose();
+    }
+  });
+  test.each([2, 20])(
+    "opens styled hard-wrapped file references in column %s",
+    async (indent) => {
+      const pad = " ".repeat(indent);
+      const terminal = await linkTestTerminal(
+        [
+          `${pad}\x1b[36mdocs/e2e/markdown/wrapped/file/path/\x1b[0m`,
+          `${pad}\x1b[36mwith/review/context/target.md:2:3\x1b[0m`,
+        ].join("\r\n"),
+      );
+      const opened: unknown[] = [];
+      const detector = new LinkDetector(terminal);
+      detector.registerProvider(
+        new FilePathLinkProvider(terminal, (reference) =>
+          opened.push(reference),
+        ),
+      );
+      try {
+        // Start on the continuation row, as users commonly do after scrolling.
+        for (const y of [1, 0]) {
+          const link = await detector.getLinkAt(indent + 2, y);
+          expect(link?.text).toBe(
+            "docs/e2e/markdown/wrapped/file/path/with/review/context/target.md:2:3",
+          );
+          link?.activate({} as MouseEvent);
+          expect(await detector.getLinkAt(indent - 1, y)).toBeUndefined();
+          expect(await detector.getLinkAt(79, y)).toBeUndefined();
+        }
+        expect(opened).toHaveLength(2);
+        expect(opened[0]).toMatchObject({
+          path: "docs/e2e/markdown/wrapped/file/path/with/review/context/target.md",
+          line: 2,
+          column: 3,
+        });
+      } finally {
+        terminal.dispose();
+      }
+    },
+  );
+
+  test("keeps adjacent complete styled file references independent", async () => {
+    const terminal = await linkTestTerminal(
+      "  \x1b[36mdocs/first.md:2:3\x1b[0m\r\n  \x1b[36mdocs/second.md:4:5\x1b[0m",
+    );
+    try {
+      const provider = new FilePathLinkProvider(terminal, () => {});
+      expect(
+        (await providerLinks(provider, 0)).map((link) => link.text),
+      ).toEqual(["docs/first.md:2:3"]);
+      expect(
+        (await providerLinks(provider, 1)).map((link) => link.text),
+      ).toEqual(["docs/second.md:4:5"]);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   test.each(["Claude", "Codex", "GitHub Copilot"])(
     "detects file references rendered by %s",
     (provider) => {

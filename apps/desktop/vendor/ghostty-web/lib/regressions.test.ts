@@ -11,6 +11,7 @@ import {
   calculateLinkUnderlineY,
   calculateFontMetrics,
   createThemeColorRemap,
+  linkViewportRanges,
 } from "./renderer";
 import { crossedDragThreshold, resolveDragRow } from "./selection-hit-test";
 import { SelectionManager } from "./selection-manager";
@@ -59,8 +60,8 @@ function idleRendererHarness(viewportY: number) {
     selectionManager: undefined,
     hoveredHyperlinkId: 0,
     previousHoveredHyperlinkId: 0,
-    hoveredLinkRange: null,
-    previousHoveredLinkRange: null,
+    hoveredLinkRanges: [],
+    previousHoveredLinkRanges: [],
     renderLine: (_line: unknown, row: number) => renderedRows.push(row),
     renderCursor: () => {
       renderedCursors += 1;
@@ -324,6 +325,38 @@ describe("local ghostty-web regressions", () => {
     }
   });
 
+  test("initial fitting clears reused screen cells before shell output", async () => {
+    const ghostty = await Ghostty.load();
+    for (const [cols, rows] of [
+      [76, 41],
+      [180, 70],
+      [30, 80],
+      [300, 100],
+      [8, 4],
+      [76, 41],
+    ]) {
+      const terminal = ghostty.createTerminal(80, 24);
+      try {
+        terminal.resize(cols, rows);
+        expect(
+          terminal
+            .getViewport()
+            .every((cell) => cell.codepoint === 0 || cell.codepoint === 32),
+        ).toBe(true);
+        terminal.write("PS D:/repo> ");
+        terminal.resize(cols + 10, rows + 3);
+        const text = terminal
+          .getViewport()
+          .filter((cell) => cell.width > 0 && cell.codepoint > 32)
+          .map((cell) => String.fromCodePoint(cell.codepoint))
+          .join("");
+        expect(text).toBe("PSD:/repo>");
+      } finally {
+        terminal.free();
+      }
+    }
+  });
+
   test("OSC 8 links retain their URI and identity across soft wrapping", async () => {
     const ghostty = await Ghostty.load();
     const terminal = ghostty.createTerminal(8, 4);
@@ -373,9 +406,116 @@ describe("local ghostty-web regressions", () => {
     expect(activated).toEqual(["osc"]);
   });
 
+  test("a previously scanned file fragment cannot shadow a wrapped URL", async () => {
+    const detector = new LinkDetector({
+      buffer: {
+        active: {
+          getLine: () => ({
+            length: 80,
+            getCell: () => ({ getHyperlinkId: () => 0 }),
+          }),
+        },
+      },
+    });
+    const link = (text: string) => ({
+      text,
+      range: { start: { x: 0, y: 1 }, end: { x: 20, y: 1 } },
+      activate: () => {},
+    });
+    detector.registerProvider({
+      provideLinks: (row, done) =>
+        done(row === 1 ? [link("https://example.com/full/path")] : []),
+    });
+    detector.registerProvider({
+      provideLinks: (_row, done) => done([link("full/path")]),
+    });
+    await detector.getLinkAt(0, 0);
+    expect((await detector.getLinkAt(0, 1))?.text).toBe(
+      "https://example.com/full/path",
+    );
+  });
+
+  test("concurrent hovers share a complete row scan and discard stale results", async () => {
+    const detector = new LinkDetector({
+      buffer: {
+        active: {
+          getLine: () => ({
+            length: 80,
+            getCell: () => ({ getHyperlinkId: () => 0 }),
+          }),
+        },
+      },
+    });
+    const link = (text: string) => ({
+      text,
+      range: { start: { x: 0, y: 0 }, end: { x: 20, y: 0 } },
+      activate: () => {},
+    });
+    let complete: ((links: ReturnType<typeof link>[]) => void) | undefined;
+    let scans = 0;
+    detector.registerProvider({
+      provideLinks: (_row, done) => {
+        scans += 1;
+        if (scans === 1) complete = done;
+        else done([link("fresh")]);
+      },
+    });
+    const first = detector.getLinkAt(0, 0);
+    const second = detector.getLinkAt(1, 0);
+    expect(scans).toBe(1);
+    detector.invalidateCache();
+    complete!([link("stale")]);
+    expect((await first)?.text).toBe("fresh");
+    expect((await second)?.text).toBe("fresh");
+    expect(scans).toBe(2);
+  });
+
   test("link underline stays visibly inside a fixed-height cell", () => {
     expect(calculateLinkUnderlineY(18, { height: 18, baseline: 18 })).toBe(34);
     expect(calculateLinkUnderlineY(0, { height: 18, baseline: 14 })).toBe(15);
+  });
+
+  test("maps every hover segment through scrollback while preserving table gaps", () => {
+    const ranges = [
+      { start: { x: 23, y: 10 }, end: { x: 51, y: 10 } },
+      { start: { x: 17, y: 11 }, end: { x: 57, y: 11 } },
+      { start: { x: 17, y: 12 }, end: { x: 28, y: 12 } },
+    ];
+    const link = { range: ranges[1], ranges };
+    expect(linkViewportRanges(link, 20, 10.8, 80, 3)).toEqual([
+      { startX: 23, startY: 0, endX: 51, endY: 0 },
+      { startX: 17, startY: 1, endX: 57, endY: 1 },
+      { startX: 17, startY: 2, endX: 28, endY: 2 },
+    ]);
+    expect(linkViewportRanges(link, 20, 9, 80, 3)).toEqual([
+      { startX: 17, startY: 0, endX: 57, endY: 0 },
+      { startX: 17, startY: 1, endX: 28, endY: 1 },
+    ]);
+    expect(linkViewportRanges(link, 20, 0, 80, 3)).toEqual([]);
+    const softWrap = {
+      range: { start: { x: 23, y: 9 }, end: { x: 12, y: 14 } },
+    };
+    expect(linkViewportRanges(softWrap, 20, 10, 80, 3)).toEqual([
+      { startX: 0, startY: 0, endX: 79, endY: 2 },
+    ]);
+  });
+
+  test("redraws every hover segment on enter and leave with an otherwise clean buffer", () => {
+    const { renderer, buffer, scrollback, renderedRows } =
+      idleRendererHarness(0);
+    renderer.setHoveredLinkRanges([
+      { startX: 2, startY: 0, endX: 3, endY: 0 },
+      { startX: 1, startY: 2, endX: 2, endY: 2 },
+    ]);
+    renderer.render(buffer, false, 0, scrollback);
+    expect(renderedRows).toEqual([0, 1, 2]);
+    renderedRows.length = 0;
+    renderer.setHoveredLinkRanges([]);
+    renderer.render(buffer, false, 0, scrollback);
+    expect(renderedRows).toEqual([0, 1, 2]);
+    renderedRows.length = 0;
+    renderer.render(buffer, false, 0, scrollback);
+    expect(renderedRows).toEqual([]);
   });
 
   test("link underlines follow terminal text color and dotted hover state", () => {

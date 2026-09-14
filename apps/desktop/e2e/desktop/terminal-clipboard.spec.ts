@@ -192,6 +192,15 @@ describe("Terminal keyboard routing", () => {
         ),
       );
 
+      if (platform === "windows") {
+        currentStep = "verify-clean-shell-startup";
+        const prompt = `PS ${spaceRoot}>`;
+        const startup = await waitForShell(
+          (snapshot) => snapshot.text.replaceAll("\n", "").trim() === prompt,
+        );
+        expect(startup.text.replaceAll("\n", "").trim()).toBe(prompt);
+        await evidence.checkpoint("clean-shell-startup");
+      }
       currentStep = "verify-cjk-terminal-output";
       await verifyCjkTerminalOutput(runId);
       await evidence.checkpoint("cjk-terminal-output");

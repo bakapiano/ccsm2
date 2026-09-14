@@ -41,7 +41,7 @@ import type {
 import { LinkDetector } from "./link-detector";
 import { OSC8LinkProvider } from "./providers/osc8-link-provider";
 import { UrlRegexProvider } from "./providers/url-regex-provider";
-import { CanvasRenderer } from "./renderer";
+import { CanvasRenderer, linkViewportRanges } from "./renderer";
 import { SelectionManager } from "./selection-manager";
 import {
   TERMINAL_SCROLLBAR_WIDTH,
@@ -1948,37 +1948,17 @@ export class Terminal implements ITerminalCore {
 
           // Update renderer for underline (for regex URLs without hyperlink_id)
           if (this.renderer) {
-            if (link) {
-              // Convert buffer coordinates to viewport coordinates
-              const scrollbackLength =
-                this.wasmTerm?.getScrollbackLength() || 0;
-
-              // Calculate viewport Y for start and end positions
-              // Use floored viewportY so overlay rows match renderer & selection
-              const rawViewportYForLinks = this.getViewportY();
-              const viewportYForLinks = Math.max(
-                0,
-                Math.floor(rawViewportYForLinks),
-              );
-              const startViewportY =
-                link.range.start.y - scrollbackLength + viewportYForLinks;
-              const endViewportY =
-                link.range.end.y - scrollbackLength + viewportYForLinks;
-
-              // Only show underline if link is visible in viewport
-              if (startViewportY < this.rows && endViewportY >= 0) {
-                this.renderer.setHoveredLinkRange({
-                  startX: link.range.start.x,
-                  startY: Math.max(0, startViewportY),
-                  endX: link.range.end.x,
-                  endY: Math.min(this.rows - 1, endViewportY),
-                });
-              } else {
-                this.renderer.setHoveredLinkRange(null);
-              }
-            } else {
-              this.renderer.setHoveredLinkRange(null);
-            }
+            this.renderer.setHoveredLinkRanges(
+              link
+                ? linkViewportRanges(
+                    link,
+                    this.wasmTerm?.getScrollbackLength() ?? 0,
+                    this.getViewportY(),
+                    this.cols,
+                    this.rows,
+                  )
+                : [],
+            );
           }
         }
         this.updateLinkTooltip(link, x, y);

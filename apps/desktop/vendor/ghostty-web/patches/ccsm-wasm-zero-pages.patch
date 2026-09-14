@@ -1,0 +1,59 @@
+diff --git a/src/terminal/PageList.zig b/src/terminal/PageList.zig
+index 29f414e..4bef3d1 100644
+--- a/src/terminal/PageList.zig
++++ b/src/terminal/PageList.zig
+@@ -4,6 +4,7 @@
+ const PageList = @This();
+ 
+ const std = @import("std");
++const builtin = @import("builtin");
+ const build_options = @import("terminal_options");
+ const Allocator = std.mem.Allocator;
+ const assert = @import("../quirks.zig").inlineAssert;
+@@ -341,7 +342,8 @@ fn initPages(
+         // In runtime safety modes we have to memset because the Zig allocator
+         // interface will always memset to 0xAA for undefined. In non-safe modes
+         // we use a page allocator and the OS guarantees zeroed memory.
+-        if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
++        // WebAssembly reuses linear-memory pages rather than zeroed OS mappings.
++        if (comptime std.debug.runtime_safety or builtin.target.cpu.arch.isWasm()) @memset(page_buf, 0);
+ 
+         // Initialize the first set of pages to contain our viewport so that
+         // the top of the first page is always the active area.
+@@ -2675,7 +2677,8 @@ inline fn createPageExt(
+ 
+     // Required only with runtime safety because allocators initialize
+     // to undefined, 0xAA.
+-    if (comptime std.debug.runtime_safety) @memset(page_buf, 0);
++    // Resizing and scrollback growth also allocate from recycled WASM pages.
++    if (comptime std.debug.runtime_safety or builtin.target.cpu.arch.isWasm()) @memset(page_buf, 0);
+ 
+     page.* = .{
+         .data = .initBuf(.init(page_buf), layout),
+diff --git a/src/unicode/props_uucode.zig b/src/unicode/props_uucode.zig
+index 2440d43..1088060 100644
+--- a/src/unicode/props_uucode.zig
++++ b/src/unicode/props_uucode.zig
+@@ -87,7 +87,7 @@ pub fn main() !void {
+     var buf: [4096]u8 = undefined;
+     var stdout = std.fs.File.stdout().writer(&buf);
+     try t.writeZig(&stdout.interface);
+-    try stdout.end();
++    try stdout.interface.flush();
+ 
+     // Uncomment when manually debugging to see our table sizes.
+     // std.log.warn("stage1={} stage2={} stage3={}", .{
+diff --git a/src/unicode/symbols_uucode.zig b/src/unicode/symbols_uucode.zig
+index 8cbd592..3af357b 100644
+--- a/src/unicode/symbols_uucode.zig
++++ b/src/unicode/symbols_uucode.zig
+@@ -34,7 +34,7 @@ pub fn main() !void {
+     var buf: [4096]u8 = undefined;
+     var stdout = std.fs.File.stdout().writer(&buf);
+     try t.writeZig(&stdout.interface);
+-    try stdout.end();
++    try stdout.interface.flush();
+ 
+     // Uncomment when manually debugging to see our table sizes.
+     // std.log.warn("stage1={} stage2={} stage3={}", .{
+

@@ -204,6 +204,11 @@ export class Buffer implements IBuffer {
     return this.nullCell;
   }
 
+  getDefaultFgColor(): number {
+    const color = this.getWasmTerm()?.getColors().foreground;
+    return color ? (color.r << 16) | (color.g << 8) | color.b : 0xcccccc;
+  }
+
   private getWasmTerm(): GhosttyTerminal | undefined {
     return (this.terminal as any).wasmTerm as GhosttyTerminal | undefined;
   }
