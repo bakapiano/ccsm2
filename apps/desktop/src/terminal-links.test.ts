@@ -13,6 +13,47 @@ import {
 } from "./terminal-links";
 
 describe("terminal links", () => {
+  test("opens unstyled table file fragments with the complete path and location", async () => {
+    const terminal = await linkTestTerminal(
+      [
+        "   Case          Target",
+        "   ----------    --------------------------------------------------------",
+        "   File          docs/manual/wrapped-links/a-very-long-directory-name/",
+        "                 with-several-levels/target.md:2:3",
+        "   Other         docs/other.md:4:5",
+        "",
+      ].join("\r\n"),
+    );
+    const opened: unknown[] = [];
+    const detector = new LinkDetector(terminal);
+    detector.registerProvider(
+      new FilePathLinkProvider(terminal, (value) => opened.push(value)),
+    );
+    try {
+      for (const [x, y] of [
+        [18, 3],
+        [18, 2],
+        [48, 3],
+      ]) {
+        const link = await detector.getLinkAt(x, y);
+        expect(link?.text).toBe(
+          "docs/manual/wrapped-links/a-very-long-directory-name/with-several-levels/target.md:2:3",
+        );
+        link?.activate({} as MouseEvent);
+      }
+      expect(opened).toHaveLength(3);
+      expect(opened[0]).toMatchObject({
+        path: "docs/manual/wrapped-links/a-very-long-directory-name/with-several-levels/target.md",
+        line: 2,
+        column: 3,
+      });
+      expect((await detector.getLinkAt(18, 4))?.text).toBe("docs/other.md:4:5");
+      expect(await detector.getLinkAt(16, 3)).toBeUndefined();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   test.each([17, 20, 25, 33, 34, 50, 51])(
     "retains wrapped filename extensions and locations at width %s",
     async (cols) => {

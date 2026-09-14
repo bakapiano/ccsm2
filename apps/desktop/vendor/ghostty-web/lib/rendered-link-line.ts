@@ -1,4 +1,5 @@
 import type { IBufferRange } from "./types";
+import { extractTableLinkLines } from "./table-link-line";
 import {
   extractWrappedLine,
   type BufferCellPosition,
@@ -28,7 +29,7 @@ export function extractRenderedLinkLines(
   buffer: WrappedLineBuffer,
   y: number,
 ): ExtractedWrappedLine[] {
-  const result: ExtractedWrappedLine[] = [];
+  const result = extractTableLinkLines(buffer, y);
   const foreground = buffer.getDefaultFgColor?.();
   if (foreground !== undefined) {
     const rows = new Map<number, StyledRun[]>();

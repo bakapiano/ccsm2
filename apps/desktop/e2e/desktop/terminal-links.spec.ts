@@ -465,6 +465,83 @@ describe("Terminal links", () => {
         },
       );
       await evidence.checkpoint("wrapped-file-opened");
+
+      // Preserve the exact plain-text manual report: hard CRLF, indentation,
+      // table columns, and no ANSI styling to supply link boundaries.
+      currentStep = "emit-unstyled-table-links";
+      await clickTab("cli-session", "Shell");
+      await ensureProviderMarkdownWindow();
+      const tableUrl =
+        "https://example.com/ccsm/manual/markdown/table/wrapped/browser/link/target?source=table";
+      const tablePath =
+        "docs/manual/wrapped-links/a-very-long-directory-name/with-several-levels/target.md";
+      const tableFile = `${tablePath}:2:3`;
+      mkdirSync(dirname(join(spaceRoot, tablePath)), { recursive: true });
+      writeFileSync(
+        join(spaceRoot, tablePath),
+        "first line\nsecond line target\nthird line\n",
+      );
+      writeOutputScript(spaceRoot, [
+        "\u001b[2J\u001b[H",
+        "   Case          Target",
+        "   ----------    --------------------------------------------------------",
+        "   Browser       Open (https://example.com/ccsm/manual/",
+        "                 markdown/table/wrapped/browser/link/target?",
+        "                 source=table)",
+        "   File          docs/manual/wrapped-links/a-very-long-directory-name/",
+        "                 with-several-levels/target.md:2:3",
+        "",
+        "CCSM_UNSTYLED_TABLE_READY",
+      ]);
+      await typeShellLine(command);
+      await waitForShell((snapshot) =>
+        textWithoutWhitespace(snapshot.text).includes(
+          "CCSM_UNSTYLED_TABLE_READY",
+        ),
+      );
+      await evidence.checkpoint("unstyled-table-hard-wrap-rendered");
+      for (const fragment of ["first", "continuation", "last"] as const) {
+        currentStep = `open-unstyled-table-url-${fragment}`;
+        await clickTab("cli-session", "Shell");
+        await focusTerminalInput("shell");
+        const target = await targetGeometry(
+          tableUrl,
+          "shell",
+          "required",
+          fragment,
+          tableUrl.indexOf("markdown/table/"),
+        );
+        await movePointer(target);
+        await waitForLinkTooltip(tableUrl, "shell");
+        await controlClick(target);
+        await waitForBrowserUrl(tableUrl);
+        await evidence.checkpoint(`unstyled-table-url-${fragment}-opened`);
+
+        currentStep = `open-unstyled-table-file-${fragment}`;
+        await clickTab("cli-session", "Shell");
+        await focusTerminalInput("shell");
+        const file = await targetGeometry(
+          tableFile,
+          "shell",
+          "required",
+          fragment,
+          tableFile.indexOf("with-several-levels/"),
+        );
+        await movePointer(file);
+        await waitForLinkTooltip(tableFile, "shell");
+        await controlClick(file);
+        await waitForTab("file-editor", tablePath);
+        await browser.waitUntil(
+          async () =>
+            (await $(".file-editor-panel .file-editor-position").getText()) ===
+            "Ln 2, Col 3",
+          {
+            timeout: 30_000,
+            timeoutMsg: `Unstyled table file ${fragment} did not reveal Ln 2, Col 3`,
+          },
+        );
+        await evidence.checkpoint(`unstyled-table-file-${fragment}-opened`);
+      }
     } catch (error) {
       primaryError = error;
       writeFileSync(
@@ -523,10 +600,17 @@ async function targetGeometry(
   target: string,
   selectedProvider: TerminalSnapshot["provider"],
   wrapping: "required" | "optional" = "required",
-  fragment: "continuation" | "last" = "continuation",
+  fragment: "first" | "continuation" | "last" = "continuation",
+  continuationOffset = 0,
 ): Promise<TargetGeometry> {
   const serialized = await browser.execute(
-    (expected, requestedProvider, requestedWrapping, requestedFragment) => {
+    (
+      expected,
+      requestedProvider,
+      requestedWrapping,
+      requestedFragment,
+      requestedOffset,
+    ) => {
       const panel = document.querySelector<HTMLElement>(
         `.terminal-panel[data-provider="${CSS.escape(requestedProvider)}"]`,
       );
@@ -579,10 +663,14 @@ async function targetGeometry(
             throw new Error(`Target ${expected} did not wrap`);
           }
           const pointer =
-            requestedFragment === "last"
-              ? end
-              : (wrapped ??
-                targetPositions[Math.floor(targetPositions.length / 2)]);
+            requestedFragment === "first"
+              ? start
+              : requestedFragment === "last"
+                ? end
+                : requestedOffset > 0
+                  ? targetPositions[requestedOffset]
+                  : (wrapped ??
+                    targetPositions[Math.floor(targetPositions.length / 2)]);
           if (!pointer) throw new Error(`Target ${expected} has no cells`);
 
           const firstBufferLine = Math.max(
@@ -612,6 +700,7 @@ async function targetGeometry(
     selectedProvider,
     wrapping,
     fragment,
+    continuationOffset,
   );
   return JSON.parse(serialized) as TargetGeometry;
 }

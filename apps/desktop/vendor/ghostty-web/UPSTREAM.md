@@ -37,6 +37,8 @@ Local changes:
   multi-row matches back to their terminal buffer cells.
 - reconstruct styled Markdown URL/file continuations within their rendered
   columns, retaining exact clickable segments around indentation and table gaps.
+- reconstruct default-style borderless Markdown table continuations from divider
+  columns and row labels, preserving physical-cell hit ranges through soft wrapping.
 - cache complete per-row link scans in provider priority order and coalesce
   concurrent requests; buffer changes invalidate pending scan generations.
 - expose OSC 8 URIs by buffer position, assign page-stable hyperlink identities

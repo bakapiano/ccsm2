@@ -65,7 +65,7 @@ portable-pty platform backend
 - CLI Provider层读取SelectionManager选区，并通过desktop clipboard transport写入系统剪贴板；有选区时消费`Ctrl/Cmd+C`，空选区时`Ctrl+C`进入Ghostty key encoder并产生ETX（`0x03`）。`Ctrl/Cmd+V`通过同一transport读取文本，再交给Terminal paste保留bracketed-paste语义。Windows clipboard瞬时占用使用有界重试。
 - ghostty-web LinkProvider在VT buffer完成ANSI解析后识别普通URL、OSC 8 URL和文件引用。普通URL使用Windows Terminal的边界、scheme和尾部标点规则识别HTTP/HTTPS/FTP/`file://`，并恢复terminal soft-wrap形成的逻辑行。WASM按buffer cell公开OSC 8 URI，显式OSC 8链接优先于同范围正则结果。HTTP/HTTPS/FTP/`about:`交给CCSM创建内置Browser Tab；文件引用先由platform adapter canonicalize并验证Space containment，再创建或聚焦File Editor Tab。链接路由不改写PTY byte stream；terminal resize/reflow使LinkProvider cache失效。
 
-Markdown TUI通过hard newline排版的URL和文件引用，按非默认前景色或下划线样式、列起点与相邻行恢复完整目标；扫描上限为32行，完整文件后缀、闭合标点、空行、新目标和歧义列终止续接。满宽行末到下一行第0列的连续token可恢复ConPTY重绘后丢失的soft-wrap标记。每个链接的命中范围由实际文字的连续cell构成。LinkDetector按行缓存完整Provider扫描结果，固定OSC 8、URL、文件路径优先级；同一行的并发hover共享扫描，write/resize后旧generation的结果重新读取当前buffer。
+Markdown TUI通过hard newline排版的URL和文件引用，按非默认前景色或下划线样式、列起点与相邻行恢复完整目标；扫描上限为32行，完整文件后缀、闭合标点、空行、新目标和歧义列终止续接。纯文本无边框表格通过横线分隔行确定列边界，同列缩进续行恢复完整目标；前置标签列开始新记录，空行、闭合标点与新目标终止续接。表格列坐标先恢复terminal soft-wrap逻辑行，再映射到实际cell，保留窄窗口和CJK列宽。满宽行末到下一行第0列的连续token可恢复ConPTY重绘后丢失的soft-wrap标记。每个链接的命中范围由实际文字的连续cell构成。LinkDetector按行缓存完整Provider扫描结果，固定OSC 8、URL、文件路径优先级；同一行的并发hover共享扫描，write/resize后旧generation的结果重新读取当前buffer。
 
 ConPTY DLL loading、Windows raw command tail 和 console resize 属于 `WindowsPtyBackend`；Unix fd、process group 和 signal 属于 macOS/Linux backend。ghostty-web byte contract 对三平台完全相同。
 

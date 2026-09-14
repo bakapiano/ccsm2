@@ -52,6 +52,80 @@ function getLinks(
 }
 
 describe('URL Detection', () => {
+  test.each([80, 37])('opens every unstyled table URL fragment at width %s', async (cols) => {
+    const url =
+      'https://example.com/ccsm/manual/markdown/table/wrapped/browser/link/target?source=table';
+    const terminal = await linkTestTerminal(
+      [
+        '   Case          Target',
+        '   ----------    --------------------------------------------------------',
+        '   Browser       Open (https://example.com/ccsm/manual/',
+        '                 markdown/table/wrapped/browser/link/target?',
+        '                 source=table)',
+        '   Other         https://example.com/independent',
+        '',
+      ].join('\r\n'),
+      cols,
+      24
+    );
+    const opened: string[] = [];
+    const detector = new LinkDetector(terminal);
+    detector.registerProvider(new UrlRegexProvider(terminal, (uri) => opened.push(uri)));
+    try {
+      const fragments =
+        cols === 80
+          ? [
+              [24, 2],
+              [17, 3],
+              [27, 4],
+            ]
+          : [
+              [24, 3],
+              [17, 5],
+              [27, 7],
+            ];
+      for (const [x, y] of fragments.reverse()) {
+        const link = await detector.getLinkAt(x, y);
+        expect(link?.text).toBe(url);
+        link?.activate({} as MouseEvent);
+      }
+      expect(opened).toEqual([url, url, url]);
+      expect(await detector.getLinkAt(16, cols === 80 ? 3 : 5)).toBeUndefined();
+      expect(await detector.getLinkAt(4, cols === 80 ? 2 : 3)).toBeUndefined();
+      expect((await detector.getLinkAt(20, cols === 80 ? 5 : 8))?.text).toBe(
+        'https://example.com/independent'
+      );
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  test('uses cell columns after CJK labels and ends plain table spans at closing delimiters', async () => {
+    const terminal = await linkTestTerminal(
+      [
+        '   Case          Target',
+        '   ----------    --------------------------------------------------------',
+        '   中文          (https://example.com/table/',
+        '                 target)',
+        '                 description',
+        '   Other         https://example.com/first',
+        '                 https://example.com/second',
+        '',
+      ].join('\r\n')
+    );
+    const detector = new LinkDetector(terminal);
+    detector.registerProvider(new UrlRegexProvider(terminal));
+    try {
+      expect((await detector.getLinkAt(18, 3))?.text).toBe('https://example.com/table/target');
+      expect((await detector.getLinkAt(18, 2))?.range.start).toEqual({ x: 18, y: 2 });
+      expect(await detector.getLinkAt(18, 4)).toBeUndefined();
+      expect((await detector.getLinkAt(18, 5))?.text).toBe('https://example.com/first');
+      expect((await detector.getLinkAt(18, 6))?.text).toBe('https://example.com/second');
+    } finally {
+      terminal.dispose();
+    }
+  });
+
   test('recovers full-width URL rows repainted with hard CRLF by ConPTY', async () => {
     const head = '  https://example.com/a/long/path/';
     const tail = 'target?source=terminal';
