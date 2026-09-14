@@ -143,6 +143,9 @@ export class SidebarLayoutController {
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) restoreAgentsHeight();
     });
+    // Viewport units can settle after the window event in native WebViews.
+    // Reconcile against the app shell's final rendered size as well.
+    new ResizeObserver(restoreAgentsHeight).observe(root);
     this.#apply();
   }
 

@@ -179,6 +179,38 @@ describe("resizable sidebar", () => {
     expect(root.style.getPropertyValue("--agents-height")).toBe("420px");
   });
 
+  test("restores Agents when element layout settles after the window resize event", () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    const observers = new Map<Element, () => void>();
+    globalThis.ResizeObserver = class extends OriginalResizeObserver {
+      constructor(private readonly onResize: ResizeObserverCallback) {
+        super(onResize);
+      }
+
+      override observe(target: Element): void {
+        observers.set(target, () => this.onResize([], this));
+      }
+    };
+    try {
+      const storage = createMemoryStorage({
+        "ccsm.sidebar.agentsHeight": "424",
+      });
+      const height = { value: 552 };
+      const { root, agentsResizer } = createController(storage, height);
+      expect(root.style.getPropertyValue("--agents-height")).toBe("387px");
+
+      window.dispatchEvent(new Event("resize"));
+      height.value = 728;
+      observers.get(root)?.();
+
+      expect(root.style.getPropertyValue("--agents-height")).toBe("424px");
+      expect(agentsResizer.getAttribute("aria-valuenow")).toBe("424");
+      expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("424");
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
+  });
+
   test("collapses to the compact rail and restores the expanded width", () => {
     const storage = createMemoryStorage({
       "ccsm.sidebar.width": "318",

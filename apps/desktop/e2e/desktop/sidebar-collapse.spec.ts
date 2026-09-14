@@ -88,6 +88,7 @@ describe("Sidebar navigation", () => {
       await evidence.checkpoint("expanded-again");
 
       currentStep = "resize-agents";
+      const originalWindow = await browser.getWindowRect();
       const separator = await $("#agents-resizer");
       const preferredHeight =
         Number(await separator.getAttribute("aria-valuenow")) + 144;
@@ -117,7 +118,12 @@ describe("Sidebar navigation", () => {
           localStorage.getItem("ccsm.sidebar.agentsHeight"),
         ),
       ).toBe(String(preferredHeight));
-      await browser.maximizeWindow();
+      await browser.setWindowRect(
+        originalWindow.x,
+        originalWindow.y,
+        originalWindow.width,
+        originalWindow.height,
+      );
       await waitForAgentsHeight(preferredHeight);
       await evidence.checkpoint("agents-after-shrink");
 

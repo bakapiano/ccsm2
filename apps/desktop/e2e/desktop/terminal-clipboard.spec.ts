@@ -66,6 +66,7 @@ describe("Terminal keyboard routing", () => {
             snapshot.inputEnabled,
         ),
       );
+      await waitForShellPrompt(spaceRoot);
 
       if (platform === "windows") {
         currentStep = "verify-win32-input-records";
@@ -191,6 +192,7 @@ describe("Terminal keyboard routing", () => {
             snapshot.inputEnabled,
         ),
       );
+      await waitForShellPrompt(spaceRoot);
 
       if (platform === "windows") {
         currentStep = "verify-clean-shell-startup";
@@ -443,9 +445,22 @@ async function verifyWindowsModifierReleaseAfterWindowBlur(
   await requestMainWindowFocus();
   await terminalInput.click();
   await beginNativeShiftCapture();
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () =>
+          document.hasFocus() &&
+          Boolean(
+            document.activeElement?.matches(
+              '.terminal-panel[data-provider="shell"] textarea[aria-label="Terminal input"]',
+            ),
+          ),
+      ),
+    { timeoutMsg: "Shell input did not acquire focus before native Shift" },
+  );
   let shiftReleased = false;
   try {
-    sendWindowsShift("down");
+    runWindowsKeyboardAction("down");
     await browser.waitUntil(
       async () => (await nativeShiftEvents()).keydowns === 1,
       { timeoutMsg: "CCSM WebView did not receive native Shift keydown" },
@@ -454,10 +469,10 @@ async function verifyWindowsModifierReleaseAfterWindowBlur(
     await browser.waitUntil(() => browser.execute(() => !document.hasFocus()), {
       timeoutMsg: "CCSM window did not lose focus",
     });
-    sendWindowsShift("up");
+    runWindowsKeyboardAction("up");
     shiftReleased = true;
   } finally {
-    if (!shiftReleased) sendWindowsShift("up");
+    if (!shiftReleased) runWindowsKeyboardAction("up");
   }
   await browser.pause(100);
   expect(await nativeShiftEvents()).toEqual({ keydowns: 1, keyups: 0 });
@@ -483,6 +498,7 @@ async function verifyWindowsModifierReleaseAfterWindowBlur(
 }
 
 async function requestMainWindowFocus(): Promise<void> {
+  runWindowsKeyboardAction("focus");
   const error = await browser.execute(async () => {
     const invoke = (
       window as Window & {
@@ -505,6 +521,9 @@ async function requestMainWindowFocus(): Promise<void> {
     }
   });
   expect(error).toBeNull();
+  await browser.waitUntil(() => browser.execute(() => document.hasFocus()), {
+    timeoutMsg: "CCSM WebView did not acquire native window focus",
+  });
 }
 
 async function beginNativeShiftCapture(): Promise<void> {
@@ -545,11 +564,32 @@ async function nativeShiftEvents(): Promise<NativeShiftEvents> {
   );
 }
 
-function sendWindowsShift(action: "down" | "up"): void {
+function runWindowsKeyboardAction(action: "down" | "up" | "focus"): void {
   const flags = action === "up" ? 2 : 0;
+  const appBinary = requiredEnvironment("CCSM_E2E_APP_BINARY").replaceAll(
+    "'",
+    "''",
+  );
   const script = [
-    "Add-Type -Namespace CcsmE2e -Name NativeKeyboard -MemberDefinition '[System.Runtime.InteropServices.DllImport(\"user32.dll\")] public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, System.UIntPtr extraInfo);'",
-    `[CcsmE2e.NativeKeyboard]::keybd_event(0xA0, 0x2A, ${flags}, [System.UIntPtr]::Zero)`,
+    "$ErrorActionPreference = 'Stop'",
+    'Add-Type -Namespace CcsmE2e -Name NativeKeyboard -MemberDefinition \'[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, System.UIntPtr extraInfo); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr window); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] public static extern System.IntPtr SendMessageTimeout(System.IntPtr window, uint message, System.UIntPtr wParam, System.IntPtr lParam, uint flags, uint timeout, out System.UIntPtr result);\'',
+    ...(action !== "up"
+      ? [
+          `$targets = @(Get-Process ccsm-desktop | Where-Object { $_.Path -eq '${appBinary}' })`,
+          "if ($targets.Count -ne 1) { throw 'Expected one E2E CCSM window for native keyboard input' }",
+          "$window = $targets[0].MainWindowHandle",
+          "if ($window -eq 0) { throw 'E2E CCSM main window is unavailable' }",
+          "[void][CcsmE2e.NativeKeyboard]::SetForegroundWindow($window)",
+          "$messageResult = [UIntPtr]::Zero",
+          "if ([CcsmE2e.NativeKeyboard]::SendMessageTimeout($window, 0, [UIntPtr]::Zero, [IntPtr]::Zero, 2, 5000, [ref]$messageResult) -eq [IntPtr]::Zero) { throw 'E2E CCSM window did not process its foreground notification' }",
+          "if ([CcsmE2e.NativeKeyboard]::GetForegroundWindow() -ne $window) { throw 'E2E CCSM window did not become the native foreground target' }",
+        ]
+      : []),
+    ...(action === "focus"
+      ? []
+      : [
+          `[CcsmE2e.NativeKeyboard]::keybd_event(0xA0, 0x2A, ${flags}, [System.UIntPtr]::Zero)`,
+        ]),
   ].join("; ");
   execFileSync(
     "powershell.exe",
@@ -605,6 +645,15 @@ async function waitForShell(
     },
   );
   return latest!;
+}
+
+async function waitForShellPrompt(root: string): Promise<void> {
+  await waitForShell((snapshot) => {
+    const text = snapshot.text.replaceAll("\n", "").trimEnd();
+    return platform === "windows"
+      ? text.endsWith(`PS ${root}>`)
+      : text.endsWith(`${root}$`) || text.endsWith(`${root}#`);
+  });
 }
 
 async function shellSnapshot(): Promise<TerminalSnapshot | null> {
