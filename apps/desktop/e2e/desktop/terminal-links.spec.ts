@@ -531,9 +531,11 @@ describe("Terminal links", () => {
         await waitForLinkTooltip(tableFile, "shell");
         await controlClick(file);
         await waitForTab("file-editor", tablePath);
+        const tableEditor = await $(".file-editor-panel");
+        await tableEditor.waitForDisplayed({ timeout: 30_000 });
         await browser.waitUntil(
           async () =>
-            (await $(".file-editor-panel .file-editor-position").getText()) ===
+            (await tableEditor.$(".file-editor-position").getText()) ===
             "Ln 2, Col 3",
           {
             timeout: 30_000,
@@ -758,36 +760,37 @@ async function plainClick(
 }
 
 async function controlClick(target: TargetGeometry): Promise<void> {
+  // Complete the modifier dispatch before the pointer gesture crosses from a
+  // native Browser surface back into the terminal WebView.
   await browser.performActions([
     {
       type: "key",
       id: "terminal-link-keyboard",
-      actions: [
-        { type: "keyDown", value: controlKey },
-        { type: "pause", duration: 0 },
-        { type: "pause", duration: 0 },
-        { type: "keyUp", value: controlKey },
-      ],
-    },
-    {
-      type: "pointer",
-      id: "terminal-link-pointer",
-      parameters: { pointerType: "mouse" },
-      actions: [
-        {
-          type: "pointerMove",
-          duration: 0,
-          origin: "viewport",
-          x: target.x,
-          y: target.y,
-        },
-        { type: "pointerDown", button: 0 },
-        { type: "pointerUp", button: 0 },
-        { type: "pause", duration: 0 },
-      ],
+      actions: [{ type: "keyDown", value: controlKey }],
     },
   ]);
-  await browser.releaseActions();
+  try {
+    await browser.performActions([
+      {
+        type: "pointer",
+        id: "terminal-link-pointer",
+        parameters: { pointerType: "mouse" },
+        actions: [
+          {
+            type: "pointerMove",
+            duration: 0,
+            origin: "viewport",
+            x: target.x,
+            y: target.y,
+          },
+          { type: "pointerDown", button: 0 },
+          { type: "pointerUp", button: 0 },
+        ],
+      },
+    ]);
+  } finally {
+    await browser.releaseActions();
+  }
 }
 
 async function waitForLinkTooltip(
