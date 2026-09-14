@@ -53,7 +53,11 @@ export function extractRenderedLinkLines(
           nextY <= row + MAX_CONTINUATION_ROWS;
           nextY += 1
         ) {
-          if (last.closed || (!web && FILE_END.test(text))) break;
+          if (
+            last.closed ||
+            (!web && FILE_END.test(text) && !atRightEdge(buffer, last))
+          )
+            break;
           const candidates = read(nextY).filter(
             (next) =>
               next.style === last.style &&

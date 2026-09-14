@@ -13,6 +13,38 @@ import {
 } from "./terminal-links";
 
 describe("terminal links", () => {
+  test.each([17, 20, 25, 33, 34, 50, 51])(
+    "retains wrapped filename extensions and locations at width %s",
+    async (cols) => {
+      const reference =
+        "docs/e2e/windows-terminal-compatible/soft-wrapped/file/path/with/additional/review/context/target.md:2:3";
+      for (const hardBreaks of [false, true]) {
+        const output = hardBreaks
+          ? reference.match(new RegExp(`.{1,${cols}}`, "g"))!.join("\r\n")
+          : reference;
+        const terminal = await linkTestTerminal(output, cols);
+        try {
+          const activated: unknown[] = [];
+          const detector = new LinkDetector(terminal);
+          detector.registerProvider(
+            new FilePathLinkProvider(terminal, (value) =>
+              activated.push(value),
+            ),
+          );
+          const link = await detector.getLinkAt(0, 1);
+          expect(link?.text).toBe(reference);
+          link?.activate({} as MouseEvent);
+          expect(activated[0]).toMatchObject({
+            path: reference.slice(0, -4),
+            line: 2,
+            column: 3,
+          });
+        } finally {
+          terminal.dispose();
+        }
+      }
+    },
+  );
   test("reconstructs full-width paths whose continuation starts with a slash", async () => {
     const head = "docs/e2e/long/file";
     const tail = "/path/target.md:2:3";
