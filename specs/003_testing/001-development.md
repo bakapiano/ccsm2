@@ -198,12 +198,14 @@ test-results/desktop/<run_id>/
 - 条件等待负责测试同步；证据动画节奏可以使用短暂延时。
 - fixture 使用合成 Space、provider home 和 credential 数据。
 - Markdown场景使用独立合成Space，覆盖Preview、键盘编辑、Dirty、显式保存和磁盘结果。
-- Sidebar场景覆盖折叠、状态恢复、展开，以及折叠态可见元素集合。
+- Sidebar场景覆盖折叠、状态恢复、展开、折叠态可见元素集合，以及Agents分隔线通过键盘调整后在最小化/最大化、临时窗口缩小和页面重载时恢复缓存高度。
+- 临时缩小步骤显式恢复原始window rect，使Xvfb和桌面window manager验证相同尺寸；前端同时根据app shell的最终布局尺寸协调Agents高度。
 - Theme场景依次启动Claude、Codex和GHCP，在运行期完成深色到浅色切换，并断言光标输入行的主导Canvas像素颜色。
 - Provider Resume场景让Claude、Codex和GHCP各自通过真实CLI发现`ccsm` MCP、调用`board_put`生成完整HTML、自动打开Board Tab，并断言iframe内JavaScript交互状态。
 - Settings场景切换主题与默认浏览器链接偏好，关闭并重开弹窗后验证持久值，再恢复初始偏好。
 - Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、窗口失焦期间modifier keyup丢失后的Win32输入状态恢复、软换行文本校验和PTY中断恢复。
 - Terminal CJK场景在Windows新建Shell后先核对首屏仅含完整提示符，再验证中文输出；WASM回归覆盖内存复用、多组初始尺寸与保留提示符的后续扩容。
+- Terminal场景在完整Shell提示符出现后开始输入；Windows原生modifier注入前确认窗口与终端输入框都已获得焦点。
 - Terminal Links场景从真实Shell输出激活Web与文件链接，验证Browser toolbar外部打开、默认浏览器偏好路由、Browser Tab数量与File Editor行列跳转。固定纯文本表格hard-wrap回归逐一Ctrl-click URL与文件引用的首行、续行、末段，断言完整tooltip、完整Browser地址与File Editor行列号；fixture保持原始CRLF、缩进和默认文字样式。Canvas像素断言覆盖普通换行和表格两类目标：hover任一段时每行下划线同时出现，相邻空白像素保持一致，移开后每行恢复初始像素。
 - Provider Markdown Links场景让固定版本Codex渲染长URL、长文件路径及表格内长URL/文件引用；通过可见hover与Ctrl-click点击续行和URL末段，验证完整Browser URL及File Editor行列位置。真实WASM单测覆盖列间空白、相邻独立目标、Provider优先级和并发缓存失效。
 - 平台差异放入 screenshot、process 和 display adapter，业务步骤保持共享。

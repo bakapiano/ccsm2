@@ -107,6 +107,110 @@ describe("resizable sidebar", () => {
     window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 2 }));
   });
 
+  test.each(["focus", "visibilitychange"])(
+    "restores the cached height on %s after minimization",
+    (eventType) => {
+      const storage = createMemoryStorage({
+        "ccsm.sidebar.agentsHeight": "420",
+      });
+      const height = { value: 900 };
+      const { root, agentsResizer } = createController(storage, height);
+
+      height.value = 1;
+      window.dispatchEvent(new Event("resize"));
+      expect(root.style.getPropertyValue("--agents-height")).toBe("112px");
+      expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("420");
+
+      height.value = 900;
+      const target = eventType === "focus" ? window : document;
+      target.dispatchEvent(new Event(eventType));
+      expect(root.style.getPropertyValue("--agents-height")).toBe("420px");
+      expect(agentsResizer.getAttribute("aria-valuenow")).toBe("420");
+      expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("420");
+    },
+  );
+
+  test.each(["blur", "lostpointercapture"])(
+    "preserves the last drag height when %s interrupts dragging",
+    (eventType) => {
+      const storage = createMemoryStorage();
+      const height = { value: 900 };
+      const { root, agentsResizer } = createController(storage, height);
+      agentsResizer.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          button: 0,
+          clientY: 500,
+          pointerId: 3,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointermove", { clientY: 450, pointerId: 3 }),
+      );
+      expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("330");
+
+      const target = eventType === "blur" ? window : agentsResizer;
+      target.dispatchEvent(new Event(eventType));
+      window.dispatchEvent(
+        new PointerEvent("pointermove", { clientY: 700, pointerId: 3 }),
+      );
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 3 }));
+
+      expect(root.dataset.agentsResizing).toBeUndefined();
+      expect(root.style.getPropertyValue("--agents-height")).toBe("330px");
+      expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("330");
+      const restored = createController(storage, height);
+      expect(restored.root.style.getPropertyValue("--agents-height")).toBe(
+        "330px",
+      );
+    },
+  );
+
+  test("retains the cached height when starting in a short window", () => {
+    const storage = createMemoryStorage({
+      "ccsm.sidebar.agentsHeight": "420",
+    });
+    const height = { value: 400 };
+    const { root } = createController(storage, height);
+    expect(root.style.getPropertyValue("--agents-height")).toBe("235px");
+    expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("420");
+
+    height.value = 900;
+    window.dispatchEvent(new Event("resize"));
+    expect(root.style.getPropertyValue("--agents-height")).toBe("420px");
+  });
+
+  test("restores Agents when element layout settles after the window resize event", () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    const observers = new Map<Element, () => void>();
+    globalThis.ResizeObserver = class extends OriginalResizeObserver {
+      constructor(private readonly onResize: ResizeObserverCallback) {
+        super(onResize);
+      }
+
+      override observe(target: Element): void {
+        observers.set(target, () => this.onResize([], this));
+      }
+    };
+    try {
+      const storage = createMemoryStorage({
+        "ccsm.sidebar.agentsHeight": "424",
+      });
+      const height = { value: 552 };
+      const { root, agentsResizer } = createController(storage, height);
+      expect(root.style.getPropertyValue("--agents-height")).toBe("387px");
+
+      window.dispatchEvent(new Event("resize"));
+      height.value = 728;
+      observers.get(root)?.();
+
+      expect(root.style.getPropertyValue("--agents-height")).toBe("424px");
+      expect(agentsResizer.getAttribute("aria-valuenow")).toBe("424");
+      expect(storage.values.get("ccsm.sidebar.agentsHeight")).toBe("424");
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
+  });
+
   test("collapses to the compact rail and restores the expanded width", () => {
     const storage = createMemoryStorage({
       "ccsm.sidebar.width": "318",

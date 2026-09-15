@@ -77,6 +77,8 @@
   --term-control-bg: rgb(0 0 0 / 4%);
   --term-control-border-hover: rgb(0 0 0 / 24%);
   --term-control-bg-hover: rgb(0 0 0 / 8%);
+  --term-stop-bg: #b73f3f;
+  --term-stop-bg-hover: #993535;
   --term-icon-hover: rgb(0 0 0 / 8%);
   --terminal-scrollbar-track: rgb(0 0 0 / 5%);
   --terminal-scrollbar-thumb: rgb(0 0 0 / 22%);
@@ -2422,14 +2424,14 @@ html[data-browser-overlay-preparing="true"] .dv-tabs-overflow-container {
 }
 
 .terminal-panel-toolbar button.danger {
-  border-color: color-mix(in srgb, var(--red) 42%, transparent);
-  color: var(--red);
-  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-color: var(--term-stop-bg);
+  color: #fff;
+  background: var(--term-stop-bg);
 }
 
 .terminal-panel-toolbar button.danger:hover {
-  border-color: color-mix(in srgb, var(--red) 62%, transparent);
-  background: color-mix(in srgb, var(--red) 15%, transparent);
+  border-color: var(--term-stop-bg-hover);
+  background: var(--term-stop-bg-hover);
 }
 
 .terminal-action .control-icon,

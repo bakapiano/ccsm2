@@ -25,6 +25,7 @@
 - 当前Space中每个可见Dockview group的Agent使用选中背景；切换、分屏和关闭Tab时即时同步。
 - `blocked`和`working`项目优先排列，其后为`starting/idle/stopped`；相同状态按最后活跃时间从近到远排列。
 - Spaces与Agents之间的水平separator支持pointer拖动、键盘调整和双击恢复默认高度；Agents高度本地持久化，同时为Space tree保留最小可用高度。
+- 窗口最小化、恢复和重新聚焦时，Agents按缓存的用户高度重新布局；临时窗口尺寸约束保留该偏好。拖动失焦或pointer capture结束时保存最后一次调整，后续鼠标移动保持已保存的位置。
 
 ## 启动体验
 

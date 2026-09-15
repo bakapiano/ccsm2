@@ -131,13 +131,21 @@ export class SidebarLayoutController {
       else return;
       event.preventDefault();
     });
-    window.addEventListener("resize", () => {
+    const restoreAgentsHeight = () => {
       this.#agentsHeight = normalizeAgentsHeight(
         this.#agentsPreferredHeight,
         this.#layoutHeight(),
       );
       this.#apply();
+    };
+    window.addEventListener("resize", restoreAgentsHeight);
+    window.addEventListener("focus", restoreAgentsHeight);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) restoreAgentsHeight();
     });
+    // Viewport units can settle after the window event in native WebViews.
+    // Reconcile against the app shell's final rendered size as well.
+    new ResizeObserver(restoreAgentsHeight).observe(root);
     this.#apply();
   }
 
@@ -199,6 +207,8 @@ export class SidebarLayoutController {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
+      window.removeEventListener("blur", finish);
+      this.#agentsResizer.removeEventListener("lostpointercapture", finish);
       delete this.root.dataset.agentsResizing;
       this.storage.setItem(
         AGENTS_HEIGHT_KEY,
@@ -208,6 +218,10 @@ export class SidebarLayoutController {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
     window.addEventListener("pointercancel", finish, { once: true });
+    window.addEventListener("blur", finish, { once: true });
+    this.#agentsResizer.addEventListener("lostpointercapture", finish, {
+      once: true,
+    });
   }
 
   #setAgentsHeight(height: number, persist: boolean): void {

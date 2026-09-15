@@ -86,6 +86,52 @@ describe("Sidebar navigation", () => {
       expect(await $(".agents-panel").isDisplayed()).toBe(true);
       expect(await $("#sidebar-resizer").isDisplayed()).toBe(true);
       await evidence.checkpoint("expanded-again");
+
+      currentStep = "resize-agents";
+      const originalWindow = await browser.getWindowRect();
+      const separator = await $("#agents-resizer");
+      const preferredHeight =
+        Number(await separator.getAttribute("aria-valuenow")) + 144;
+      // The embedded driver delivers MouseEvents for pointer actions; exercise
+      // the separator's keyboard resize path through WebDriver key actions.
+      await separator.click();
+      for (let step = 0; step < 18; step += 1) {
+        await browser.keys("ArrowUp");
+      }
+      await waitForAgentsHeight(preferredHeight);
+      await evidence.checkpoint("resized-agents");
+
+      currentStep = "minimize-and-maximize";
+      await browser.minimizeWindow();
+      await browser.maximizeWindow();
+      await waitForAgentsHeight(preferredHeight);
+      await evidence.checkpoint("agents-after-maximize");
+
+      currentStep = "temporary-window-shrink";
+      await browser.setWindowRect(20, 20, 1320, 560);
+      await browser.waitUntil(async () => {
+        const height = await $(".agents-panel").getSize("height");
+        return height < preferredHeight;
+      });
+      expect(
+        await browser.execute(() =>
+          localStorage.getItem("ccsm.sidebar.agentsHeight"),
+        ),
+      ).toBe(String(preferredHeight));
+      await browser.setWindowRect(
+        originalWindow.x,
+        originalWindow.y,
+        originalWindow.width,
+        originalWindow.height,
+      );
+      await waitForAgentsHeight(preferredHeight);
+      await evidence.checkpoint("agents-after-shrink");
+
+      currentStep = "restore-agents-height";
+      await browser.refresh();
+      await $("#agents-resizer").waitForDisplayed();
+      await waitForAgentsHeight(preferredHeight);
+      await evidence.checkpoint("agents-after-reload");
     } catch (error) {
       primaryError = error;
       writeFileSync(
@@ -150,6 +196,27 @@ async function waitForSidebarState(collapsed: boolean): Promise<void> {
     {
       timeoutMsg: `Sidebar did not reach ${collapsed ? "collapsed" : "expanded"} state`,
     },
+  );
+}
+
+async function waitForAgentsHeight(height: number): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const state = await browser.execute(() => ({
+        height: document.querySelector(".agents-panel")?.getBoundingClientRect()
+          .height,
+        cached: localStorage.getItem("ccsm.sidebar.agentsHeight"),
+        accessible: document
+          .querySelector("#agents-resizer")
+          ?.getAttribute("aria-valuenow"),
+      }));
+      return (
+        state.height === height &&
+        state.cached === String(height) &&
+        state.accessible === String(height)
+      );
+    },
+    { timeoutMsg: `Agents height did not restore to ${height}px` },
   );
 }
 
