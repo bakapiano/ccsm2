@@ -53,7 +53,7 @@
 ## Rust分层
 
 - `ccsm-core`保存领域类型、应用服务、ports和DTO，并保持Tauri-free。
-- `ccsm-platform`实现SQLite、PTY、process、filesystem、Git、path和HookEndpoint adapters。
+- `ccsm-platform`实现SQLite、PTY、process、filesystem、Git、path、Node runtime、Agent Gateway process和RuntimeReportEndpoint adapters。
 - `ccsm-desktop`作为Tauri composition root，依赖core/platform并实现commands、events、channels、windows和native WebViews。
 - Tauri command handlers只执行DTO转换、service调用和error mapping。
 - `ccsm-core`和`ccsm-platform`不得引用Tauri window、WebView或renderer类型。
@@ -62,5 +62,5 @@
 - `revision`、`generation`和`seq`采用领域内语义，不作为所有DTO或events的通用字段。
 - 用户mutation通过command response返回committed DTO或snapshot；`AppEvent`承载AppBackend异步变化，`BrowserSurfaceEvent`承载native browser变化；PTY bytes使用binary Channel。
 - Provider的watch scope通过commands声明，Rust异步通知统一进入`DesktopEventStream`。
-- Desktop crates不实现HTTP/WebSocket server或transport；未来`ccsm-web-server`作为独立composition root复用core DTOs和services。
+- TypeScript Agent Gateway实现Remote Web的HTTP/WebSocket transport。Desktop/core/platform crates保持网络transport无关；未来`ccsm-web-server`作为独立headless composition root复用core DTOs和services。
 - Claude/Codex/Copilot native Session ID仅接受认证HookReport；代码不得扫描provider data directory、transcript或mtime猜测身份。

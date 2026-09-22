@@ -14,9 +14,10 @@ ccsm-desktop
 
 AppBackend
 ├─ RuntimeManager
+├─ AgentGatewayService
 ├─ ActiveRootContext?
 ├─ background tasks
-├─ HookEndpoint
+├─ RuntimeReportEndpoint
 └─ StateStore
 ```
 
@@ -32,10 +33,12 @@ enter the idempotent shutdown gate
 → close native child WebViews
 → flush global Browser Profile
 → stop all RuntimeManager entries
+→ send gateway.shutdown and close Gateway Provider connections
+→ wait up to 3 seconds, then terminate the Gateway process tree
 → join PTY input/resize/reader/waiter threads
 → drop PTY master and call ClosePseudoConsole
 → close ActiveRootContext and cancel background tasks
-→ close HookEndpoint
+→ close RuntimeReportEndpoint
 → commit pending state and checkpoint WAL
 → close data.db connection
 → close Tauri channels/window
@@ -66,6 +69,6 @@ Space Delete调用scoped cleanup：关闭该Space的Browser surfaces、停止其
 
 ## Abnormal process exit
 
-Windows application Job Object启用kill-on-close。桌面进程被强杀或崩溃时，Windows同步终止WebView2、OpenConsole和全部CLI descendants。非Windows平台使用各自的process-group/watchdog实现同一contract；平台实现状态记录在跨平台能力矩阵中。runtime ownership不写入数据库。
+Windows application Job Object启用kill-on-close。桌面进程被强杀或崩溃时，Windows同步终止Agent Gateway、WebView2、OpenConsole和全部CLI descendants。非Windows平台使用各自的process-group/watchdog实现同一contract；平台实现状态记录在跨平台能力矩阵中。runtime ownership不写入数据库。
 
 runtime shim root使用`ccsm-runtime-shims-<owner_pid>`命名。Windows启动时扫描直接子目录，仅清理由死亡owner PID留下的合法shim root；活跃PID、符号链接和无关名称保持原状。`data.db`和global Browser Profile属于持久数据。
