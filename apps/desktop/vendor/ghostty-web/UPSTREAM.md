@@ -6,6 +6,9 @@ This directory pins `coder/ghostty-web` 0.4.0 at commit
 Local changes:
 
 - skip Ghostty width-zero spacer cells when extracting selected text;
+- join soft-wrapped selection rows using Ghostty continuation flags, retaining
+  spaces within a logical line and preserving explicit newlines; expose the
+  same flags for scrollback in WASM and the Buffer API.
 - draw U+2500..U+259F procedurally using the implementation from upstream
   pull request #164, preserving the original MIT license;
 - request an opaque Canvas2D backing store when terminal transparency is off.
@@ -59,12 +62,13 @@ Local changes:
 - flush Unicode generator stdout portably when building the WASM on Windows.
 
 The checked-in WASM binary is rebuilt from the pinned source and
-`ccsm-hyperlink-uri.patch` plus `ccsm-wasm-zero-pages.patch`; its SHA-256 is
-`1ef1a10a1c4dfc7930382e7653e3f9d9a6259d0507e1ece5d6205ab0776dbe4e`.
+`ccsm-hyperlink-uri.patch`, `ccsm-wasm-zero-pages.patch`, and
+`ccsm-wrapped-scrollback.patch`; its SHA-256 is
+`64f0e1047942299e240db49a7f0e8197cb812a5df035032867dc5ac578dc96b4`.
 
 To reproduce it, clone the pinned `coder/ghostty-web` commit, initialize its
 Ghostty submodule, apply upstream `patches/ghostty-wasm-api.patch` inside that
-submodule, then apply both CCSM patches and run with Zig 0.15.2:
+submodule, then apply the three CCSM patches in the order above and run with Zig 0.15.2:
 
 ```sh
 zig build lib-vt -Dtarget=wasm32-freestanding -Doptimize=ReleaseSmall

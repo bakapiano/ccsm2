@@ -20,6 +20,7 @@
 - CLI Tab禁用 Duplicate。
 - CLI Tab保留带修饰键的输入语义：Codex中`Shift+Enter`输入换行而不提交，并兼容`Ctrl+Enter`；Claude Code中`Shift+Enter`输入换行而不提交；Windows上的Claude Code中`Alt+V`交给CLI读取系统剪贴板并粘贴图片。
 - 所有CLI Tab的`Ctrl+C`在终端选区存在时复制选区，空选区时向PTY发送ETX；`Ctrl/Cmd+V`触发系统粘贴。`Cmd+C`复制当前终端选区。
+- 终端跨行复制按逻辑行提取文本：窗口宽度导致的自动折行直接拼接，保留折行处的原始空格、中文与组合字符；原文的真实换行和空行保持不变。当前屏幕与滚动历史使用相同规则。
 - Claude Code与Codex Tab在用户开始键盘输入、粘贴或提交IME文本时立即滚动到当前输出底部，再将输入交给CLI。
 - 单独按下Ctrl、Shift、Alt、Cmd等修饰键时保留当前终端滚动位置。
 - 顶层窗口重新激活时，CLI Tab恢复窗口失活前的终端输入焦点；切回时点击的界面目标继续获得焦点。

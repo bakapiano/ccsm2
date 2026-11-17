@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { resolveScrollbarWidth } from "./addons/fit";
+import { Buffer as TerminalBuffer } from "./buffer";
 import { Ghostty, GhosttyTerminal } from "./ghostty";
 import type { GhosttyWasmExports } from "./types";
 import { calculateInputAnchor } from "./input-anchor";
@@ -41,6 +42,22 @@ function selectionManagerForLine(
   manager.selectionActive = selectionActive;
   manager.isSelecting = false;
   return manager;
+}
+
+function selectedBufferText(
+  terminal: GhosttyTerminal,
+  start = { col: 0, absoluteRow: 0 },
+  end = {
+    col: terminal.cols - 1,
+    absoluteRow: terminal.getScrollbackLength() + terminal.getCursor().y,
+  },
+): string {
+  const manager = Object.create(SelectionManager.prototype) as any;
+  manager.wasmTerm = terminal;
+  manager.selectionStart = start;
+  manager.selectionEnd = end;
+  manager.selectionActive = true;
+  return manager.getSelection();
 }
 
 function idleRendererHarness(viewportY: number) {
@@ -709,6 +726,125 @@ describe("local ghostty-web regressions", () => {
     ];
     const manager = selectionManagerForLine(line, 0, 7, true);
     expect(manager.getSelection()).toBe("中文测试");
+  });
+
+  test.each([
+    ["soft wraps and spaces", "alpha   beta gamma", "alpha   beta gamma"],
+    ["all-space wrapped rows", "abcdefgh        ij", "abcdefgh        ij"],
+    [
+      "full-width hard breaks",
+      "12345678\r\nnext\r\n\r\nlast",
+      "12345678\nnext\n\nlast",
+    ],
+    ["hard-break padding", "one   \r\n  two", "one\n  two"],
+    [
+      "CJK spacers and graphemes",
+      "abcdefg中文 e\u0301🙂!",
+      "abcdefg中文 e\u0301🙂!",
+    ],
+  ])("selection text preserves %s", async (_name, input, expected) => {
+    const { terminal } = await viewportHarness(8, 8);
+    try {
+      terminal.write(input);
+      expect(selectedBufferText(terminal)).toBe(expected);
+      const end = { col: 7, absoluteRow: terminal.getCursor().y };
+      terminal.write("\r\n".repeat(8));
+      expect(
+        selectedBufferText(terminal, { col: 0, absoluteRow: 0 }, end),
+      ).toBe(expected);
+    } finally {
+      terminal.free();
+    }
+  });
+
+  test.each([
+    ["screen", 8, 0],
+    ["scrollback and screen", 3, 0],
+    ["scrollback only", 3, 3],
+  ] as const)(
+    "selection text joins soft wraps in %s",
+    async (_name, rows, blankRows) => {
+      const { terminal } = await viewportHarness(8, rows);
+      const text = "12345678abcdefgh87654321ijklmnop";
+      try {
+        terminal.write(text + "\r\n".repeat(blankRows));
+        expect(terminal.getScrollbackLength()).toBe(
+          Math.max(0, 4 + blankRows - rows),
+        );
+        expect(
+          selectedBufferText(
+            terminal,
+            { col: 0, absoluteRow: 0 },
+            { col: 7, absoluteRow: 3 },
+          ),
+        ).toBe(text);
+      } finally {
+        terminal.free();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    "selection text joins partial rows with reverse drag %s",
+    async (reverse) => {
+      const { terminal } = await viewportHarness(8, 4);
+      try {
+        terminal.write("0123456789abcdefghij");
+        const start = { col: 3, absoluteRow: 0 };
+        const end = { col: 1, absoluteRow: 2 };
+        expect(
+          selectedBufferText(
+            terminal,
+            reverse ? end : start,
+            reverse ? start : end,
+          ),
+        ).toBe("3456789abcdefgh");
+      } finally {
+        terminal.free();
+      }
+    },
+  );
+
+  test("selection text follows soft wraps after resize/reflow", async () => {
+    const { terminal } = await viewportHarness(16, 3);
+    const text = "alpha   beta gamma delta";
+    try {
+      terminal.write(text);
+      terminal.resize(8, 3);
+      expect(selectedBufferText(terminal)).toBe(text);
+    } finally {
+      terminal.free();
+    }
+  });
+
+  test("selection text joins soft wraps on the alternate screen", async () => {
+    const { terminal } = await viewportHarness(8, 4);
+    try {
+      terminal.write("normal\x1b[?1049h\x1b[Halpha   beta gamma");
+      expect(selectedBufferText(terminal)).toBe("alpha   beta gamma");
+    } finally {
+      terminal.free();
+    }
+  });
+
+  test("wrapped history exposes continuation flags across the screen boundary", async () => {
+    const { terminal } = await viewportHarness(8, 2);
+    try {
+      terminal.write("abcdefghABCDEFGHijkl\r\nend");
+      const buffer = new TerminalBuffer(
+        { wasmTerm: terminal } as any,
+        "normal",
+      );
+      expect(terminal.getScrollbackLength()).toBe(2);
+      expect(terminal.isScrollbackRowWrapped(-1)).toBe(false);
+      expect(terminal.isScrollbackRowWrapped(2)).toBe(false);
+      expect([0, 1, 2, 3].map((row) => buffer.getLine(row)?.isWrapped)).toEqual(
+        [false, true, true, false],
+      );
+      expect(selectedBufferText(terminal)).toBe("abcdefghABCDEFGHijkl\nend");
+    } finally {
+      terminal.free();
+    }
   });
 
   test("a real same-cell drag selects exactly one character", () => {
