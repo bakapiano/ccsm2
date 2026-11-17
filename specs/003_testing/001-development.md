@@ -203,7 +203,7 @@ test-results/desktop/<run_id>/
 - Theme场景依次启动Claude、Codex和GHCP，在运行期完成深色到浅色切换，并断言光标输入行的主导Canvas像素颜色。
 - Provider Resume场景让Claude、Codex和GHCP各自通过真实CLI发现`ccsm` MCP、调用`board_put`生成完整HTML、自动打开Board Tab，并断言iframe内JavaScript交互状态。
 - Settings场景切换主题与默认浏览器链接偏好，关闭并重开弹窗后验证持久值，再恢复初始偏好。
-- Terminal Clipboard场景使用独立Shell，覆盖鼠标拖选、原生clipboard复制/回贴、窗口失焦期间modifier keyup丢失后的Win32输入状态恢复、软换行文本校验和PTY中断恢复。
+- Terminal Clipboard场景使用独立Shell，拖选跨多个屏幕行的长文本，通过`Ctrl+C`复制和`Ctrl+V`回贴到Shell，再写入文件与原文逐字比较，验证自动折行不增加换行。场景同时覆盖窗口失焦期间modifier keyup丢失后的Win32输入状态恢复和PTY中断恢复。WASM确定性回归覆盖真实换行与空行、折行处空格、中文与组合字符、反向部分选区、alternate screen、resize/reflow以及滚动历史边界。
 - Terminal CJK场景在Windows新建Shell后先核对首屏仅含完整提示符，再验证中文输出；WASM回归覆盖内存复用、多组初始尺寸与保留提示符的后续扩容。
 - Terminal场景在完整Shell提示符出现后开始输入；Windows原生modifier注入前确认窗口与终端输入框都已获得焦点。
 - Terminal Links场景从真实Shell输出激活Web与文件链接，验证Browser toolbar外部打开、默认浏览器偏好路由、Browser Tab数量与File Editor行列跳转。固定纯文本表格hard-wrap回归逐一Ctrl-click URL与文件引用的首行、续行、末段，断言完整tooltip、完整Browser地址与File Editor行列号；fixture保持原始CRLF、缩进和默认文字样式。Canvas像素断言覆盖普通换行和表格两类目标：hover任一段时每行下划线同时出现，相邻空白像素保持一致，移开后每行恢复初始像素。

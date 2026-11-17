@@ -748,9 +748,14 @@ export class GhosttyTerminal {
     return cells;
   }
 
-  /** Check if a row in the active screen is wrapped (soft-wrapped to next line) */
+  /** Check if an active-screen row continues the preceding buffer row. */
   isRowWrapped(row: number): boolean {
     return this.exports.ghostty_terminal_is_row_wrapped(this.handle, row) !== 0;
+  }
+
+  /** Check if a scrollback row continues the preceding buffer row. */
+  isScrollbackRowWrapped(offset: number): boolean {
+    return this.exports.ghostty_terminal_is_scrollback_row_wrapped(this.handle, offset) !== 0;
   }
 
   /** Get the OSC 8 URI stored at an absolute buffer position. */

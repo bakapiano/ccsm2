@@ -15,6 +15,7 @@ interface TerminalSnapshot {
   bufferLength: number;
   cellHeight: number;
   cellWidth: number;
+  cols: number;
   hasSelection: boolean;
   inputEnabled: boolean;
   lastOutputRuntimeId: string | null;
@@ -30,8 +31,9 @@ interface TerminalSnapshot {
 
 interface SelectionGeometry {
   endX: number;
+  endY: number;
   startX: number;
-  y: number;
+  startY: number;
 }
 
 const artifactDirectory = requiredEnvironment("CCSM_E2E_ARTIFACT_DIR");
@@ -48,8 +50,8 @@ const webdriverKey = {
 describe("Terminal keyboard routing", () => {
   it("copies and pastes terminal text and interrupts with Control-C", async () => {
     const evidence = new ScenarioEvidence(scenarioId);
-    const marker = `CCSM_COPY_${runId.replaceAll(/[^a-z0-9]/giu, "_")}`;
     const confirmedPath = join(spaceRootBase, "terminal", "interrupt.txt");
+    const pastedPath = join(spaceRootBase, "terminal", "pasted.txt");
     const spaceName = `E2E Terminal ${runId}`;
     const spaceRoot = join(spaceRootBase, "terminal");
     mkdirSync(spaceRoot, { recursive: true });
@@ -59,7 +61,7 @@ describe("Terminal keyboard routing", () => {
     try {
       await restoreScenarioUi();
       await createSpace(spaceName, spaceRoot);
-      await waitForShell((snapshot) =>
+      const shell = await waitForShell((snapshot) =>
         Boolean(
           snapshot.runtimeId &&
             snapshot.lastOutputRuntimeId === snapshot.runtimeId &&
@@ -67,6 +69,7 @@ describe("Terminal keyboard routing", () => {
         ),
       );
       await waitForShellPrompt(spaceRoot);
+      const marker = `CCSM_COPY_${runId.replaceAll(/[^a-z0-9]/giu, "_")}_${"wrap".repeat(Math.ceil(shell.cols / 2))}_END`;
 
       if (platform === "windows") {
         currentStep = "verify-win32-input-records";
@@ -76,15 +79,17 @@ describe("Terminal keyboard routing", () => {
 
       currentStep = "print-copy-marker";
       await typeShellLine(`echo ${marker}`);
-      await waitForShell((snapshot) => snapshot.text.includes(marker));
+      await waitForShell(
+        (snapshot) => terminalMarkerOccurrences(snapshot.text, marker) > 0,
+      );
+      await waitForShellPrompt(spaceRoot);
 
       currentStep = "select-copy-marker";
       await selectTerminalText(marker);
       const selected = await waitForShell(
-        (snapshot) =>
-          snapshot.hasSelection && snapshot.selectedText.includes(marker),
+        (snapshot) => snapshot.hasSelection && snapshot.selectedText === marker,
       );
-      expect(selected.selectedText).toContain(marker);
+      expect(selected.selectedText).toBe(marker);
       await evidence.checkpoint("terminal-selection");
 
       currentStep = "copy-selection";
@@ -106,6 +111,12 @@ describe("Terminal keyboard routing", () => {
       await waitForShell((snapshot) => !snapshot.hasSelection);
 
       currentStep = "paste-into-terminal";
+      const escapedPastedPath = pastedPath.replaceAll("'", "''");
+      await typeShellText(
+        platform === "windows"
+          ? `[IO.File]::WriteAllText('${escapedPastedPath}', '`
+          : "printf '%s' '",
+      );
       const occurrencesBeforePaste = terminalMarkerOccurrences(
         (await shellSnapshot())?.text ?? "",
         marker,
@@ -116,9 +127,17 @@ describe("Terminal keyboard routing", () => {
           terminalMarkerOccurrences(snapshot.text, marker) >
           occurrencesBeforePaste,
       );
+      await typeShellLine(
+        platform === "windows" ? "')" : `' > '${escapedPastedPath}'`,
+      );
+      await browser.waitUntil(() => existsSync(pastedPath), {
+        timeout: 10_000,
+        interval: 100,
+        timeoutMsg: "The shell did not save the pasted selection",
+      });
+      expect(readFileSync(pastedPath, "utf8")).toBe(marker);
+      await waitForShellPrompt(spaceRoot);
       await evidence.checkpoint("terminal-pasted");
-      await browser.keys(["Control", "c"]);
-      await browser.pause(250);
 
       currentStep = "interrupt-running-command";
       const interruptCommand = "echo CCSM_INTERRUPT_READY; sleep 30";
@@ -248,7 +267,7 @@ async function selectTerminalText(marker: string): Promise<void> {
         duration: 0,
         origin: "viewport",
         x: geometry.startX,
-        y: geometry.y,
+        y: geometry.startY,
       })
       .down("left")
       .pause(50)
@@ -256,13 +275,12 @@ async function selectTerminalText(marker: string): Promise<void> {
         duration: 250,
         origin: "viewport",
         x: geometry.endX,
-        y: geometry.y,
+        y: geometry.endY,
       })
       .up("left")
       .perform();
     const snapshot = await shellSnapshot();
-    if (snapshot?.hasSelection && snapshot.selectedText.includes(marker))
-      return;
+    if (snapshot?.hasSelection && snapshot.selectedText === marker) return;
   }
 }
 
@@ -284,30 +302,42 @@ async function selectionGeometry(marker: string): Promise<SelectionGeometry> {
     if (!snapshot || !canvas) throw new Error("Shell terminal is incomplete");
 
     const lines = snapshot.text.split("\n");
-    let lineIndex = -1;
-    for (let index = lines.length - 1; index >= 0; index -= 1) {
-      if (lines[index].includes(target)) {
-        lineIndex = index;
-        break;
-      }
-    }
-    if (lineIndex < 0) throw new Error(`Marker ${target} is absent`);
-    const column = lines[lineIndex].indexOf(target);
+    // The marker is ASCII with no spaces, so stripping physical-row separators
+    // keeps a one-to-one mapping between text offsets and terminal columns.
+    const offset = lines.join("").lastIndexOf(target);
+    if (offset < 0) throw new Error(`Marker ${target} is absent`);
     const firstBufferLine = Math.max(0, snapshot.bufferLength - lines.length);
-    const absoluteRow = firstBufferLine + lineIndex;
-    const viewportRow =
-      absoluteRow - snapshot.scrollbackLength + Math.floor(snapshot.viewportY);
-    if (viewportRow < 0 || viewportRow >= snapshot.rows) {
-      throw new Error(`Marker ${target} is outside the viewport`);
-    }
-
     const rect = canvas.getBoundingClientRect();
+    const pointAt = (textOffset: number, cellOffset: number) => {
+      for (let index = 0; index < lines.length; index += 1) {
+        if (textOffset >= lines[index].length) {
+          textOffset -= lines[index].length;
+          continue;
+        }
+        const viewportRow =
+          firstBufferLine +
+          index -
+          snapshot.scrollbackLength +
+          Math.floor(snapshot.viewportY);
+        if (viewportRow < 0 || viewportRow >= snapshot.rows) {
+          throw new Error(`Marker ${target} is outside the viewport`);
+        }
+        return {
+          x: Math.round(
+            rect.left + (textOffset + cellOffset) * snapshot.cellWidth,
+          ),
+          y: Math.round(rect.top + (viewportRow + 0.5) * snapshot.cellHeight),
+        };
+      }
+      throw new Error(`Marker ${target} extends past the buffer`);
+    };
+    const start = pointAt(offset, 0.25);
+    const end = pointAt(offset + target.length - 1, 0.75);
     return JSON.stringify({
-      startX: Math.round(rect.left + (column + 0.25) * snapshot.cellWidth),
-      endX: Math.round(
-        rect.left + (column + target.length - 0.25) * snapshot.cellWidth,
-      ),
-      y: Math.round(rect.top + (viewportRow + 0.5) * snapshot.cellHeight),
+      startX: start.x,
+      startY: start.y,
+      endX: end.x,
+      endY: end.y,
     });
   }, marker);
   return JSON.parse(serialized) as SelectionGeometry;
@@ -373,12 +403,16 @@ async function clickTerminalCanvas(): Promise<void> {
 }
 
 async function typeShellLine(input: string): Promise<void> {
+  await typeShellText(input);
+  await browser.keys("Enter");
+}
+
+async function typeShellText(input: string): Promise<void> {
   const panel = await $('.terminal-panel[data-provider="shell"]');
   const terminalInput = await panel.$('textarea[aria-label="Terminal input"]');
   await terminalInput.waitForExist({ timeout: 20_000 });
   await terminalInput.click();
   for (const character of input) await browser.keys(character);
-  await browser.keys("Enter");
 }
 
 async function verifyCjkTerminalOutput(id: string): Promise<void> {

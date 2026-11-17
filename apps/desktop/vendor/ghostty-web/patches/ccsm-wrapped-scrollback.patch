@@ -1,0 +1,60 @@
+diff --git a/include/ghostty/vt/terminal.h b/include/ghostty/vt/terminal.h
+index 19d5c09..3eada0b 100644
+--- a/include/ghostty/vt/terminal.h
++++ b/include/ghostty/vt/terminal.h
+@@ -220,6 +220,9 @@ int ghostty_terminal_get_scrollback_grapheme(
+ /** Check if a row is a continuation from previous row (soft-wrapped) */
+ bool ghostty_terminal_is_row_wrapped(GhosttyTerminal term, int y);
+ 
++/** Check if a scrollback row continues the previous buffer row (soft-wrapped). */
++bool ghostty_terminal_is_scrollback_row_wrapped(GhosttyTerminal term, int offset);
++
+ /**
+  * Get the OSC 8 URI for a cell. Pass NULL to query the UTF-8 byte length.
+  * @param history true for a scrollback row, false for an active-screen row
+diff --git a/src/lib_vt.zig b/src/lib_vt.zig
+index 5ee8242..8420257 100644
+--- a/src/lib_vt.zig
++++ b/src/lib_vt.zig
+@@ -171,6 +171,7 @@ comptime {
+         @export(&c.terminal_get_scrollback_line, .{ .name = "ghostty_terminal_get_scrollback_line" });
+         @export(&c.terminal_get_scrollback_grapheme, .{ .name = "ghostty_terminal_get_scrollback_grapheme" });
+         @export(&c.terminal_is_row_wrapped, .{ .name = "ghostty_terminal_is_row_wrapped" });
++        @export(&c.terminal_is_scrollback_row_wrapped, .{ .name = "ghostty_terminal_is_scrollback_row_wrapped" });
+         @export(&c.terminal_get_hyperlink_uri, .{ .name = "ghostty_terminal_get_hyperlink_uri" });
+ 
+         // Response API (for DSR and other queries)
+diff --git a/src/terminal/c/main.zig b/src/terminal/c/main.zig
+index f913c7f..0ae6cfd 100644
+--- a/src/terminal/c/main.zig
++++ b/src/terminal/c/main.zig
+@@ -84,6 +84,7 @@ pub const terminal_get_scrollback_length = terminal.getScrollbackLength;
+ pub const terminal_get_scrollback_line = terminal.getScrollbackLine;
+ pub const terminal_get_scrollback_grapheme = terminal.getScrollbackGrapheme;
+ pub const terminal_is_row_wrapped = terminal.isRowWrapped;
++pub const terminal_is_scrollback_row_wrapped = terminal.isScrollbackRowWrapped;
+ pub const terminal_get_hyperlink_uri = terminal.getHyperlinkUri;
+ 
+ // Response API (for DSR and other queries)
+diff --git a/src/terminal/c/terminal.zig b/src/terminal/c/terminal.zig
+index 49585aa..766e832 100644
+--- a/src/terminal/c/terminal.zig
++++ b/src/terminal/c/terminal.zig
+@@ -984,6 +984,17 @@ pub fn isRowWrapped(ptr: ?*anyopaque, y: c_int) callconv(.c) bool {
+     return rac.row.wrap_continuation;
+ }
+ 
++/// Check whether a history row continues the preceding buffer row.
++/// Offset zero is the oldest scrollback row, matching getScrollbackLine.
++pub fn isScrollbackRowWrapped(ptr: ?*anyopaque, offset: c_int) callconv(.c) bool {
++    const wrapper: *const TerminalWrapper = @ptrCast(@alignCast(ptr orelse return false));
++    if (offset < 0 or offset >= getScrollbackLength(ptr)) return false;
++
++    const pages = &wrapper.terminal.screens.active.pages;
++    const pin = pages.pin(.{ .history = .{ .y = @intCast(offset) } }) orelse return false;
++    return pin.rowAndCell().row.wrap_continuation;
++}
++
+ // ============================================================================
+ // Response API - for DSR and other terminal queries
+ // ============================================================================

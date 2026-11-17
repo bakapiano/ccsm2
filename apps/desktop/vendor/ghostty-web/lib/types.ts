@@ -462,6 +462,7 @@ export interface GhosttyWasmExports extends WebAssembly.Exports {
     bufLen: number
   ): number; // Returns codepoint count or -1 on error
   ghostty_terminal_is_row_wrapped(terminal: TerminalHandle, row: number): number;
+  ghostty_terminal_is_scrollback_row_wrapped(terminal: TerminalHandle, offset: number): number;
   ghostty_terminal_get_hyperlink_uri(
     terminal: TerminalHandle,
     history: boolean,

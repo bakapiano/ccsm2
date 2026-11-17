@@ -166,6 +166,15 @@ export class SelectionManager {
 
       if (!line) continue;
 
+      // The next row's continuation flag distinguishes a visual wrap from an
+      // explicit line break, including at the scrollback/screen boundary.
+      const nextAbsRow = absRow + 1;
+      const joinsNextRow = absRow < endAbsRow && (
+        nextAbsRow < scrollbackLength
+          ? this.wasmTerm.isScrollbackRowWrapped(nextAbsRow)
+          : this.wasmTerm.isRowWrapped(nextAbsRow - scrollbackLength)
+      );
+
       // Track the last non-empty column for trimming trailing spaces
       let lastNonEmpty = -1;
 
@@ -212,17 +221,16 @@ export class SelectionManager {
         }
       }
 
-      // Trim trailing spaces from each line
-      if (lastNonEmpty >= 0) {
-        lineText = lineText.substring(0, lastNonEmpty);
-      } else {
-        lineText = '';
+      // Spaces at a soft wrap belong to the same logical line. Only trim
+      // padding at a hard break or at the end of the selection.
+      if (!joinsNextRow) {
+        lineText = lastNonEmpty >= 0 ? lineText.substring(0, lastNonEmpty) : '';
       }
 
       text += lineText;
 
-      // Add newline between rows (but not after the last row)
-      if (absRow < endAbsRow) {
+      // Preserve explicit newlines while joining soft-wrapped rows.
+      if (absRow < endAbsRow && !joinsNextRow) {
         text += '\n';
       }
     }
